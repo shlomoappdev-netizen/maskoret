@@ -16,5 +16,11 @@ for f in Models TaxRates Money Card Maaser Trends Receivables; do
   awk '/^extension Store \{/{skip=1} !skip{print} skip&&/^\}/{skip=0}' $src/$f.swift > $build/$f.swift
   models+=$build/$f.swift
 done
-swiftc -O -o $build/check $here/swift_check/main.swift $build/Fmt.swift $build/SaveFile.swift $build/FamilyTypes.swift $models
+# The month calculation ("נשאר בסוף החודש") from Sync.swift: the MonthPicture struct, and Store.monthPicture
+# turned into a free function over `dashboard` (set by main.swift).
+{ echo 'import Foundation'
+  awk '/^struct MonthPicture \{/,/^\}/' $src/Sync.swift
+  awk '/^    func monthPicture\(year: Int, month: Int, budget override: Budget\? = nil\) -> MonthPicture \{/,/^    \}$/' $src/Sync.swift
+} > $build/MonthPicture.swift
+swiftc -O -o $build/check $here/swift_check/main.swift $build/Fmt.swift $build/SaveFile.swift $build/FamilyTypes.swift $build/MonthPicture.swift $models
 $build/check "$@"

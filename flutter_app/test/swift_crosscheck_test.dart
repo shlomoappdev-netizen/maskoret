@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/data/json.dart';
 import 'package:maskoret/data/models.dart';
 import 'package:maskoret/data/money_calc.dart';
+import 'package:maskoret/data/month_picture.dart';
 
 import 'compat_test.dart' show loadFixture;
 
@@ -32,7 +33,28 @@ void main() {
       final b = f.budget;
       final money = f.money;
       final calc = MoneyCalc(money.primeRate);
+      Map<String, dynamic> pic(MonthPicture p, {bool record = false}) => {
+            'key': p.year * 100 + p.month,
+            if (record) 'record': true,
+            'remaining': p.remaining,
+            'net': p.net,
+            'spending': p.spendingTotal,
+            'periodic': p.periodic,
+            'toSavings': p.toSavingsTotal,
+            'card': p.cardTotal,
+            'installments': p.installmentsTotal,
+            'oneOffs': p.oneOffTotal,
+            'installmentsAfter': p.installmentsAfterThisMonth,
+            'cardEstimated': p.cardEstimated,
+          };
+      final months = <Map<String, dynamic>>[
+        for (var o = -3; o <= 2; o++)
+          pic(MonthPicture.of(f, addMonths(now, o).year, addMonths(now, o).month)),
+        for (final r in f.history)
+          pic(MonthPicture.of(f, r.year, r.month, budgetOverride: Budget(JObj(r.json['budget'] as Json))), record: true),
+      ];
       files[m.id] = {
+        'months': months,
         'gross': b.gross,
         'net': b.net,
         'totalDeductions': b.totalDeductions,
@@ -54,7 +76,21 @@ void main() {
       for (final k in (d[id] as Map).keys) {
         final dv = d[id][k];
         final sv = s[id][k];
-        if (dv is List) {
+        if (k == 'months') {
+          final sm = sv as List;
+          expect(sm.length, (dv as List).length, reason: 'months');
+          for (var i = 0; i < dv.length; i++) {
+            for (final mk in (dv[i] as Map).keys) {
+              final a = dv[i][mk], b = sm[i][mk];
+              final reason = 'month ${dv[i]['key']}${dv[i]['record'] == true ? ' (saved)' : ''} $mk';
+              if (a is bool) {
+                expect(b, a, reason: reason);
+              } else {
+                expect((b as num).toDouble(), closeTo((a as num).toDouble(), 0.01), reason: reason);
+              }
+            }
+          }
+        } else if (dv is List) {
           expect((sv as List).length, dv.length, reason: k);
           for (var i = 0; i < dv.length; i++) {
             expect((sv[i] as num).toDouble(), closeTo((dv[i] as num).toDouble(), 0.01), reason: '$k[$i]');

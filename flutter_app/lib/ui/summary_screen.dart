@@ -4,6 +4,7 @@ import '../data/fmt.dart';
 import '../data/json.dart';
 import '../data/models.dart';
 import '../data/money_calc.dart';
+import '../data/month_picture.dart';
 import 'common.dart';
 
 /// The current month: from gross to net, where the net goes, and what's left — like SummaryView.swift.
@@ -18,12 +19,12 @@ class SummaryScreen extends StatelessWidget {
       final money = store.money;
       final calc = MoneyCalc(money.primeRate);
       final now = DateTime.now();
-      final remaining = b.remaining;
+      // The same number as "נשאר בסוף החודש" in the iPhone/Mac app.
+      final pic = MonthPicture.of(store.file, now.year, now.month);
+      final remaining = pic.remaining;
       final members = store.members;
       final positive = remaining >= 0;
-
-      final thisMonth = money.transactions.where((t) => t.date.year == now.year && t.date.month == now.month).toList()
-        ..sort((a, c) => a.date.compareTo(c.date));
+      final error = theme.colorScheme.error;
 
       return PageList(children: [
         Card(
@@ -50,28 +51,44 @@ class SummaryScreen extends StatelessWidget {
           const Divider(indent: 16, endIndent: 16),
           AmountRow('נטו', b.net, bold: true),
         ]),
-        SectionCard(title: 'לאן הולך הנטו', children: [
-          for (final e in b.expenses.where((e) => e.isActive))
-            AmountRow(e.name, e.amount(b.expenseBase),
-                negative: true,
-                detail: e.targetAccountID != null ? 'עובר ל${money.account(e.targetAccountID)?.name ?? 'חשבון'}' : null),
-          if (b.periodicTotal > 0)
-            AmountRow('קניות חוזרות (ממוצע לחודש)', b.periodicTotal, negative: true),
-          const Divider(indent: 16, endIndent: 16),
-          AmountRow('נשאר', remaining, bold: true, color: positive ? null : theme.colorScheme.error),
-        ]),
+        SectionCard(
+          title: 'מה נשאר בסוף החודש',
+          subtitle: 'הנטו, פחות הוצאות קבועות, קניות חוזרות, חיסכון ואשראי, ועם התנועות החד-פעמיות',
+          children: [
+            AmountRow(pic.isActual ? 'נטו בפועל (מהתלוש)' : 'נטו משוער', pic.net, bold: true),
+            if (pic.spending.isNotEmpty) ...[
+              _Header('הוצאות קבועות', pic.spendingTotal),
+              for (final l in pic.spending) AmountRow(l.title, l.amount, negative: true),
+            ],
+            if (pic.periodic > 0) AmountRow('קניות חוזרות (ממוצע לחודש)', pic.periodic, negative: true),
+            if (pic.toSavings.isNotEmpty) ...[
+              _Header('לחיסכון', pic.toSavingsTotal),
+              for (final l in pic.toSavings) AmountRow(l.title, l.amount, negative: true),
+            ],
+            if (pic.card.isNotEmpty) ...[
+              _Header(pic.cardEstimated ? 'אשראי (הערכה — הפירוט של החודש עוד לא יובא)' : 'אשראי', pic.cardTotal),
+              for (final l in pic.card) AmountRow(l.title, l.amount, negative: true),
+            ],
+            if (pic.installments.isNotEmpty) ...[
+              _Header('תשלומים באשראי', pic.installmentsTotal),
+              for (final l in pic.installments) AmountRow(l.title, l.amount, negative: true, detail: l.detail),
+            ],
+            if (pic.oneOffs.isNotEmpty) ...[
+              _Header('תנועות החודש', pic.oneOffTotal),
+              for (final l in pic.oneOffs) AmountRow(l.title, l.amount.abs(), negative: l.amount < 0),
+            ],
+            const Divider(indent: 16, endIndent: 16),
+            AmountRow('נשאר', remaining, bold: true, color: positive ? null : error),
+            if (pic.installmentsAfterThisMonth > 0)
+              AmountRow('תשלומים שנשארו לחודשים הבאים', pic.installmentsAfterThisMonth,
+                  detail: 'לא יורד החודש — מוצג לידיעה'),
+          ],
+        ),
         SectionCard(title: 'הכסף שלך עכשיו', subtitle: 'הערכה לפי היתרות שעדכנת והתנועות מאז', children: [
           AmountRow('עו״ש', calc.total(money, {AccountKind.checking})),
           AmountRow('חסכונות ופיקדונות', calc.total(money, {AccountKind.savings, AccountKind.deposit})),
           AmountRow('פנסיה', calc.total(money, {AccountKind.pension})),
         ]),
-        if (thisMonth.isNotEmpty)
-          SectionCard(title: 'תנועות החודש', children: [
-            for (final t in thisMonth)
-              AmountRow(t.title, t.amount,
-                  negative: t.kind == TransactionKind.expense,
-                  detail: '${Fmt.date(t.date)}${t.isPlanned ? ' · מתוכנן' : ''}${t.paidByCard ? ' · באשראי' : ''}'),
-          ]),
         if (members.length > 1)
           SectionCard(title: 'נטו לפי בן משפחה', subtitle: 'כל אחד לפי התלוש שלו', children: [
             for (final m in members)
@@ -145,6 +162,25 @@ class SummaryScreen extends StatelessWidget {
           });
         }
       }),
+    );
+  }
+}
+
+/// A sub-heading inside the month breakdown, with its total.
+class _Header extends StatelessWidget {
+  const _Header(this.title, this.total);
+  final String title;
+  final double total;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Row(children: [
+        Expanded(child: Text(title, style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary))),
+        Text(Fmt.money(total.abs()), textDirection: TextDirection.rtl, style: theme.textTheme.labelLarge),
+      ]),
     );
   }
 }

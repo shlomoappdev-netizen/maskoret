@@ -538,6 +538,9 @@ class MoneyData {
   MoneyData(this._o);
   final JObj _o;
 
+  /// The money object itself (read-only use: card charges, receivables…).
+  Json get raw => _o.readMap ?? <String, dynamic>{};
+
   List<Account> get accounts => _o.objects('accounts').map(Account.new).toList();
   List<MoneyTransaction> get transactions => _o.objects('transactions').map(MoneyTransaction.new).toList();
   double get primeRate => _o.d('primeRate', 4.75);
