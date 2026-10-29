@@ -14,3 +14,8 @@ DerivedData/
 # Flutter (flutter_app/ has its own .gitignore too)
 flutter_app/build/
 flutter_app/.dart_tool/
+
+# Secrets kept by hand (Google client secret, a copy of the Android signing key) — never in git
+חשוב/
+*.jks
+client_secret_*.json

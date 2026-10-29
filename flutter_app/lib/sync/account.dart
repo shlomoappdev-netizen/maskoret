@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -195,9 +196,32 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
   /// Where the browser sends the user back after signing in with Google (a deep link into the app).
   static const oauthRedirect = 'com.shlomodavid.maskoret://login-callback';
 
-  /// Opens Google's sign-in page in the browser. The result arrives through the deep link,
-  /// and the auth listener above picks up the new session.
-  Future<void> signInWithGoogle() async {
+  /// The "Web application" OAuth client that Supabase uses (Google Cloud project "maskoret"). Public value.
+  static const googleWebClientId = '1016917355558-6e7hfthnuq6tp3s945gvpnsl1fom4jvh.apps.googleusercontent.com';
+
+  static bool _googleReady = false;
+
+  /// Signs in with Google. Returns true when signed in right away (Android: the system's own Google sheet,
+  /// which shows the app's name), false when it continues in the browser (Windows: the result comes back
+  /// through the deep link and the auth listener above picks up the session). Throws when cancelled.
+  Future<bool> signInWithGoogle() async {
+    if (Platform.isAndroid) {
+      final google = GoogleSignIn.instance;
+      if (!_googleReady) {
+        await google.initialize(serverClientId: googleWebClientId);
+        _googleReady = true;
+      }
+      final account = await google.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null) throw const AuthException('google: no id token');
+      await _c.auth.signInWithIdToken(provider: OAuthProvider.google, idToken: idToken);
+      return true;
+    }
+    await _openGoogleInBrowser();
+    return false;
+  }
+
+  Future<void> _openGoogleInBrowser() async {
     final opened = await _c.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: oauthRedirect,
@@ -322,6 +346,11 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
       return 'ההתחברות עם Google עוד לא הופעלה בשרת.';
     }
     if (text.contains('could not open the browser')) return 'לא ניתן לפתוח את הדפדפן.';
+    if (error is GoogleSignInException) {
+      return error.code == GoogleSignInExceptionCode.canceled
+          ? 'ההתחברות עם Google בוטלה.'
+          : 'ההתחברות עם Google נכשלה. נסה שוב, או התחבר עם מייל וסיסמה.';
+    }
     if (text.contains('invalid email') || text.contains('unable to validate email')) return 'כתובת המייל לא תקינה.';
     final message = error is AuthException
         ? error.message

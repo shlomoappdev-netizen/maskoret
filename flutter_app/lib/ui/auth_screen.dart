@@ -236,8 +236,12 @@ class _AuthScreenState extends State<AuthScreen> {
                         onPressed: busy
                             ? null
                             : () => _go(() async {
-                                  await account.signInWithGoogle();
-                                  info = 'ממשיכים בדפדפן — אחרי הבחירה בחשבון Google חוזרים לאפליקציה לבד.';
+                                  final done = await account.signInWithGoogle();
+                                  if (done) {
+                                    widget.onDone?.call();
+                                  } else {
+                                    info = 'ממשיכים בדפדפן — אחרי הבחירה בחשבון Google חוזרים לאפליקציה לבד.';
+                                  }
                                 }),
                       ),
                       const SizedBox(height: 8),
