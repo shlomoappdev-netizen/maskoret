@@ -46,6 +46,15 @@ final class ServerSync: ObservableObject {
 
     var hasUnsyncedChanges: Bool { localChangedAt != nil }
 
+    /// Posted when another account signs in on this device and the previous account's data is cleared off it.
+    static let deviceDataCleared = Notification.Name("maskoretDeviceDataCleared")
+
+    /// The account whose data is in the local files. nil = data from before accounts existed (the device owner's).
+    private var dataOwner: UUID? {
+        get { UserDefaults.standard.string(forKey: "syncDataOwner").flatMap(UUID.init) }
+        set { UserDefaults.standard.set(newValue?.uuidString, forKey: "syncDataOwner") }
+    }
+
     init() {
         lastSync = UserDefaults.standard.object(forKey: "syncLastSync") as? Date
     }
@@ -58,6 +67,13 @@ final class ServerSync: ObservableObject {
         store.onDataChange = { [weak self] in
             MainActor.assumeIsolated { self?.localDidChange() }
         }
+        store.encryptLocalCopyIfNeeded()
+        #if os(iOS)
+        // Old versions kept backups in the app's Documents folder; once this device has synced, versions live on the server.
+        if dataOwner != nil {
+            try? FileManager.default.removeItem(at: Platform.homeDirectory.appendingPathComponent("גיבויים", isDirectory: true))
+        }
+        #endif
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.sync() }
         }
@@ -73,6 +89,10 @@ final class ServerSync: ObservableObject {
             status = ""
             return
         }
+        // Another account's data must never reach this one (a shared device, or "sign out and keep the data").
+        if let owner = dataOwner, let me = account.userID, owner != me {
+            clearDeviceForNewAccount(me)
+        }
         // The households list may still be loading.
         if account.households.isEmpty { await account.refreshHouseholds() }
 
@@ -83,11 +103,10 @@ final class ServerSync: ObservableObject {
         // The chosen household is gone (deleted, or this user was removed): keep the data, stop syncing it.
         if let linked = linkedHouseholdID, !account.households.contains(where: { $0.id == linked }) {
             // Its data stays on the device as a backup before another household is shown.
-            _ = try? store?.backupNow(suffix: " (משק בית שכבר לא זמין)")
             unlink(keepingData: true)
             if let first = account.households.first {
                 await switchTo(first.id, cacheCurrent: false)
-                lastError = "משק הבית הקודם כבר לא זמין לך (נמחק או שהוסרת ממנו). עותק של הנתונים שלו נשמר במסך ״גיבוי ושחזור״."
+                lastError = "משק הבית הקודם כבר לא זמין לך (נמחק או שהוסרת ממנו)."
             } else {
                 // No household on this account (e.g. a new server): this device's data becomes its household.
                 await createHousehold(name: "משק הבית שלי", from: store?.familyBackup)
@@ -108,7 +127,6 @@ final class ServerSync: ObservableObject {
     private func linkLocalData() async {
         guard let account, let store else { return }
         // Whatever happens next, this device's data is kept as a backup first.
-        if !ServerSync.isEmpty(store) { _ = try? store.backupNow(suffix: " (לפני חיבור לחשבון)") }
         if account.households.isEmpty {
             // New account: this device's data becomes their first household.
             await createHousehold(name: "משק הבית שלי", from: store.familyBackup)
@@ -126,8 +144,10 @@ final class ServerSync: ObservableObject {
         if uploadAsNew {
             await createHousehold(name: "משק הבית שלי (מהמכשיר)", from: store.familyBackup)
         } else {
-            _ = try? store.backupNow(suffix: " (לפני חיבור לחשבון)")
-            await switchTo(account.activeHouseholdID ?? account.households[0].id, cacheCurrent: false)
+            // This device's data joins the household's version history on the server before it's replaced.
+            let target = account.activeHouseholdID ?? account.households[0].id
+            await uploadVersion(store.familyBackup, to: target, note: "הנתונים שהיו במכשיר לפני החיבור לחשבון")
+            await switchTo(target, cacheCurrent: false)
         }
     }
 
@@ -182,14 +202,33 @@ final class ServerSync: ObservableObject {
     }
 
     /// Signing out: optionally clear this device's copy (it stays on the server).
-    func signedOut(clearDevice: Bool) async {
+    /// Signing out (or deleting the account): last changes go up, then the encrypted copy on this device is deleted.
+    func signedOut() async {
         await sync()
         await stopListening()
-        unlink(keepingData: !clearDevice)
-        if clearDevice, let store {
-            apply(ServerSync.emptyFamily(rates: store), backupFirst: true)
-            ServerSync.clearCaches()
-        }
+        wipeDevice()
+    }
+
+    /// Nothing of this account stays on the device: the encrypted files and their key are deleted,
+    /// and the screen shows an empty household until someone signs in.
+    private func wipeDevice() {
+        unlink(keepingData: false)
+        SecureFile.wipeAll()
+        if let store { apply(ServerSync.emptyFamily(rates: store), backupFirst: false) }
+        dataOwner = nil
+        UserDefaults.standard.removeObject(forKey: "activeHouseholdID")
+        UserDefaults.standard.removeObject(forKey: "syncLastSync")
+        lastSync = nil
+        status = ""
+        lastError = nil
+        NotificationCenter.default.post(name: ServerSync.deviceDataCleared, object: nil)
+    }
+
+    /// The previous account's data leaves the screen (kept as a local backup on this device),
+    /// and the new account starts from its own households, or from nothing.
+    private func clearDeviceForNewAccount(_ newOwner: UUID) {
+        wipeDevice()
+        dataOwner = newOwner
     }
 
     private func unlink(keepingData: Bool) {
@@ -261,7 +300,7 @@ final class ServerSync: ObservableObject {
                 let remoteDate = ISO8601DateFormatter.flexible(remote.updated_at) ?? .distantPast
                 if let mine = localChangedAt, mine > remoteDate {
                     // Both changed, this device is newer: keep the server's version as a backup, then save ours.
-                    saveAsBackup(remote.data, date: remoteDate, suffix: " (מ-\(remote.device ?? "מכשיר אחר") לפני סנכרון)")
+                    // The server's version stays in its history automatically when ours replaces it.
                     try await push(store, hid: hid, expected: remote.revision)
                 } else {
                     apply(remote.data, backupFirst: localChangedAt != nil)
@@ -317,6 +356,8 @@ final class ServerSync: ObservableObject {
     }
 
     private func markSynced(_ message: String) {
+        // From now on the data on this device belongs to this account.
+        if let me = account?.userID { dataOwner = me }
         status = message
         lastError = nil
         lastSync = Date()
@@ -327,7 +368,11 @@ final class ServerSync: ObservableObject {
 
     private func apply(_ remote: FamilyBackup, backupFirst: Bool) {
         guard let store else { return }
-        if backupFirst { _ = try? store.backupNow(suffix: " (לפני סנכרון)") }
+        // The version being replaced goes to the server's history (not to a file on the device).
+        if backupFirst, let hid = linkedHouseholdID {
+            let current = store.familyBackup
+            Task { await uploadVersion(current, to: hid, note: "גרסה מהמכשיר שהוחלפה בסנכרון") }
+        }
         var family = remote
         guard !family.state.members.isEmpty else { return }
         // Which member is being edited / shown is per device.
@@ -342,17 +387,46 @@ final class ServerSync: ObservableObject {
         applyingRemote = false
     }
 
-    private func saveAsBackup(_ family: FamilyBackup, date: Date, suffix: String) {
-        let folder = Store.backupFolder
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        guard let data = family.files[family.state.primaryID.uuidString] ?? family.files.values.first else { return }
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let backup = BackupFile(appVersion: version, createdAt: date, data: data,
-                                family: family.state.members.count > 1 ? family : nil)
-        if let json = try? JSONEncoder().encode(backup) {
-            try? json.write(to: folder.appendingPathComponent(Store.backupFileName(suffix: suffix)), options: .atomic)
+    /// Adds a version to the household's history on the server (newest 30 are kept).
+    func uploadVersion(_ family: FamilyBackup, to hid: UUID, note: String) async {
+        struct Params: Encodable { let hid: UUID; let p_data: AnyJSON; let p_device: String; let p_note: String }
+        do {
+            try await supabase.rpc("save_household_snapshot", params: Params(
+                hid: hid, p_data: try .appJSON(family), p_device: Platform.deviceName, p_note: note)).execute()
+        } catch {
+            lastError = UserAccount.describe(error)
         }
     }
+
+    // MARK: Version history (replaces local backups)
+
+    struct Version: Decodable, Identifiable {
+        let id: Int64
+        let revision: Int64
+        let saved_at: String
+        let device: String?
+        let note: String?
+        var date: Date? { ISO8601DateFormatter.flexible(saved_at) }
+    }
+
+    /// The household's previous versions on the server, newest first (without their data).
+    func versions() async throws -> [Version] {
+        guard let hid = linkedHouseholdID else { return [] }
+        return try await supabase.from("household_snapshots").select("id,revision,saved_at,device,note")
+            .eq("household_id", value: hid).order("saved_at", ascending: false).decoded([Version].self)
+    }
+
+    /// Brings back an earlier version: it becomes the current one on every device (what's there now joins the history).
+    func restore(_ version: Version) async throws {
+        struct Row: Decodable { let data: FamilyBackup }
+        let row = try await supabase.from("household_snapshots").select("data").eq("id", value: Int(version.id))
+            .single().decoded(Row.self)
+        apply(row.data, backupFirst: false)
+        localChangedAt = Date()
+        await sync()
+    }
+
+    var linkedHouseholdIDForDisplay: UUID? { linkedHouseholdID }
 
     /// A fresh household: one member ("אני"), starter budget, the current tax rates.
     static func emptyFamily(rates store: Store) -> FamilyBackup {

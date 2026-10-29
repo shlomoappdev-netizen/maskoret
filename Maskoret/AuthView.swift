@@ -29,6 +29,25 @@ struct AuthView: View {
                     .labelsHidden()
                 }
             }
+            if mode == .signIn || mode == .signUp {
+                Section {
+                    Button {
+                        run {
+                            if try await account.signInWithGoogle() { onDone() }
+                        }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text(verbatim: "G").font(.headline.weight(.bold)).foregroundStyle(.blue)
+                            Text("המשך עם Google")
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                } footer: {
+                    Text("או עם מייל וסיסמה:")
+                }
+            }
             switch mode {
             case .signIn: signInSection
             case .signUp: signUpSection

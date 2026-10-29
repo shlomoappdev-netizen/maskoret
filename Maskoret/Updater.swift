@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import CryptoKit
 
 /// Describes the version waiting in the project folder (written together with the new source code).
 struct ReleaseInfo: Codable, Equatable {
@@ -64,9 +65,31 @@ final class Updater: ObservableObject {
 
     // MARK: Checking
 
+    /// Where everyone else's Mac gets updates: the public releases page.
+    static let releasesManifest = URL(string: "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json")!
+
+    private struct Manifest: Decodable {
+        struct Asset: Decodable { let url: URL; let sha256: String; let size: Int? }
+        let version: String
+        let build: Int
+        let date: String?
+        let notes: [String]
+        let platforms: [String: Asset]
+    }
+
+    /// The Mac download of the newest release (when updating from the server).
+    private var remoteMac: Manifest.Asset?
+
+    /// No project folder on this Mac → updates come from the server (a ready-made build), not from source.
+    var updatesFromServer: Bool { !hasProject }
+
     func check() {
         guard !isBusy else { return }
         lastCheck = Date()
+        if updatesFromServer {
+            checkServer()
+            return
+        }
         let url = folder.appendingPathComponent("version.json")
         guard let data = try? Data(contentsOf: url),
               let info = try? JSONDecoder().decode(ReleaseInfo.self, from: data) else {
@@ -80,6 +103,73 @@ final class Updater: ObservableObject {
         message = updateAvailable
             ? "גרסה \(info.version) מוכנה להתקנה"
             : "יש לך את הגרסה העדכנית"
+    }
+
+    private func checkServer() {
+        var request = URLRequest(url: Updater.releasesManifest)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+            let manifest = data.flatMap { try? JSONDecoder().decode(Manifest.self, from: $0) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let manifest, let mac = manifest.platforms["mac"] else {
+                    self.message = "לא ניתן לבדוק עדכונים כרגע (אין חיבור לשרת)"
+                    return
+                }
+                self.remoteMac = mac
+                self.latest = ReleaseInfo(version: manifest.version, build: manifest.build, date: manifest.date, notes: manifest.notes)
+                self.message = self.updateAvailable ? "גרסה \(manifest.version) זמינה להורדה" : "יש לך את הגרסה העדכנית"
+            }
+        }.resume()
+    }
+
+    /// Downloads the newest Mac build, checks it's the exact published file, and installs it like a local build.
+    private func downloadAndInstall() {
+        guard let asset = remoteMac else {
+            phase = .failed("לא נמצאה גרסה להורדה. נסה ״בדוק עכשיו״.")
+            return
+        }
+        phase = .installing
+        log = ["מוריד את הגרסה החדשה…"]
+        URLSession.shared.downloadTask(with: asset.url) { [weak self] file, _, error in
+            guard let self else { return }
+            let fail: (String) -> Void = { text in DispatchQueue.main.async { self.phase = .failed(text) } }
+            guard let file, error == nil, let data = try? Data(contentsOf: file) else {
+                fail("ההורדה נכשלה: " + (error?.localizedDescription ?? "בדוק את החיבור לאינטרנט"))
+                return
+            }
+            let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            guard digest == asset.sha256.lowercased() else {
+                fail("הקובץ שהורד לא תואם לגרסה שפורסמה — ההתקנה בוטלה.")
+                return
+            }
+            let fm = FileManager.default
+            let work = fm.temporaryDirectory.appendingPathComponent("maskoret-update-\(UUID().uuidString)", isDirectory: true)
+            let mount = work.appendingPathComponent("mnt", isDirectory: true)
+            let stage = work.appendingPathComponent("app", isDirectory: true)
+            let dmg = work.appendingPathComponent("update.dmg")
+            do {
+                try fm.createDirectory(at: mount, withIntermediateDirectories: true)
+                try fm.createDirectory(at: stage, withIntermediateDirectories: true)
+                try data.write(to: dmg)
+            } catch {
+                fail("לא ניתן לשמור את ההורדה: " + error.localizedDescription)
+                return
+            }
+            _ = Updater.output("/usr/bin/hdiutil", ["attach", dmg.path, "-nobrowse", "-readonly", "-mountpoint", mount.path])
+            let apps = ((try? fm.contentsOfDirectory(at: mount, includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension == "app" }
+            if let app = apps.first {
+                _ = Updater.output("/usr/bin/ditto", [app.path, stage.appendingPathComponent(app.lastPathComponent).path])
+            }
+            _ = Updater.output("/usr/bin/hdiutil", ["detach", mount.path, "-force"])
+            DispatchQueue.main.async {
+                if apps.isEmpty {
+                    self.phase = .failed("לא נמצאה אפליקציה בקובץ שהורד.")
+                } else {
+                    self.installBuilt(from: stage)
+                }
+            }
+        }.resume()
     }
 
     func chooseFolder() {
@@ -224,6 +314,10 @@ final class Updater: ObservableObject {
     /// Builds the source in the project folder (Release) and installs it to /Applications.
     func buildAndInstall() {
         guard !isBusy else { return }
+        if updatesFromServer {
+            downloadAndInstall()
+            return
+        }
         guard hasProject else {
             phase = .failed("לא נמצא Maskoret.xcodeproj בתיקייה \(folder.path)")
             return
@@ -320,7 +414,7 @@ final class Updater: ObservableObject {
         for i in $(seq 1 150); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
         rm -rf "$DST"
         /usr/bin/ditto "$SRC" "$DST" && /usr/bin/open "$DST"
-        \(Updater.dmgScript(app: "$DST", outDir: "$4", volume: "$5"))
+        \(hasProject ? Updater.dmgScript(app: "$DST", outDir: "$4", volume: "$5") : "")
         """
         let scriptURL = FileManager.default.temporaryDirectory.appendingPathComponent("maskoret-install.sh")
         do {

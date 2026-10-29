@@ -27,15 +27,13 @@ struct PhoneRoot: View {
                 .tag(SidebarItem.updates)
         }
         .task {
-            store.autoBackupIfNeeded()
             await store.refreshRates()
             await store.refreshPrime()
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
-                store.autoBackupIfNeeded()
-                Task { await sync.sync() }
+                    Task { await sync.sync() }
                 Task { await store.refreshPrime() }
             case .background:
                 // Push the last changes before iOS suspends the app.

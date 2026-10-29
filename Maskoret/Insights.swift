@@ -305,20 +305,27 @@ final class InsightsEngine: ObservableObject {
         cloudModel = UserDefaults.standard.string(forKey: "aiCloudModel") ?? ""
         manualSite = UserDefaults.standard.string(forKey: "aiManualSite") ?? ManualSite.all[0].name
         autoInsights = UserDefaults.standard.object(forKey: "aiAuto") as? Bool ?? true
-        if let data = try? Data(contentsOf: InsightsEngine.fileURL),
+        if let data = SecureFile.read(InsightsEngine.fileURL),
            let saved = try? JSONDecoder().decode([InsightMessage].self, from: data) {
             messages = saved
         }
+        // The AI conversation talks about the previous account's money — it goes with it.
+        NotificationCenter.default.addObserver(forName: ServerSync.deviceDataCleared, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.clear()
+                try? FileManager.default.removeItem(at: InsightsEngine.fileURL)
+            }
+        }
     }
 
-    static var fileURL: URL {
+    nonisolated static var fileURL: URL {
         Store.fileURL.deletingLastPathComponent().appendingPathComponent("insights.json")
     }
 
     private func save() {
         let trimmed = Array(messages.suffix(200))
         if let data = try? JSONEncoder().encode(trimmed) {
-            try? data.write(to: InsightsEngine.fileURL, options: .atomic)
+            try? SecureFile.write(data, to: InsightsEngine.fileURL)
         }
     }
 

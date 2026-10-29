@@ -80,7 +80,7 @@ final class Store: ObservableObject {
     }
 
     static func readFile(_ url: URL) -> SaveFile? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = SecureFile.read(url) else { return nil }
         return try? JSONDecoder().decode(SaveFile.self, from: data)
     }
 
@@ -129,7 +129,7 @@ final class Store: ObservableObject {
         let file = SaveFile(budget: budget, history: history, ratesURL: ratesURL, lastRatesCheck: lastRatesCheck, money: money)
         do {
             let data = try JSONEncoder().encode(file)
-            try data.write(to: fileURL(for: activeMemberID), options: [.atomic])
+            try SecureFile.write(data, to: fileURL(for: activeMemberID))
             onDataChange?()
         } catch {
             print("Save failed: \(error)")

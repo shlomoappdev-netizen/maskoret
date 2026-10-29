@@ -56,23 +56,22 @@ struct AccountView: View {
                 InviteSheet(invite: box.invite, householdName: account.activeHousehold?.name ?? "")
             }
             .confirmationDialog("להתנתק?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-                Button("התנתק והשאר את הנתונים במכשיר") { signOut(clearDevice: false) }
-                Button("התנתק ומחק את הנתונים מהמכשיר", role: .destructive) { signOut(clearDevice: true) }
+                Button("התנתק", role: .destructive) { signOut() }
                 Button("ביטול", role: .cancel) {}
             } message: {
-                Text("הנתונים נשארים שמורים בשרת. אם תמחק אותם מהמכשיר, נשמר קודם גיבוי מקומי.")
+                Text("הנתונים שמורים בשרת. העותק המוצפן שבמכשיר יימחק, ובהתחברות הבאה הנתונים ייטענו מהשרת.")
             }
             .confirmationDialog("לצאת ממשק הבית?", isPresented: $confirmLeave, titleVisibility: .visible) {
                 Button("צא ממשק הבית", role: .destructive) { act { if let id = account.activeHouseholdID { try await account.leave(id) } } }
                 Button("ביטול", role: .cancel) {}
             } message: {
-                Text("לא תוכל לראות יותר את הנתונים שלו (עותק נשאר במכשיר). כדי לחזור צריך הזמנה חדשה.")
+                Text("לא תוכל לראות יותר את הנתונים שלו. כדי לחזור צריך הזמנה חדשה.")
             }
             .confirmationDialog("למחוק את משק הבית?", isPresented: $confirmDeleteHousehold, titleVisibility: .visible) {
                 Button("מחק לכל החברים", role: .destructive) { act { if let id = account.activeHouseholdID { try await account.delete(id) } } }
                 Button("ביטול", role: .cancel) {}
             } message: {
-                Text("משק הבית והנתונים שלו יימחקו מהשרת לכל החברים. עותק נשאר במכשיר הזה.")
+                Text("משק הבית, הנתונים שלו וכל הגרסאות הקודמות יימחקו מהשרת לכל החברים. אי אפשר לבטל את זה.")
             }
             .confirmationDialog("להסיר את \(removing?.title ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                                 titleVisibility: .visible, presenting: removing) { m in
@@ -91,7 +90,7 @@ struct AccountView: View {
                 Button("מחק את החשבון", role: .destructive) { deleteAccount() }
                 Button("ביטול", role: .cancel) {}
             } message: {
-                Text("הנתונים במכשיר הזה נשמרים כגיבוי. אחרי המחיקה אפשר לפתוח חשבון חדש.")
+                Text("כל הנתונים שלך יימחקו מהשרת ומהמכשיר הזה.")
             }
         }
     }
@@ -219,6 +218,23 @@ struct AccountView: View {
                 RateLine(title: "שם", value: account.displayName.isEmpty ? "—" : account.displayName)
                 Button("שנה") { editingName = true }.linkButtonStyle()
             }
+            HStack {
+                Label("התחברות עם Google", systemImage: account.hasGoogle ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(account.hasGoogle ? Color.green : Color.secondary)
+                Spacer()
+                if account.hasGoogle {
+                    if account.signInMethods.count > 1 {
+                        Button("נתק") { act { try await account.unlinkGoogle() } }
+                            .linkButtonStyle()
+                    }
+                } else {
+                    Button("חבר חשבון Google") {
+                        act {
+                            if try await account.linkGoogle() { message = "חשבון ה-Google חובר. מעכשיו אפשר להתחבר גם דרכו." }
+                        }
+                    }
+                }
+            }
             Button("שינוי סיסמה…") { changingPassword = true }
             Button("התנתק") { confirmSignOut = true }
             Button("מחיקת החשבון…", role: .destructive) { confirmDeleteAccount = true }
@@ -239,16 +255,16 @@ struct AccountView: View {
         }
     }
 
-    private func signOut(clearDevice: Bool) {
+    private func signOut() {
         Task {
-            await sync.signedOut(clearDevice: clearDevice)
+            await sync.signedOut()
             await account.signOut()
         }
     }
 
     private func deleteAccount() {
         Task {
-            await sync.signedOut(clearDevice: false)
+            await sync.signedOut()
             do { try await account.deleteAccount() } catch { message = UserAccount.describe(error) }
         }
     }

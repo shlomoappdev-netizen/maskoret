@@ -442,10 +442,11 @@ struct SaveMonthSheet: View {
 
             Section {
                 BreakdownLine(title: "נטו", value: store.budget.net)
+                let remaining = store.monthPicture.remaining
                 BreakdownLine(
-                    title: "יתרה",
-                    value: store.budget.remaining,
-                    color: store.budget.remaining >= 0 ? .green : .red
+                    title: "נשאר בסוף החודש",
+                    value: remaining,
+                    color: remaining >= 0 ? .green : .red
                 )
             } footer: {
                 if exists {

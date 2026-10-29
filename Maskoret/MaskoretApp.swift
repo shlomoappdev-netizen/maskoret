@@ -67,7 +67,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .tax: return "נתוני מס"
         case .account: return "חשבון ומשק בית"
         case .admin: return "ניהול משתמשים"
-        case .backup: return "גיבוי ושחזור"
+        case .backup: return "גרסאות קודמות"
         case .updates: return "עדכונים"
         }
     }
@@ -91,7 +91,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .tax: return "slider.horizontal.3"
         case .account: return "person.crop.circle"
         case .admin: return "person.2.badge.gearshape"
-        case .backup: return "externaldrive.fill"
+        case .backup: return "clock.arrow.circlepath"
         case .updates: return "arrow.down.circle"
         }
     }
@@ -217,13 +217,11 @@ struct ContentView: View {
         }
         .task {
             updater.check()
-            store.autoBackupIfNeeded()
             await store.refreshRates()
             await store.refreshPrime()
         }
         .onReceive(NotificationCenter.default.publisher(for: Platform.didBecomeActive)) { _ in
             updater.check()
-            store.autoBackupIfNeeded()
             Task { await sync.sync() }
             Task { await store.refreshPrime() }
         }

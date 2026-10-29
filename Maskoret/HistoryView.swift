@@ -19,9 +19,14 @@ struct HistoryView: View {
         return store.history.reduce(0) { $0 + $1.budget.net } / Double(store.history.count)
     }
 
-    private var averageRemaining: Double {
-        guard !store.history.isEmpty else { return 0 }
-        return store.history.reduce(0) { $0 + $1.budget.remaining } / Double(store.history.count)
+    /// What was left at the end of each saved month — the same number as "נשאר בסוף החודש" in the summary.
+    private var results: [UUID: MonthPicture] {
+        Dictionary(uniqueKeysWithValues: store.history.map { ($0.id, store.monthResult($0)) })
+    }
+
+    private func averageRemaining(_ results: [UUID: MonthPicture]) -> Double {
+        guard !results.isEmpty else { return 0 }
+        return results.values.reduce(0) { $0 + $1.remaining } / Double(results.count)
     }
 
     var body: some View {
@@ -37,6 +42,7 @@ struct HistoryView: View {
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
+                    let results = self.results
                     ScrollView {
                         VStack(spacing: 16) {
                             PageBar(title: "חודשים", subtitle: "הנטו שנכנס בפועל בכל חודש, מול ההערכה") {
@@ -52,12 +58,12 @@ struct HistoryView: View {
                                 Card {
                                     Text("מגמה — 12 החודשים האחרונים")
                                         .font(.headline)
-                                    HistoryChart(records: chartRecords)
+                                    HistoryChart(records: chartRecords, remaining: { results[$0.id]?.remaining ?? 0 })
                                         .frame(height: 240)
                                 }
                                 VStack(spacing: 12) {
                                     StatTile(title: actuals.isEmpty ? "נטו ממוצע (משוער)" : "נטו ממוצע בפועל", value: Fmt.moneyRounded(averageNet), icon: "banknote")
-                                    StatTile(title: "יתרה ממוצעת", value: Fmt.moneyRounded(averageRemaining), icon: "chart.line.uptrend.xyaxis")
+                                    StatTile(title: "נשאר בממוצע בסוף חודש", value: Fmt.moneyRounded(averageRemaining(results)), icon: "chart.line.uptrend.xyaxis")
                                     StatTile(title: "חודשים שמורים", value: "\(store.history.count)", icon: "calendar")
                                 }
                                 .regularWidth(220)
@@ -70,7 +76,7 @@ struct HistoryView: View {
                                     Button {
                                         selected = record
                                     } label: {
-                                        HistoryRow(record: record)
+                                        HistoryRow(record: record, remaining: results[record.id]?.remaining ?? record.budget.remaining)
                                     }
                                     .buttonStyle(.plain)
                                     .rowMenu(onEdit: { selected = record }) {
@@ -80,6 +86,11 @@ struct HistoryView: View {
                                         Divider()
                                     }
                                 }
+                                Text("״נשאר״ = מה שנשאר בעו״ש בסוף החודש — אותו חישוב כמו ״נשאר בסוף החודש״ בסיכום: הנטו (בפועל אם נרשם, אחרת משוער), פחות הוצאות קבועות, רכישות תקופתיות, חיובי אשראי משתנים והעברות לחיסכון, ועם תנועות חד-פעמיות. לחיצה על חודש מציגה את הפירוט.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.top, 4)
                             }
                         }
                         .padding(20)
@@ -104,6 +115,7 @@ struct HistoryView: View {
 
 struct HistoryChart: View {
     let records: [MonthRecord]
+    let remaining: (MonthRecord) -> Double
 
     var body: some View {
         Chart {
@@ -117,13 +129,13 @@ struct HistoryChart: View {
 
                 BarMark(
                     x: .value("חודש", record.shortTitle),
-                    y: .value("סכום", record.budget.remaining)
+                    y: .value("סכום", remaining(record))
                 )
-                .foregroundStyle(by: .value("סוג", "יתרה"))
-                .position(by: .value("סוג", "יתרה"))
+                .foregroundStyle(by: .value("סוג", "נשאר בסוף החודש"))
+                .position(by: .value("סוג", "נשאר בסוף החודש"))
             }
         }
-        .chartForegroundStyleScale(["נטו": Color.blue, "יתרה": Color.green])
+        .chartForegroundStyleScale(["נטו": Color.blue, "נשאר בסוף החודש": Color.green])
         .chartYAxis {
             AxisMarks { value in
                 AxisGridLine()
@@ -140,6 +152,8 @@ struct HistoryChart: View {
 
 struct HistoryRow: View {
     let record: MonthRecord
+    /// What was left at the end of the month (see `Store.monthResult`).
+    let remaining: Double
     @Environment(\.isCompactWidth) private var compact
 
     var body: some View {
@@ -153,9 +167,9 @@ struct HistoryRow: View {
                 Text(record.title)
                     .font(.body.weight(.medium))
                 Spacer()
-                Text(verbatim: "יתרה " + Fmt.moneyRounded(record.budget.remaining))
+                Text(verbatim: "נשאר " + Fmt.moneyRounded(remaining))
                     .monospacedDigit()
-                    .foregroundStyle(record.budget.remaining >= 0 ? Color.green : Color.red)
+                    .foregroundStyle(remaining >= 0 ? Color.green : Color.red)
             }
             Text(verbatim: "ברוטו " + Fmt.moneyRounded(record.budget.gross)
                  + (record.actualNet.map { " · בפועל " + Fmt.moneyRounded($0) } ?? "")
@@ -199,9 +213,9 @@ struct HistoryRow: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .frame(width: 130, alignment: .trailing)
-            Text(verbatim: "יתרה " + Fmt.moneyRounded(record.budget.remaining))
+            Text(verbatim: "נשאר " + Fmt.moneyRounded(remaining))
                 .monospacedDigit()
-                .foregroundStyle(record.budget.remaining >= 0 ? Color.green : Color.red)
+                .foregroundStyle(remaining >= 0 ? Color.green : Color.red)
                 .frame(width: 130, alignment: .trailing)
         }
         .padding(.vertical, 4)
@@ -225,8 +239,17 @@ struct RecordDetailView: View {
                 }
             }
 
-            Section("פירוט") {
-                BudgetBreakdown(budget: record.budget)
+            Section {
+                MonthBreakdown(picture: store.monthResult(record))
+                    .padding(.vertical, 4)
+            } header: {
+                Text("מה נשאר בסוף החודש")
+            } footer: {
+                Text("אותו חישוב כמו בסיכום, עם ההכנסות, הניכויים וההוצאות הקבועות של החודש הזה, וחיובי האשראי והתנועות שלו.")
+            }
+
+            Section("מהברוטו לנטו (לפי התלוש של החודש)") {
+                BudgetBreakdown(budget: record.budget, payslipOnly: true)
                     .padding(.vertical, 4)
             }
 

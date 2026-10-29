@@ -84,15 +84,32 @@ struct MonthPicture {
 
 extension Store {
     var monthPicture: MonthPicture {
+        let now = Date()
+        let cal = Calendar.current
+        return monthPicture(year: cal.component(.year, from: now), month: cal.component(.month, from: now))
+    }
+
+    /// What was left at the end of a saved month — the same calculation as "נשאר בסוף החודש" in the summary,
+    /// with that month's own incomes, deductions and fixed expenses (the current month uses today's).
+    func monthResult(_ record: MonthRecord) -> MonthPicture {
         let cal = Calendar.current
         let now = Date()
-        let year = cal.component(.year, from: now)
-        let month = cal.component(.month, from: now)
+        if record.year == cal.component(.year, from: now) && record.month == cal.component(.month, from: now) {
+            return monthPicture
+        }
+        return monthPicture(year: record.year, month: record.month, budget: record.budget)
+    }
+
+    /// One month: net (actual if recorded), fixed expenses, periodic purchases, savings, card charges and one-offs.
+    /// `budget` overrides today's incomes/deductions/expenses (a saved month keeps its own).
+    func monthPicture(year: Int, month: Int, budget override: Budget? = nil) -> MonthPicture {
+        let cal = Calendar.current
+        let now = Date()
         let monthStart = cal.date(from: DateComponents(year: year, month: month, day: 1)) ?? now
         let monthEnd = cal.date(byAdding: .month, value: 1, to: monthStart) ?? now
         let daysLeft = max(1, (cal.dateComponents([.day], from: cal.startOfDay(for: now), to: monthEnd).day ?? 1))
         let d = dashboard
-        let budget = d.budget
+        let budget = override ?? d.budget
         let money = d.money
 
         var spending: [MonthPicture.Line] = []
@@ -271,27 +288,13 @@ extension Store {
         set { UserDefaults.standard.set(newValue, forKey: "lastBackupAt") }
     }
 
-    /// iCloud Drive when available (so backups reach the cloud), otherwise next to the project.
+    /// Inside the app's own folder (wiped on sign-out) — the real history lives on the server.
     static var defaultBackupFolder: URL {
-        #if os(iOS)
-        return Platform.homeDirectory.appendingPathComponent("גיבויים", isDirectory: true)
-        #else
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let iCloud = home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
-        if FileManager.default.fileExists(atPath: iCloud.path) {
-            return iCloud.appendingPathComponent("מחשבון שכר - גיבויים", isDirectory: true)
-        }
-        return home.appendingPathComponent("Documents/מחשבון שכר/גיבויים", isDirectory: true)
-        #endif
+        Platform.homeDirectory.appendingPathComponent("גיבויים", isDirectory: true)
     }
 
     static var backupFolder: URL {
-        get {
-            if let path = UserDefaults.standard.string(forKey: "backupFolder") {
-                return URL(fileURLWithPath: path, isDirectory: true)
-            }
-            return defaultBackupFolder
-        }
+        get { defaultBackupFolder }
         set { UserDefaults.standard.set(newValue.path, forKey: "backupFolder") }
     }
 

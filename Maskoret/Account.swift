@@ -1,6 +1,12 @@
 import Foundation
 import SwiftUI
 import Supabase
+import AuthenticationServices
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 /// A household the signed-in user belongs to (one full set of the app's data, shared by its members).
 struct HouseholdInfo: Identifiable, Codable, Equatable, Hashable {
@@ -58,6 +64,9 @@ final class UserAccount: ObservableObject {
     @Published private(set) var didLoad = false
     /// The app's owner — sees the admin screen (the server checks it again on every call).
     @Published private(set) var isAdmin = false
+    /// How this account can sign in ("email", "google").
+    @Published private(set) var signInMethods: [String] = []
+    var hasGoogle: Bool { signInMethods.contains("google") }
 
     var isSignedIn: Bool { userID != nil }
     var activeHousehold: HouseholdInfo? { households.first { $0.id == activeHouseholdID } }
@@ -94,7 +103,11 @@ final class UserAccount: ObservableObject {
         let changed = userID != user.id
         userID = user.id
         email = user.email
-        if case .string(let name)? = user.userMetadata["display_name"] { displayName = name }
+        signInMethods = (user.identities ?? []).map(\.provider)
+        // Email sign-ups store "display_name"; Google gives "full_name" / "name".
+        for key in ["display_name", "full_name", "name"] {
+            if case .string(let name)? = user.userMetadata[key], !name.isEmpty { displayName = name; break }
+        }
         if changed {
             await refreshHouseholds()
             isAdmin = (try? await supabase.rpc("am_i_admin").decoded(Bool.self)) ?? false
@@ -107,6 +120,7 @@ final class UserAccount: ObservableObject {
         displayName = ""
         households = []
         isAdmin = false
+        signInMethods = []
     }
 
     // MARK: Sign up / in
@@ -158,6 +172,67 @@ final class UserAccount: ObservableObject {
 
     func signIn(email: String, password: String) async throws {
         try await supabase.auth.signIn(email: email.trimmingCharacters(in: .whitespaces), password: password)
+    }
+
+    /// The same redirect the Android/Windows app uses; it must be listed in Supabase → Auth → URL Configuration.
+    static let oauthRedirect = URL(string: "com.shlomodavid.maskoret://login-callback")!
+
+    /// Google sign-in in the system's secure web sheet. Returns false when the user closed the sheet.
+    /// The sheet is run by `WebAuthSheet` (not the library's built-in one, which crashed on the Mac when the
+    /// system answered on a background thread, and didn't say which window to show the sheet over).
+    func signInWithGoogle() async throws -> Bool {
+        let sheet = WebAuthSheet()
+        do {
+            try await supabase.auth.signInWithOAuth(provider: .google, redirectTo: UserAccount.oauthRedirect) { url in
+                try await sheet.run(url: url, callbackScheme: "com.shlomodavid.maskoret")
+            }
+            return true
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            return false
+        }
+    }
+
+    /// Adds Google sign-in to the account that's signed in now (same account, same data).
+    /// Returns false when the user closed the sheet.
+    func linkGoogle() async throws -> Bool {
+        let link = try await supabase.auth.getLinkIdentityURL(provider: .google, redirectTo: UserAccount.oauthRedirect)
+        let sheet = WebAuthSheet()
+        do {
+            let callback = try await sheet.run(url: link.url, callbackScheme: "com.shlomodavid.maskoret")
+            if let message = UserAccount.oauthError(in: callback) { throw LinkError(message: message) }
+            try await supabase.auth.session(from: callback)
+            await refreshSignInMethods()
+            return true
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            return false
+        }
+    }
+
+    /// Removes Google sign-in (only when another way to sign in remains).
+    func unlinkGoogle() async throws {
+        let identities = try await supabase.auth.userIdentities()
+        guard identities.count > 1, let google = identities.first(where: { $0.provider == "google" }) else { return }
+        try await supabase.auth.unlinkIdentity(google)
+        await refreshSignInMethods()
+    }
+
+    func refreshSignInMethods() async {
+        if let user = try? await supabase.auth.user() {
+            signInMethods = (user.identities ?? []).map(\.provider)
+        }
+    }
+
+    struct LinkError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    /// Supabase reports a failed link in the return address (…?error_description=…).
+    static func oauthError(in url: URL) -> String? {
+        let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let fragment = URLComponents(string: "x://x?" + (url.fragment ?? ""))
+        let items = (parts?.queryItems ?? []) + (fragment?.queryItems ?? [])
+        return items.first { $0.name == "error_description" }?.value ?? items.first { $0.name == "error" }?.value
     }
 
     func sendPasswordReset(email: String) async throws {
@@ -290,6 +365,15 @@ final class UserAccount: ObservableObject {
             return url.code == .notConnectedToInternet || url.code == .networkConnectionLost
                 ? "אין חיבור לאינטרנט." : "לא ניתן להתחבר לשרת. נסה שוב בעוד רגע."
         }
+        if text.contains("already linked") || text.contains("identity_already_exists") {
+            return "חשבון ה-Google הזה כבר מחובר לחשבון אחר באפליקציה."
+        }
+        if text.contains("manual linking") {
+            return "חיבור חשבונות עוד לא הופעל בשרת."
+        }
+        if text.contains("provider is not enabled") || text.contains("unsupported provider") {
+            return "ההתחברות עם Google עוד לא הופעלה בשרת. בינתיים אפשר להתחבר עם מייל וסיסמה."
+        }
         if text.contains("invalid login credentials") { return "המייל או הסיסמה לא נכונים." }
         if text.contains("email not confirmed") { return "המייל עוד לא אומת — הכנס את הקוד שקיבלת במייל." }
         if text.contains("already registered") || text.contains("already been registered") || text.contains("user_already_exists") {
@@ -315,5 +399,46 @@ final class UserAccount: ObservableObject {
         if text.contains("too many households") { return "הגעת למספר המרבי של משקי בית (20)." }
         if text.contains("invalid email") || text.contains("unable to validate email") { return "כתובת המייל לא תקינה." }
         return "הפעולה נכשלה: " + error.localizedDescription
+    }
+}
+
+// MARK: - The system's secure sign-in sheet
+
+/// Shows a sign-in page (Google) in the system's secure web sheet over the app's window,
+/// and returns the address it ends at (com.shlomodavid.maskoret://login-callback?code=…).
+final class WebAuthSheet: NSObject, ASWebAuthenticationPresentationContextProviding, @unchecked Sendable {
+    private var session: ASWebAuthenticationSession?
+
+    @MainActor
+    func run(url: URL, callbackScheme: String) async throws -> URL {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            // The system calls this on a background thread — it only resumes the continuation.
+            let completion: @Sendable (URL?, Error?) -> Void = { callback, error in
+                if let callback {
+                    continuation.resume(returning: callback)
+                } else {
+                    continuation.resume(throwing: error ?? ASWebAuthenticationSessionError(.canceledLogin))
+                }
+            }
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: callbackScheme, completionHandler: completion)
+            session.presentationContextProvider = self
+            session.prefersEphemeralWebBrowserSession = false
+            self.session = session
+            if !session.start() {
+                self.session = nil
+                continuation.resume(throwing: ASWebAuthenticationSessionError(.presentationContextInvalid))
+            }
+        }
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        MainActor.assumeIsolated {
+            #if os(macOS)
+            return NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first { $0.isVisible } ?? ASPresentationAnchor()
+            #else
+            let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+            return windows.first { $0.isKeyWindow } ?? windows.first ?? ASPresentationAnchor()
+            #endif
+        }
     }
 }

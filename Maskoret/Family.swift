@@ -161,7 +161,7 @@ extension Store {
     }
 
     static func loadFamily() -> FamilyState {
-        if let data = try? Data(contentsOf: familyURL),
+        if let data = SecureFile.read(familyURL),
            let state = try? JSONDecoder().decode(FamilyState.self, from: data) {
             return state
         }
@@ -177,7 +177,7 @@ extension Store {
         let state = FamilyState(members: members, primaryID: primaryMemberID, activeID: activeMemberID,
                                 viewIDs: members.map(\.id).filter { viewMemberIDs.contains($0) })
         if let data = try? JSONEncoder().encode(state) {
-            try? data.write(to: Store.familyURL, options: .atomic)
+            try? SecureFile.write(data, to: Store.familyURL)
         }
         onDataChange?()
     }
@@ -255,7 +255,7 @@ extension Store {
         let member = FamilyMember(name: name.isEmpty ? "בן משפחה" : name, emoji: emoji.isEmpty ? "🙂" : emoji)
         let file = newMemberFile()
         if let data = try? JSONEncoder().encode(file) {
-            try? data.write(to: fileURL(for: member.id), options: .atomic)
+            try? SecureFile.write(data, to: fileURL(for: member.id))
         }
         members.append(member)
         memberFiles[member.id] = file
@@ -274,7 +274,6 @@ extension Store {
     func deleteMember(_ id: UUID) {
         guard id != primaryMemberID, members.count > 1 else { return }
         if id == activeMemberID { setEditing(primaryMemberID) }
-        _ = try? backupNow(suffix: " (לפני מחיקת בן משפחה)")
         members.removeAll { $0.id == id }
         memberFiles[id] = nil
         viewMemberIDs.remove(id)
@@ -304,7 +303,7 @@ extension Store {
         memberFiles = [:]
         for m in state.members {
             guard let file = backup.files[m.id.uuidString] else { continue }
-            if let data = try? JSONEncoder().encode(file) { try? data.write(to: fileURL(for: m.id), options: .atomic) }
+            if let data = try? JSONEncoder().encode(file) { try? SecureFile.write(data, to: fileURL(for: m.id)) }
             if m.id != state.activeID { memberFiles[m.id] = file }
         }
         activeMemberID = state.activeID
@@ -314,5 +313,25 @@ extension Store {
         suppressSave = false
         save()
         saveFamily()
+    }
+}
+
+// MARK: - Encrypted local copy
+
+extension Store {
+    /// Older versions kept the files as plain JSON; they're rewritten encrypted (the content doesn't change).
+    func encryptLocalCopyIfNeeded() {
+        let fm = FileManager.default
+        let plain = [Store.fileURL, Store.familyURL] + ((try? fm.contentsOfDirectory(at: Store.membersFolder, includingPropertiesForKeys: nil)) ?? [])
+        guard plain.contains(where: { fm.fileExists(atPath: $0.path) && !SecureFile.isEncrypted($0) }) else { return }
+        let backup = familyBackup
+        for m in members {
+            guard let file = backup.files[m.id.uuidString], let data = try? JSONEncoder().encode(file) else { continue }
+            try? SecureFile.write(data, to: fileURL(for: m.id))
+        }
+        if let data = try? JSONEncoder().encode(backup.state) { try? SecureFile.write(data, to: Store.familyURL) }
+        if let data = SecureFile.read(InsightsEngine.fileURL), !SecureFile.isEncrypted(InsightsEngine.fileURL) {
+            try? SecureFile.write(data, to: InsightsEngine.fileURL)
+        }
     }
 }
