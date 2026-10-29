@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import GoogleSignIn
+#endif
 
 @main
 struct MaskoretApp: App {
@@ -38,6 +41,7 @@ struct MaskoretApp: App {
                 .environmentObject(sync)
                 .environmentObject(account)
                 .hebrew()
+                .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
         }
         #endif
     }

@@ -181,8 +181,12 @@ struct AdminView: View {
         loading = true
         defer { loading = false }
         do {
-            overview = try await account.adminOverview()
+            // Own task: pull-to-refresh cancels its task when the view updates, which would abort the request.
+            let account = account
+            overview = try await Task { try await account.adminOverview() }.value
             error = nil
+        } catch is CancellationError {
+        } catch let urlError as URLError where urlError.code == .cancelled {
         } catch {
             self.error = UserAccount.describe(error)
         }

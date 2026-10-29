@@ -89,6 +89,7 @@
 		D6341E1E914C470B941CEBEC /* TaxRates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77F3E4ACAE2D72E18428B9E3 /* TaxRates.swift */; };
 		D1F918E6F64A4AEF99247FDF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BB636196F91ED59D7A4919 /* Assets.xcassets */; };
 		4967BAF244604CC9B7B37221 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 7F3AB443C7E34A06AF4F6209 /* Supabase */; };
+		A1C0FFEE00000000000000A1 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = A1C0FFEE00000000000000A2 /* GoogleSignIn */; };
 		7A28AE4BBC3846ADAB0051A5 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 662C00584C80426086941035 /* Supabase */; };
 		B66890B49229428783127F65 /* SupabaseConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0323901E34F44589932B42D5 /* SupabaseConfig.swift */; };
 		A77D2E37B57B44FAA8546F23 /* SupabaseConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0323901E34F44589932B42D5 /* SupabaseConfig.swift */; };
@@ -170,6 +171,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7A28AE4BBC3846ADAB0051A5 /* Supabase in Frameworks */,
+				A1C0FFEE00000000000000A1 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -287,6 +289,7 @@
 			name = MaskoretiOS;
 			packageProductDependencies = (
 				662C00584C80426086941035 /* Supabase */,
+				A1C0FFEE00000000000000A2 /* GoogleSignIn */,
 			);
 			productName = MaskoretiOS;
 			productReference = 1BFC0D705A2B433DB125CFF0 /* MaskoretiOS.app */;
@@ -324,6 +327,7 @@
 				11066BF1483FE44A430E4BAD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 				CCA8389949C5DD0D3D762447 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 				E57D8630252E4660870E5F6D /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				A1C0FFEE00000000000000A3 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			productRefGroup = A8CBE22D73EBCC4E5F27B59C /* Products */;
 			projectDirPath = "";
@@ -725,6 +729,14 @@
 				minimumVersion = 1.1.4;
 			};
 		};
+		A1C0FFEE00000000000000A3 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -752,6 +764,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CCA8389949C5DD0D3D762447 /* XCRemoteSwiftPackageReference "swift-transformers" */;
 			productName = Tokenizers;
+		};
+		A1C0FFEE00000000000000A2 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1C0FFEE00000000000000A3 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

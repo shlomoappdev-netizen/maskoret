@@ -6,6 +6,8 @@ import AuthenticationServices
 import AppKit
 #else
 import UIKit
+import GoogleSignIn
+import CryptoKit
 #endif
 
 /// A household the signed-in user belongs to (one full set of the app's data, shared by its members).
@@ -177,10 +179,16 @@ final class UserAccount: ObservableObject {
     /// The same redirect the Android/Windows app uses; it must be listed in Supabase → Auth → URL Configuration.
     static let oauthRedirect = URL(string: "com.shlomodavid.maskoret://login-callback")!
 
-    /// Google sign-in in the system's secure web sheet. Returns false when the user closed the sheet.
-    /// The sheet is run by `WebAuthSheet` (not the library's built-in one, which crashed on the Mac when the
-    /// system answered on a background thread, and didn't say which window to show the sheet over).
+    /// Google sign-in. Returns false when the user closed the sheet.
+    /// iPhone: Google's own sign-in sheet (shows the app's name), and the ID token goes straight to the server.
+    /// Mac: the system's secure web sheet, run by `WebAuthSheet` (not the library's built-in one, which crashed
+    /// on the Mac when the system answered on a background thread, and didn't say which window to show over).
     func signInWithGoogle() async throws -> Bool {
+        #if os(iOS)
+        guard let credentials = try await GoogleNative.credentials() else { return false }
+        try await supabase.auth.signInWithIdToken(credentials: credentials)
+        return true
+        #else
         let sheet = WebAuthSheet()
         do {
             try await supabase.auth.signInWithOAuth(provider: .google, redirectTo: UserAccount.oauthRedirect) { url in
@@ -190,11 +198,18 @@ final class UserAccount: ObservableObject {
         } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
             return false
         }
+        #endif
     }
 
     /// Adds Google sign-in to the account that's signed in now (same account, same data).
     /// Returns false when the user closed the sheet.
     func linkGoogle() async throws -> Bool {
+        #if os(iOS)
+        guard let credentials = try await GoogleNative.credentials() else { return false }
+        try await supabase.auth.linkIdentityWithIdToken(credentials: credentials)
+        await refreshSignInMethods()
+        return true
+        #else
         let link = try await supabase.auth.getLinkIdentityURL(provider: .google, redirectTo: UserAccount.oauthRedirect)
         let sheet = WebAuthSheet()
         do {
@@ -206,6 +221,7 @@ final class UserAccount: ObservableObject {
         } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
             return false
         }
+        #endif
     }
 
     /// Removes Google sign-in (only when another way to sign in remains).
@@ -260,6 +276,9 @@ final class UserAccount: ObservableObject {
 
     func signOut() async {
         try? await supabase.auth.signOut()
+        #if os(iOS)
+        GIDSignIn.sharedInstance.signOut()
+        #endif
         clearUser()
     }
 
@@ -442,3 +461,42 @@ final class WebAuthSheet: NSObject, ASWebAuthenticationPresentationContextProvid
         }
     }
 }
+
+#if os(iOS)
+/// Google's native sign-in on the iPhone. The sheet shows "מחשבון שכר" (the web flow shows the server's address).
+/// The ID token's nonce is the SHA-256 of a random value; the server gets the raw value and checks it.
+enum GoogleNative {
+    static let iosClientID = "1016917355558-dg71h9eab1ba8k4tf9boteo6gbdtr9ku.apps.googleusercontent.com"
+    /// The Web client — the one Supabase's Google provider is set up with.
+    static let webClientID = "1016917355558-6e7hfthnuq6tp3s945gvpnsl1fom4jvh.apps.googleusercontent.com"
+
+    /// nil when the user closed the sheet.
+    @MainActor
+    static func credentials() async throws -> OpenIDConnectCredentials? {
+        guard let presenter = topViewController() else { return nil }
+        let rawNonce = UUID().uuidString + UUID().uuidString
+        let hashedNonce = SHA256.hash(data: Data(rawNonce.utf8)).map { String(format: "%02x", $0) }.joined()
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: iosClientID, serverClientID: webClientID)
+        do {
+            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter, hint: nil,
+                                                                   additionalScopes: nil, nonce: hashedNonce)
+            guard let idToken = result.user.idToken?.tokenString else { return nil }
+            return OpenIDConnectCredentials(provider: .google, idToken: idToken,
+                                            accessToken: result.user.accessToken.tokenString, nonce: rawNonce)
+        } catch let error as GIDSignInError where error.code == .canceled {
+            return nil
+        }
+    }
+
+    @MainActor
+    private static func topViewController() -> UIViewController? {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
+    }
+}
+#endif
