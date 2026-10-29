@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../data/fmt.dart';
 import '../sync/account.dart';
+import '../sync/server_sync.dart';
 import 'auth_screen.dart';
 import 'common.dart';
 
@@ -43,6 +44,13 @@ class HouseholdsScreen extends StatelessWidget {
                 title: Text(sync.lastError ?? (sync.status.isEmpty ? 'מסונכרן' : sync.status)),
                 subtitle: sync.lastSync == null ? null : Text('סנכרון אחרון: ${Fmt.date(sync.lastSync!)} ${_time(sync.lastSync!)}'),
                 trailing: IconButton(tooltip: 'סנכרן עכשיו', icon: const Icon(Icons.sync), onPressed: sync.sync),
+              ),
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('גרסאות קודמות'),
+                subtitle: const Text('30 הגרסאות האחרונות של משק הבית, שמורות בשרת'),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VersionsScreen())),
               ),
             ]),
             SectionCard(
@@ -95,8 +103,11 @@ class HouseholdsScreen extends StatelessWidget {
                 title: Text('מחיקת החשבון', style: TextStyle(color: theme.colorScheme.error)),
                 subtitle: const Text('משקי בית שרק אתה חבר בהם יימחקו; משותפים יעברו לחבר הוותיק ביותר'),
                 onTap: () async {
-                  if (await confirm(context, 'למחוק את החשבון?', 'אי אפשר לבטל את זה.', ok: 'מחיקה') && context.mounted) {
-                    if (await run(context, account.deleteAccount)) await sync.signedOut(clearDevice: false);
+                  if (await confirm(context, 'למחוק את החשבון?', 'כל הנתונים שלך יימחקו מהשרת ומהמכשיר הזה. אי אפשר לבטל את זה.',
+                          ok: 'מחיקה') &&
+                      context.mounted) {
+                    await sync.signedOut();
+                    if (context.mounted && await run(context, account.deleteAccount) && context.mounted) Navigator.pop(context);
                   }
                 },
               ),
@@ -156,20 +167,10 @@ class HouseholdsScreen extends StatelessWidget {
 
   Future<void> _signOut(BuildContext context) async {
     final scope = context.scope;
-    final clear = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('התנתקות'),
-        content: const Text('הנתונים שמורים בשרת. להשאיר עותק שלהם במכשיר הזה?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ביטול')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('למחוק מהמכשיר')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('להשאיר')),
-        ],
-      ),
-    );
-    if (clear == null) return;
-    await scope.sync.signedOut(clearDevice: clear);
+    final ok = await confirm(context, 'להתנתק?',
+        'הנתונים שמורים בשרת. העותק המוצפן שבמכשיר יימחק, ובהתחברות הבאה הנתונים ייטענו מהשרת.', ok: 'התנתק');
+    if (!ok) return;
+    await scope.sync.signedOut();
     await scope.account.signOut();
     if (context.mounted) Navigator.pop(context);
   }
@@ -299,7 +300,7 @@ class _HouseholdDetailState extends State<HouseholdDetail> {
                   leading: Icon(Icons.exit_to_app, color: theme.colorScheme.error),
                   title: Text('עזיבת משק הבית', style: TextStyle(color: theme.colorScheme.error)),
                   onTap: () async {
-                    if (await confirm(context, 'לעזוב את ${h.name}?', 'לא תוכל לראות אותו יותר, אלא אם יזמינו אותך שוב.',
+                    if (await confirm(context, 'לעזוב את ${h.name}?', 'לא תוכל לראות יותר את הנתונים שלו. כדי לחזור צריך הזמנה חדשה.',
                             ok: 'עזיבה') &&
                         context.mounted) {
                       if (await run(context, () => scope.account.leave(h.id))) {
@@ -315,7 +316,7 @@ class _HouseholdDetailState extends State<HouseholdDetail> {
                   title: Text('מחיקת משק הבית', style: TextStyle(color: theme.colorScheme.error)),
                   subtitle: const Text('הנתונים יימחקו מהשרת לכל החברים'),
                   onTap: () async {
-                    if (await confirm(context, 'למחוק את ${h.name}?', 'כל הנתונים שלו יימחקו מהשרת לכל החברים. אי אפשר לבטל.',
+                    if (await confirm(context, 'למחוק את ${h.name}?', 'משק הבית, הנתונים שלו וכל הגרסאות הקודמות יימחקו מהשרת לכל החברים. אי אפשר לבטל את זה.',
                             ok: 'מחיקה') &&
                         context.mounted) {
                       if (await run(context, () => scope.account.delete(h.id))) {
@@ -329,6 +330,88 @@ class _HouseholdDetailState extends State<HouseholdDetail> {
           ]),
         );
       },
+    );
+  }
+}
+
+/// The household's previous versions on the server (replaces local backups) — like BackupView.swift.
+class VersionsScreen extends StatefulWidget {
+  const VersionsScreen({super.key});
+
+  @override
+  State<VersionsScreen> createState() => _VersionsScreenState();
+}
+
+class _VersionsScreenState extends State<VersionsScreen> {
+  List<HouseholdVersion>? versions;
+  String? error;
+  bool restoring = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final list = await context.scope.sync.versions();
+      if (mounted) setState(() => versions = list);
+    } catch (e) {
+      if (mounted) setState(() => error = UserAccount.describe(e));
+    }
+  }
+
+  String _when(HouseholdVersion v) {
+    final d = v.savedAt;
+    if (d == null) return 'גרסה ${v.revision}';
+    return '${Fmt.date(d)} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sync = context.scope.sync;
+    return Scaffold(
+      appBar: AppBar(title: const Text('גרסאות קודמות')),
+      body: PageList(children: [
+        SectionCard(
+          title: 'היסטוריית משק הבית',
+          subtitle: 'בכל שמירה בשרת הגרסה הקודמת נשמרת כאן (30 האחרונות). שחזור מחזיר אותה לכל המכשירים, והמצב הנוכחי נשמר כגרסה.',
+          children: [
+            if (restoring) const LinearProgressIndicator(),
+            if (error != null) EmptyHint(error!),
+            if (versions == null && error == null) const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator()),
+            if (versions != null && versions!.isEmpty) const EmptyHint('עוד אין גרסאות קודמות.'),
+            for (final v in versions ?? <HouseholdVersion>[])
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: Text(_when(v)),
+                subtitle: Text([if (v.device != null) v.device!, if (v.note != null && v.note!.isNotEmpty) v.note!].join(' · ')),
+                trailing: TextButton(
+                  onPressed: restoring
+                      ? null
+                      : () async {
+                          if (!await confirm(context, 'לשחזר את הגרסה מ-${_when(v)}?',
+                              'היא תחליף את הנתונים הנוכחיים בכל המכשירים. המצב הנוכחי יישמר כגרסה, כך שאפשר לחזור אליו.',
+                              ok: 'שחזור', danger: false)) {
+                            return;
+                          }
+                          if (!context.mounted) return;
+                          setState(() => restoring = true);
+                          final ok = await run(context, () => sync.restore(v));
+                          if (!mounted) return;
+                          setState(() => restoring = false);
+                          if (ok && context.mounted) {
+                            showMessage(context, 'הגרסה שוחזרה');
+                            _load();
+                          }
+                        },
+                  child: const Text('שחזור'),
+                ),
+              ),
+          ],
+        ),
+      ]),
     );
   }
 }

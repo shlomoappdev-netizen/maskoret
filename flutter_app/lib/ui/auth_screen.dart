@@ -7,10 +7,10 @@ enum _Mode { signIn, signUp, verify, forgot, reset }
 
 /// Sign in / sign up with a 6-digit code / forgot password — like AuthView.swift.
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key, this.onContinueWithout, this.onDone});
+  const AuthScreen({super.key, this.welcome = false, this.onDone});
 
-  /// "Continue without an account" (only on the first screen of the app).
-  final VoidCallback? onContinueWithout;
+  /// The app's first screen (with the app's name), rather than a page opened from inside the app.
+  final bool welcome;
   final VoidCallback? onDone;
 
   @override
@@ -126,7 +126,7 @@ class _AuthScreenState extends State<AuthScreen> {
     };
 
     return Scaffold(
-      appBar: widget.onContinueWithout == null ? AppBar(title: Text(title)) : null,
+      appBar: widget.welcome ? null : AppBar(title: Text(title)),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -137,7 +137,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (widget.onContinueWithout != null) ...[
+                    if (widget.welcome) ...[
                       Icon(Icons.account_balance_wallet_rounded, size: 64, color: theme.colorScheme.primary),
                       const SizedBox(height: 12),
                       Text('מחשבון שכר', textAlign: TextAlign.center, style: theme.textTheme.headlineMedium),
@@ -215,6 +215,25 @@ class _AuthScreenState extends State<AuthScreen> {
                           : Text(action),
                     ),
                     const SizedBox(height: 8),
+                    if (mode == _Mode.signIn || mode == _Mode.signUp) ...[
+                      Row(children: [
+                        const Expanded(child: Divider()),
+                        Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text('או', style: theme.textTheme.bodySmall)),
+                        const Expanded(child: Divider()),
+                      ]),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        icon: const Text('G', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF4285F4))),
+                        label: const Text('התחברות עם Google'),
+                        onPressed: busy
+                            ? null
+                            : () => _go(() async {
+                                  await account.signInWithGoogle();
+                                  info = 'ממשיכים בדפדפן — אחרי הבחירה בחשבון Google חוזרים לאפליקציה לבד.';
+                                }),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     if (mode == _Mode.signIn) ...[
                       TextButton(
                           onPressed: () => setState(() {
@@ -247,11 +266,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                 info = null;
                               }),
                           child: const Text('חזרה להתחברות')),
-                    if (widget.onContinueWithout != null) ...[
-                      const Divider(height: 32),
-                      OutlinedButton(onPressed: widget.onContinueWithout, child: const Text('המשך בלי חשבון')),
-                      const SizedBox(height: 6),
-                      Text('הנתונים יישמרו רק במכשיר הזה. אפשר להתחבר בהמשך, והם יעלו לחשבון.',
+                    if (widget.welcome) ...[
+                      const SizedBox(height: 16),
+                      Text('הנתונים נשמרים בשרת ומסונכרנים בין המכשירים. במכשיר נשאר רק עותק זמני מוצפן, והוא נמחק בהתנתקות.',
                           textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
                     ],
                   ],

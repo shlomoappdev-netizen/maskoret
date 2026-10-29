@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'state/secure_file.dart';
 import 'state/store.dart';
 import 'sync/account.dart';
 import 'sync/server_sync.dart';
@@ -21,7 +22,9 @@ Future<void> main() async {
   await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
   final prefs = await SharedPreferences.getInstance();
   final support = await getApplicationSupportDirectory();
-  final store = AppStore(Directory('${support.path}/Maskoret'), prefs);
+  final store = await AppStore.open(Directory('${support.path}/Maskoret'), prefs, SystemKeyStore());
+  // Older versions had a "continue without an account" mode; now, like the iPhone and Mac app, an account is needed.
+  prefs.remove('localOnly');
   final account = UserAccount(prefs);
   final sync = ServerSync(
     store: store,
@@ -103,16 +106,7 @@ class _MaskoretAppState extends State<MaskoretApp> {
         darkTheme: theme(Brightness.dark),
         home: ListenableBuilder(
           listenable: widget.account,
-          builder: (context, _) {
-            final localOnly = widget.prefs.getBool('localOnly') ?? false;
-            if (widget.account.isSignedIn || localOnly) return const HomeShell();
-            return AuthScreen(
-              onContinueWithout: () {
-                widget.prefs.setBool('localOnly', true);
-                setState(() {});
-              },
-            );
-          },
+          builder: (context, _) => widget.account.isSignedIn ? const HomeShell() : const AuthScreen(welcome: true),
         ),
       ),
     );

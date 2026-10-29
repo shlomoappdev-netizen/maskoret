@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/data/json.dart';
 import 'package:maskoret/data/models.dart';
+import 'package:maskoret/state/secure_file.dart';
 import 'package:maskoret/state/store.dart';
 import 'package:maskoret/sync/account.dart';
 import 'package:maskoret/sync/server_sync.dart';
@@ -16,6 +17,7 @@ import 'compat_test.dart' show diff, loadFixture;
 class FakeServer implements SyncBackend {
   final households = <String, ({Json data, int revision, DateTime updatedAt, String? device})>{};
   var saves = 0;
+  final snapshots = <({String hid, Json data, String note})>[];
 
   Json data(String hid) => (jsonDecode(jsonEncode(households[hid]!.data)) as Map).cast<String, dynamic>();
 
@@ -52,6 +54,29 @@ class FakeServer implements SyncBackend {
 
   @override
   Future<Future<void> Function()> listen(String hid, void Function() onChange) async => () async {};
+
+  @override
+  Future<void> saveSnapshot(String hid, Json data, String device, String note) async =>
+      snapshots.add((hid: hid, data: jsonDecode(jsonEncode(data)) as Json, note: note));
+
+  @override
+  Future<List<HouseholdVersion>> versions(String hid) async => [
+        for (var i = 0; i < snapshots.length; i++)
+          if (snapshots[i].hid == hid) HouseholdVersion({'id': i, 'revision': 0, 'note': snapshots[i].note}),
+      ];
+
+  @override
+  Future<Json> versionData(int id) async => jsonDecode(jsonEncode(snapshots[id].data)) as Json;
+}
+
+class MemoryKeyStore implements KeyStore {
+  String? value;
+  @override
+  Future<String?> read() async => value;
+  @override
+  Future<void> write(String v) async => value = v;
+  @override
+  Future<void> delete() async => value = null;
 }
 
 class FakeAccount extends ChangeNotifier implements SyncAccount {
@@ -59,6 +84,8 @@ class FakeAccount extends ChangeNotifier implements SyncAccount {
   final FakeServer server;
   @override
   bool isSignedIn = true;
+  @override
+  String? userId = 'user-a';
   @override
   String? activeHouseholdId;
   @override
@@ -73,6 +100,8 @@ void main() {
   late FakeServer server;
   late AppStore store;
   late ServerSync sync;
+  late FakeAccount account;
+  late MemoryKeyStore keys;
 
   Future<void> setUpDevice({bool withHousehold = true}) async {
     SharedPreferences.setMockInitialValues({});
@@ -82,10 +111,12 @@ void main() {
     if (withHousehold) {
       server.households['h1'] = (data: loadFixture(), revision: 7, updatedAt: DateTime(2026, 10, 28, 20), device: 'iPhone');
     }
-    store = AppStore(dir, prefs);
+    keys = MemoryKeyStore();
+    store = await AppStore.open(dir, prefs, keys);
+    account = FakeAccount(server);
     sync = ServerSync(
       store: store,
-      account: FakeAccount(server),
+      account: account,
       backend: server,
       prefs: prefs,
       deviceName: 'Android test',
@@ -95,9 +126,14 @@ void main() {
     )..attach();
   }
 
-  tearDown(() {
-    sync.dispose();
-    dir.deleteSync(recursive: true);
+  tearDown(() async {
+    try {
+      await store.flush();
+      sync.dispose();
+      dir.deleteSync(recursive: true);
+    } on Error {
+      // A test that didn't set up a device.
+    }
   });
 
   test('signing in on a new device shows the household from the server, unchanged', () async {
@@ -143,7 +179,7 @@ void main() {
     expect(diff(changed, store.doc), isEmpty);
   });
 
-  test('both changed, the server is newer: the server wins and this device keeps a backup', () async {
+  test('both changed, the server is newer: the server wins and this device\'s version goes to the server history', () async {
     await setUpDevice();
     await sync.accountChanged();
     final member = store.activeMemberId;
@@ -157,12 +193,12 @@ void main() {
     await sync.sync();
     expect(store.budget.incomes.first.amount, 2);
     expect(sync.hasUnsyncedChanges, isFalse);
-    expect(store.backups, isNotEmpty);
-    final backup = jsonDecode(store.backups.first.readAsStringSync());
-    expect(backup['files'][member]['budget']['incomes'][0]['amount'], 1);
+    await Future<void>.delayed(Duration.zero);
+    expect(server.snapshots.single.note, 'גרסה מהמכשיר שהוחלפה בסנכרון');
+    expect(server.snapshots.single.data['files'][member]['budget']['incomes'][0]['amount'], 1);
   });
 
-  test('both changed, this device is newer: ours is saved and the server version is backed up', () async {
+  test('both changed, this device is newer: ours is saved (the server keeps its own version in its history)', () async {
     await setUpDevice();
     await sync.accountChanged();
     final member = store.activeMemberId;
@@ -176,8 +212,7 @@ void main() {
     await sync.sync();
     expect(server.households['h1']!.revision, 9);
     expect(server.data('h1')['files'][member]['budget']['incomes'][0]['amount'], 1);
-    final backup = jsonDecode(store.backups.first.readAsStringSync());
-    expect(backup['files'][member]['budget']['incomes'][0]['amount'], 2);
+    expect(dir.listSync(recursive: true).whereType<File>().where((f) => f.path.contains('backup')), isEmpty);
   });
 
   test('a new account with no households uploads this device as the first household', () async {
@@ -187,5 +222,74 @@ void main() {
     expect(sync.linkedHouseholdId, 'h1');
     final onServer = FamilyBackup(server.data('h1'));
     expect(onServer.state.members.single.name, 'אני');
+  });
+
+  test('the copy on the device is encrypted, and signing out deletes it with its key', () async {
+    await setUpDevice();
+    await sync.accountChanged();
+    await store.flush();
+    final file = File('${dir.path}/household.json');
+    final bytes = file.readAsBytesSync();
+    expect(SecureFile.isEncrypted(bytes), isTrue);
+    expect(utf8.decode(bytes, allowMalformed: true).contains('cardTransactions'), isFalse);
+    expect(keys.value, isNotNull);
+
+    await sync.signedOut();
+    expect(keys.value, isNull);
+    expect(file.existsSync(), isFalse);
+    expect(sync.linkedHouseholdId, isNull);
+    expect(store.members.single.name, 'אני');
+    expect(store.budget.gross, 0);
+  });
+
+  test('plain JSON from an older version is read and then encrypted', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final d = await Directory.systemTemp.createTemp('maskoret_plain');
+    File('${d.path}/household.json').writeAsStringSync(jsonEncode(loadFixture()));
+    final k = MemoryKeyStore();
+    final s = await AppStore.open(d, prefs, k);
+    expect(diff(loadFixture(), s.doc), isEmpty);
+    expect(SecureFile.isEncrypted(File('${d.path}/household.json').readAsBytesSync()), isTrue);
+    final again = await AppStore.open(d, prefs, k);
+    expect(diff(loadFixture(), again.doc), isEmpty);
+    d.deleteSync(recursive: true);
+  });
+
+  test('another account signing in on this device starts empty and never gets the previous data', () async {
+    await setUpDevice();
+    await sync.accountChanged();
+    expect(sync.dataOwner, 'user-a');
+    expect(store.budget.incomes, isNotEmpty);
+
+    // user-b signs in on the same device; they have no households.
+    account.userId = 'user-b';
+    server.households.clear();
+    await sync.accountChanged();
+    expect(sync.dataOwner, 'user-b');
+    final created = FamilyBackup(server.data(server.households.keys.single));
+    expect(created.state.members.single.name, 'אני', reason: 'user-a\'s family must not be uploaded to user-b');
+    expect(jsonEncode(server.data(server.households.keys.single)).contains('cardTransactions'), isFalse);
+  });
+
+  test('using the server household keeps the device data in the server history first', () async {
+    await setUpDevice();
+    store.edit((f) => f.budget.incomes.first.amount = 5000); // data on the device before signing in
+    await sync.accountChanged();
+    expect(sync.pendingLocalChoice, isTrue);
+    await sync.resolveLocalChoice(uploadAsNew: false);
+    expect(server.snapshots.single.note, 'הנתונים שהיו במכשיר לפני החיבור לחשבון');
+    expect(diff(loadFixture(), store.doc), isEmpty);
+  });
+
+  test('restoring a previous version makes it current everywhere', () async {
+    await setUpDevice();
+    await sync.accountChanged();
+    final old = loadFixture();
+    (old['files'][store.activeMemberId]['budget']['incomes'] as List).first['amount'] = 31;
+    server.snapshots.add((hid: 'h1', data: old, note: 'x'));
+    await sync.restore((await sync.versions()).single);
+    expect(store.budget.incomes.first.amount, 31);
+    expect(server.data('h1')['files'][store.activeMemberId]['budget']['incomes'][0]['amount'], 31);
   });
 }

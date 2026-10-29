@@ -34,6 +34,28 @@ abstract class SyncBackend {
 
   /// Calls `onChange` whenever the household's revision changes on the server; returns how to stop.
   Future<Future<void> Function()> listen(String hid, void Function() onChange);
+
+  /// Adds a version to the household's history on the server (the newest 30 are kept).
+  Future<void> saveSnapshot(String hid, Json data, String device, String note);
+
+  /// The household's previous versions, newest first (without their data).
+  Future<List<HouseholdVersion>> versions(String hid);
+
+  Future<Json> versionData(int id);
+}
+
+class HouseholdVersion {
+  HouseholdVersion(Map<String, dynamic> j)
+      : id = (j['id'] as num).toInt(),
+        revision = (j['revision'] as num?)?.toInt() ?? 0,
+        savedAt = DateTime.tryParse(j['saved_at'] as String? ?? '')?.toLocal(),
+        device = j['device'] as String?,
+        note = j['note'] as String?;
+  final int id;
+  final int revision;
+  final DateTime? savedAt;
+  final String? device;
+  final String? note;
 }
 
 class SupabaseBackend implements SyncBackend {
@@ -85,6 +107,27 @@ class SupabaseBackend implements SyncBackend {
       await _c.removeChannel(channel);
     };
   }
+
+  @override
+  Future<void> saveSnapshot(String hid, Json data, String device, String note) async {
+    await _c.rpc('save_household_snapshot', params: {'hid': hid, 'p_data': data, 'p_device': device, 'p_note': note});
+  }
+
+  @override
+  Future<List<HouseholdVersion>> versions(String hid) async {
+    final rows = await _c
+        .from('household_snapshots')
+        .select('id,revision,saved_at,device,note')
+        .eq('household_id', hid)
+        .order('saved_at', ascending: false);
+    return rows.map(HouseholdVersion.new).toList();
+  }
+
+  @override
+  Future<Json> versionData(int id) async {
+    final row = await _c.from('household_snapshots').select('data').eq('id', id).single();
+    return (row['data'] as Map).cast<String, dynamic>();
+  }
 }
 
 /// Keeps the household on screen in sync with the server — a port of ServerSync.swift.
@@ -92,7 +135,8 @@ class SupabaseBackend implements SyncBackend {
 /// The file on this device stays the app's working copy (it works offline). Each save on the server
 /// gets a new revision; the device remembers the revision it last saw. When only the server changed,
 /// its version is loaded; when only this device changed, it's saved; when both changed, the newer one
-/// wins and the other is kept as a backup on the device (and the server keeps its last 30 versions).
+/// wins and the other goes to the household's version history on the server (the newest 30 are kept).
+/// Nothing is kept on the device except the encrypted working copy, and it's deleted on sign-out.
 class ServerSync extends ChangeNotifier {
   ServerSync({
     required this.store,
@@ -147,6 +191,10 @@ class ServerSync extends ChangeNotifier {
 
   bool get hasUnsyncedChanges => localChangedAt != null;
 
+  /// The account whose data is in the local copy. null = data from before signing in (the device owner's).
+  String? get dataOwner => prefs.getString('syncDataOwner');
+  set dataOwner(String? v) => v == null ? prefs.remove('syncDataOwner') : prefs.setString('syncDataOwner', v);
+
   DateTime? get lastSync {
     final ms = prefs.getInt('syncLastSync');
     return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
@@ -175,6 +223,13 @@ class ServerSync extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // Another account's data must never reach this one (a shared device).
+    final me = account.userId;
+    final owner = dataOwner;
+    if (owner != null && me != null && owner != me) {
+      await _wipeDevice();
+      dataOwner = me;
+    }
     if (account.households.isEmpty) await account.refreshHouseholds();
 
     final linked = linkedHouseholdId;
@@ -184,11 +239,15 @@ class ServerSync extends ChangeNotifier {
     }
     // The chosen household is gone (deleted, or this user was removed): keep the data, stop syncing it.
     if (!account.households.any((h) => h.id == linked)) {
-      store.backupNow(' (משק בית שכבר לא זמין)');
       _unlink();
-      if (account.households.isNotEmpty) await switchTo(account.households.first.id, cache: false);
-      lastError = 'משק הבית הקודם כבר לא זמין לך (נמחק או שהוסרת ממנו). עותק של הנתונים שלו נשמר בגיבויים במכשיר.';
-      notifyListeners();
+      if (account.households.isNotEmpty) {
+        await switchTo(account.households.first.id, cache: false);
+        lastError = 'משק הבית הקודם כבר לא זמין לך (נמחק או שהוסרת ממנו).';
+        notifyListeners();
+      } else {
+        // No household on this account: this device's data becomes its household.
+        await createHousehold('משק הבית שלי', from: store.doc);
+      }
       return;
     }
     final wanted = account.activeHouseholdId;
@@ -221,8 +280,10 @@ class ServerSync extends ChangeNotifier {
     if (uploadAsNew) {
       await createHousehold('משק הבית שלי (מהמכשיר)', from: store.doc);
     } else {
-      store.backupNow(' (לפני חיבור לחשבון)');
-      await switchTo(account.activeHouseholdId ?? account.households.first.id, cache: false);
+      // This device's data joins the household's version history on the server before it's replaced.
+      final target = account.activeHouseholdId ?? account.households.first.id;
+      await _uploadVersion(store.doc, target, 'הנתונים שהיו במכשיר לפני החיבור לחשבון');
+      await switchTo(target, cache: false);
     }
   }
 
@@ -230,7 +291,7 @@ class ServerSync extends ChangeNotifier {
     try {
       final data = from ?? Starter.family();
       final created = await backend.create(name, deepCopy(data) as Json, deviceName);
-      if (linkedHouseholdId != null) _cacheCurrent();
+      if (linkedHouseholdId != null) await _cacheCurrent();
       if (from == null) store.replace(data);
       linkedHouseholdId = created.id;
       lastSeenRevision = created.revision;
@@ -252,9 +313,9 @@ class ServerSync extends ChangeNotifier {
     if (current != null) {
       if (current == id) return;
       await sync(); // push what's pending first
-      if (cache) _cacheCurrent();
+      if (cache) await _cacheCurrent();
     }
-    final cached = _readCache(id);
+    final cached = await _readCache(id);
     if (cached != null) {
       store.replace(cached.family);
       lastSeenRevision = cached.revision;
@@ -268,17 +329,24 @@ class ServerSync extends ChangeNotifier {
     await sync();
   }
 
-  /// Signing out: optionally clear this device's copy (it stays on the server).
-  Future<void> signedOut({required bool clearDevice}) async {
+  /// Signing out (or deleting the account): last changes go up, then the encrypted copy on this device is deleted.
+  Future<void> signedOut() async {
     await sync();
     await _stop();
-    _unlink();
-    if (clearDevice) {
-      store.backupNow(' (לפני ניקוי המכשיר)');
-      store.replace(Starter.family());
-      _clearCaches();
-    }
+    await _wipeDevice();
     notifyListeners();
+  }
+
+  /// Nothing of this account stays on the device: the encrypted files and their key are deleted,
+  /// and the screen shows an empty household until someone signs in.
+  Future<void> _wipeDevice() async {
+    _unlink();
+    await store.wipe();
+    dataOwner = null;
+    account.activeHouseholdId = null;
+    prefs.remove('syncLastSync');
+    status = '';
+    lastError = null;
   }
 
   void _unlink() {
@@ -339,8 +407,7 @@ class ServerSync extends ChangeNotifier {
         final remoteDate = DateTime.tryParse(remote.updatedAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
         final mine = localChangedAt;
         if (mine != null && mine.isAfter(remoteDate)) {
-          // Both changed, this device is newer: keep the server's version as a backup, then save ours.
-          store.backupNow(' (מ-${remote.device ?? 'מכשיר אחר'} לפני סנכרון)', remote.data);
+          // Both changed, this device is newer: ours is saved, and the server keeps its version in the history.
           await _push(hid, remote.revision);
         } else {
           _apply(remote.data, backupFirst: localChangedAt != null);
@@ -393,6 +460,9 @@ class ServerSync extends ChangeNotifier {
   }
 
   void _markSynced(String message) {
+    // From now on the data on this device belongs to this account.
+    final me = account.userId;
+    if (me != null) dataOwner = me;
     status = message;
     lastError = null;
     prefs.setInt('syncLastSync', DateTime.now().millisecondsSinceEpoch);
@@ -400,35 +470,58 @@ class ServerSync extends ChangeNotifier {
   }
 
   void _apply(Json remote, {required bool backupFirst}) {
-    if (backupFirst) store.backupNow(' (לפני סנכרון)');
+    // The version being replaced goes to the server's history (not to a file on the device).
+    final hid = linkedHouseholdId;
+    if (backupFirst && hid != null) _uploadVersion(deepCopy(store.doc) as Json, hid, 'גרסה מהמכשיר שהוחלפה בסנכרון');
     if (FamilyBackup(remote).state.members.isEmpty) return;
     store.replace(remote);
+  }
+
+  Future<void> _uploadVersion(Json data, String hid, String note) async {
+    try {
+      await backend.saveSnapshot(hid, data, deviceName, note);
+    } catch (e) {
+      lastError = UserAccount.describe(e);
+      notifyListeners();
+    }
+  }
+
+  // MARK: Version history (replaces local backups)
+
+  Future<List<HouseholdVersion>> versions() async {
+    final hid = linkedHouseholdId;
+    if (hid == null) return [];
+    return backend.versions(hid);
+  }
+
+  /// Brings back an earlier version: it becomes the current one on every device (what's there now joins the history).
+  Future<void> restore(HouseholdVersion version) async {
+    final data = await backend.versionData(version.id);
+    _apply(data, backupFirst: false);
+    localChangedAt = DateTime.now();
+    await sync();
   }
 
   // MARK: Cache of the households not on screen
 
   Directory get _cacheFolder => Directory('${store.folder.path}/households');
 
-  void _cacheCurrent() {
+  Future<void> _cacheCurrent() async {
     final id = linkedHouseholdId;
     if (id == null) return;
     _cacheFolder.createSync(recursive: true);
-    File('${_cacheFolder.path}/$id.json')
-        .writeAsStringSync(jsonEncode({'revision': lastSeenRevision, 'family': store.doc}));
+    await store.secure.write(File('${_cacheFolder.path}/$id.json'),
+        jsonEncode({'revision': lastSeenRevision, 'family': store.doc}));
   }
 
-  ({int revision, Json family})? _readCache(String id) {
-    final f = File('${_cacheFolder.path}/$id.json');
-    if (!f.existsSync()) return null;
+  Future<({int revision, Json family})?> _readCache(String id) async {
     try {
-      final j = jsonDecode(f.readAsStringSync()) as Map;
+      final text = await store.secure.read(File('${_cacheFolder.path}/$id.json'));
+      if (text == null) return null;
+      final j = jsonDecode(text) as Map;
       return (revision: (j['revision'] as num).toInt(), family: (j['family'] as Map).cast<String, dynamic>());
     } catch (_) {
       return null;
     }
-  }
-
-  void _clearCaches() {
-    if (_cacheFolder.existsSync()) _cacheFolder.deleteSync(recursive: true);
   }
 }

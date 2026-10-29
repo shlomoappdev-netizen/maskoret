@@ -71,6 +71,7 @@ class HouseholdInvite {
 /// What the sync needs to know about the user (a fake one is used in the tests).
 abstract class SyncAccount implements Listenable {
   bool get isSignedIn;
+  String? get userId;
   List<HouseholdInfo> get households;
   Future<void> refreshHouseholds();
   String? get activeHouseholdId;
@@ -84,6 +85,7 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
   final SharedPreferences prefs;
   SupabaseClient get _c => Supabase.instance.client;
 
+  @override
   String? userId;
   String? email;
   String displayName = '';
@@ -186,6 +188,21 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
 
   Future<void> signIn(String email, String password) =>
       _c.auth.signInWithPassword(email: email.trim(), password: password);
+
+  /// Where the browser sends the user back after signing in with Google (a deep link into the app).
+  static const oauthRedirect = 'com.shlomodavid.maskoret://login-callback';
+
+  /// Opens Google's sign-in page in the browser. The result arrives through the deep link,
+  /// and the auth listener above picks up the new session.
+  Future<void> signInWithGoogle() async {
+    final opened = await _c.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: oauthRedirect,
+      authScreenLaunchMode: LaunchMode.externalApplication,
+      queryParams: {'prompt': 'select_account'},
+    );
+    if (!opened) throw const AuthException('could not open the browser');
+  }
 
   Future<void> sendPasswordReset(String email) => _c.auth.resetPasswordForEmail(email.trim());
 
@@ -298,6 +315,10 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
     if (text.contains('only the owner')) return 'רק הבעלים של משק הבית יכול לעשות את זה.';
     if (text.contains('not a member')) return 'אין לך גישה למשק הבית הזה.';
     if (text.contains('too many households')) return 'הגעת למספר המרבי של משקי בית (20).';
+    if (text.contains('provider is not enabled') || text.contains('unsupported provider')) {
+      return 'ההתחברות עם Google עוד לא הופעלה בשרת.';
+    }
+    if (text.contains('could not open the browser')) return 'לא ניתן לפתוח את הדפדפן.';
     if (text.contains('invalid email') || text.contains('unable to validate email')) return 'כתובת המייל לא תקינה.';
     final message = error is AuthException
         ? error.message
