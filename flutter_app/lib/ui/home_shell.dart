@@ -5,6 +5,7 @@ import 'common.dart';
 import 'households_screen.dart';
 import 'money_screens.dart';
 import 'summary_screen.dart';
+import 'support_screen.dart';
 import 'updates_screen.dart';
 
 class _Dest {
@@ -53,6 +54,7 @@ class _HomeShellState extends State<HomeShell> {
           actions: [
             _MemberPicker(),
             _SyncIcon(),
+            const SupportIconButton(),
             IconButton(
               tooltip: 'משקי בית וחשבון',
               icon: const Icon(Icons.home_work_outlined),

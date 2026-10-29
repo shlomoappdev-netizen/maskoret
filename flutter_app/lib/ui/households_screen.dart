@@ -7,6 +7,7 @@ import '../sync/server_sync.dart';
 import '../update/updater.dart';
 import 'auth_screen.dart';
 import 'common.dart';
+import 'support_screen.dart';
 import 'updates_screen.dart';
 
 /// Households and the user's account — like FamilyView.swift / the account part of AuthView.swift.
@@ -87,6 +88,20 @@ class HouseholdsScreen extends StatelessWidget {
                 ]),
               ],
             ),
+            SectionCard(title: 'עזרה', children: [
+              ListenableBuilder(
+                listenable: scope.support,
+                builder: (context, _) => ListTile(
+                  leading: const Icon(Icons.support_agent),
+                  title: const Text('תמיכה ודיווח תקלות'),
+                  subtitle: const Text('תקלה, שאלה או רעיון — התשובה מגיעה כאן באפליקציה'),
+                  trailing: scope.support.unread > 0
+                      ? Badge(label: Text('${scope.support.unread}'))
+                      : const Icon(Icons.chevron_left),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportScreen())),
+                ),
+              ),
+            ]),
             if (Updater.supported)
               SectionCard(title: 'האפליקציה', children: [
                 ListTile(
@@ -100,6 +115,7 @@ class HouseholdsScreen extends StatelessWidget {
                 ),
               ]),
             SectionCard(title: 'החשבון שלי', children: [
+              const MemberNumberTile(),
               ListTile(
                 leading: const Icon(Icons.person_outline),
                 title: Text(account.displayName.isEmpty ? 'ללא שם' : account.displayName),

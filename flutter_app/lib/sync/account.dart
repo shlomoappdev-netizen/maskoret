@@ -336,12 +336,14 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
     if (text.contains('expired') || text.contains('otp') || (text.contains('token') && text.contains('invalid'))) {
       return 'הקוד לא נכון או שפג תוקפו. אפשר לבקש קוד חדש.';
     }
+    if (text.contains('too many households')) return 'הגעת למספר המרבי של משקי בית (20).';
+    if (text.contains('too many reports')) return 'אפשר לפתוח עד 10 פניות ביום.';
+    if (text.contains('too many messages')) return 'נשלחו הרבה הודעות בשעה האחרונה. נסה שוב בעוד קצת.';
     if (text.contains('rate limit') || text.contains('too many') || text.contains('over_email_send_rate_limit')) {
       return 'יותר מדי ניסיונות. חכה כמה דקות ונסה שוב.';
     }
     if (text.contains('only the owner')) return 'רק הבעלים של משק הבית יכול לעשות את זה.';
     if (text.contains('not a member')) return 'אין לך גישה למשק הבית הזה.';
-    if (text.contains('too many households')) return 'הגעת למספר המרבי של משקי בית (20).';
     if (text.contains('provider is not enabled') || text.contains('unsupported provider')) {
       return 'ההתחברות עם Google עוד לא הופעלה בשרת.';
     }

@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/json.dart';
 import '../data/models.dart';
 import '../state/store.dart';
+import '../support/app_log.dart';
 import 'account.dart';
 
 class RemoteData {
@@ -440,6 +441,7 @@ class ServerSync extends ChangeNotifier {
       _markSynced('נשמר בשרת');
     } else {
       // Someone saved in between — the next round loads it and decides.
+      AppLog.add('sync', 'התנגשות: יש גרסה חדשה בשרת (ציפינו ל-$expected)');
       status = 'יש גרסה חדשה בשרת — מסנכרן…';
       _schedule(retryDelay);
     }
@@ -457,9 +459,11 @@ class ServerSync extends ChangeNotifier {
       return;
     }
     lastError = UserAccount.describe(error);
+    AppLog.add('sync', 'שגיאה: $error');
   }
 
   void _markSynced(String message) {
+    AppLog.add('sync', '$message (rev $lastSeenRevision)');
     // From now on the data on this device belongs to this account.
     final me = account.userId;
     if (me != null) dataOwner = me;
