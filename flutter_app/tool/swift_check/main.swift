@@ -77,7 +77,14 @@ for (id, file) in family.files {
                                    "usualDay": money.usualChargeDay ?? 0, "statementKeys": money.cardStatementKeys,
                                    "plans": plans,
                                    "manual": money.manualCardPayments.map { ["amount": $0.amount, "key": $0.billingKey] }]
+    let forecast = Forecaster.run(budget: budget, money: money, history: history, months: 24, now: now).map { f -> [String: Any] in
+        ["index": f.index, "checking": f.checking, "savings": f.savings, "pension": f.pension, "card": f.card,
+         "spending": f.spending, "toSavings": f.toSavings, "income": f.income, "events": f.events.count]
+    }
+    let expected = MoneyCalc.expectedNet(budget: budget, history: history, settings: money.forecast)
     files[id] = [
+        "forecast": forecast,
+        "expectedNet": expected.amount,
         "card": cardInfo,
         "months": months,
         "gross": budget.gross, "net": budget.net, "totalDeductions": budget.totalDeductions,

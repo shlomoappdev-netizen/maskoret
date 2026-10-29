@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/data/card.dart';
+import 'package:maskoret/data/forecast.dart';
 import 'package:maskoret/data/json.dart';
 import 'package:maskoret/data/max_import.dart';
 import 'package:maskoret/data/models.dart';
@@ -81,6 +82,14 @@ void main() {
         'manual': [for (final p in cards.manualCardPayments) {'amount': p.amount, 'key': p.billingKey}],
       };
       files[m.id] = {
+        'forecast': [
+          for (final x in Forecaster.run(f, months: 24, now: now))
+            {
+              'index': x.index, 'checking': x.checking, 'savings': x.savings, 'pension': x.pension, 'card': x.card,
+              'spending': x.spending, 'toSavings': x.toSavings, 'income': x.income, 'events': x.events.length,
+            },
+        ],
+        'expectedNet': Forecaster.expectedNet(b, f.history, ForecastSettings(JObj.lazy(JObj.lazy(f.json, 'money').readMap ?? {}, 'forecast'))).amount,
         'card': cardInfo,
         'months': months,
         'gross': b.gross,
@@ -126,7 +135,7 @@ void main() {
       for (final k in (d[id] as Map).keys) {
         final dv = d[id][k];
         final sv = s[id][k];
-        if (k == 'card') {
+        if (k == 'card' || k == 'forecast') {
           deepClose(dv, sv, 'card');
         } else if (k == 'months') {
           final sm = sv as List;
