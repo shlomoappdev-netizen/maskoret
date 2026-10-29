@@ -39,8 +39,15 @@ update public.support_threads set ai_pending = false where id = :thread;
 task_title, task_details}`, Hebrew, the recommended one first. The admin then picks one in the app.
 
 ## 3. Development tasks
-For an open task, read its `details` and the thread it came from, find the code, and offer the user to make the fix here
-(branch, build, test). After the fix ships, mark it: `update public.dev_tasks set status = 'done' where id = …`.
+Before working on a task, check that it is still needed (the feature may already exist — Claude's proposals can be
+wrong; see the thread's later proposals and `public.support_ai_questions`). For an open task, read its `details` and the
+thread it came from, find the code, and offer the user to make the fix here (branch, build, test). After the fix ships,
+mark it: `update public.dev_tasks set status = 'done', done_at = now() where id = …` (the admin can also do it in the app,
+tab "משימות פיתוח"). `tools/support-agent/open-tasks.sh` prints the open tasks.
+
+## Questions the admin asked Claude
+`public.support_ai_questions` (thread_id, body, answered_at): the admin asks from the app; the agent answers with the next
+proposal (`support_proposals.answers_question`), where the summary is the answer and options may be empty.
 Publishing a version (tools/publish_release.sh) always needs the user's explicit approval.
 
 ## Background agent

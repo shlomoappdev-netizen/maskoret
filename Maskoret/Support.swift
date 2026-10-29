@@ -257,7 +257,35 @@ struct SupportProposal: Decodable, Identifiable {
     let summary: String
     let options: [Option]
     let status: String
+    let chosen_option: String?
+    let answers_question: Int64?
     let created_at: String
+
+    var date: Date? { ISO8601DateFormatter.flexible(created_at) }
+    var isPending: Bool { status == "pending" }
+    var chosen: Option? { options.first { $0.id == chosen_option } }
+}
+
+/// What the admin asked Claude about a thread (the subscriber never sees it).
+struct SupportAIQuestion: Decodable, Identifiable, Hashable {
+    let id: Int64
+    let thread_id: UUID
+    let body: String
+    let created_at: String
+    let answered_at: String?
+
+    var date: Date? { ISO8601DateFormatter.flexible(created_at) }
+}
+
+/// A code fix the admin approved from a ticket; it waits for a Claude Code session in the project.
+struct DevTask: Decodable, Identifiable, Hashable {
+    let id: Int64
+    let thread_id: UUID?
+    let title: String
+    let details: String
+    let status: String
+    let created_at: String
+    let done_at: String?
 }
 
 struct AdminStats: Decodable {

@@ -57,8 +57,9 @@ async function work(reason) {
 async function handle(thread) {
   const last = [...thread.messages].reverse().find(m => !m.from_admin);
   if (!last) return;
-  log(`thread ${thread.id}: asking Claude (message ${last.id})`);
-  const proposal = await askClaude(thread);
+  const asked = (thread.admin_questions || []).some(q => !q.answered);
+  log(`thread ${thread.id}: asking Claude (message ${last.id}${asked ? ', admin question' : ''})`);
+  const proposal = await askClaude(thread, asked);
   const { error } = await supabase.rpc('bot_save_proposal', {
     p_token: token, p_thread: thread.id, p_message_id: last.id,
     p_summary: proposal.summary, p_options: proposal.options,
@@ -76,6 +77,9 @@ function prompt(thread) {
   }));
   const ticket = { subject: thread.subject, category: thread.category, status: thread.status,
                    app_info: thread.app_info, subscriber: thread.user, messages };
+  // The admin's side of the conversation: earlier proposals and the questions they asked. Not from the subscriber.
+  const admin = { earlier_proposals: thread.earlier_proposals || [], questions: thread.admin_questions || [] };
+  const question = admin.questions.filter(q => !q.answered).map(q => q.question).join('\n');
   return `You are the support analyst for "מחשבון שכר" (Maskoret), a household-budget app: SwiftUI for Mac and iPhone
 (Maskoret/), Flutter for Android and Windows (flutter_app/), Supabase server (supabase/migrations/). Sync, households,
 accounts and support are described in README.md. Read the code when it helps you understand the problem.
@@ -90,6 +94,15 @@ You cannot run commands or change anything; you only answer.
 ${JSON.stringify(ticket, null, 2)}
 </ticket>
 
+Your earlier work on this ticket and the admin's questions to you (written by the admin, whom you serve):
+<admin>
+${JSON.stringify(admin, null, 2)}
+</admin>
+${question ? `
+THE ADMIN NOW ASKS YOU: ${question}
+Answer it in "summary" (Hebrew, as long as the answer needs, up to ~12 sentences), checking the code when relevant.
+Add options only if a concrete action follows from the answer; an empty "options" array is fine.
+` : ''}
 Answer with exactly one JSON object inside <proposal></proposal> and nothing else after it:
 {
   "summary": "Hebrew, 1-4 sentences: what the subscriber needs and what most likely happened, citing evidence from the log or the code (file:line).",
@@ -104,12 +117,14 @@ Answer with exactly one JSON object inside <proposal></proposal> and nothing els
     }
   ]
 }
-Give 2-4 options, the one you recommend first. Actions: reply = only answer the subscriber; confirm_email = mark their
+Give 2-4 options (unless answering a question, see above), the one you recommend first. Before proposing a dev_task,
+check in the code and in earlier proposals that the feature does not already exist (e.g. confirm_email already exists
+as an admin action). Actions: reply = only answer the subscriber; confirm_email = mark their
 email as verified (when the code never arrived); sign_out_user = sign them out on every device; dev_task = record a code
 fix for the next version (usually together with a reply telling them it is being fixed).`;
 }
 
-function askClaude(thread) {
+function askClaude(thread, asked) {
   return new Promise((resolve, reject) => {
     const args = ['-p', '--model', MODEL, '--tools', 'Read,Grep,Glob', '--permission-mode', 'dontAsk',
                   '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--setting-sources', '',
@@ -125,7 +140,7 @@ function askClaude(thread) {
       try {
         const envelope = JSON.parse(out);
         if (envelope.is_error) throw new Error(envelope.result || 'claude error');
-        resolve(parseProposal(envelope.result));
+        resolve(parseProposal(envelope.result, asked));
       } catch (e) {
         reject(new Error(`claude: ${e.message} ${err.slice(0, 300)}`));
       }
@@ -136,7 +151,7 @@ function askClaude(thread) {
 
 const clip = (s, n) => (typeof s === 'string' ? s.trim().slice(0, n) : undefined);
 
-function parseProposal(text) {
+function parseProposal(text, asked) {
   const match = /<proposal>([\s\S]*?)<\/proposal>/.exec(text || '');
   if (!match) throw new Error('no <proposal> in the answer');
   const raw = JSON.parse(match[1]);
@@ -153,15 +168,37 @@ function parseProposal(text) {
       task_details: clip(o.task_details, 6000) || null,
     }))
     .filter(o => o.action !== 'reply' || o.reply);
-  if (!options.length) throw new Error('no usable options');
+  if (!options.length && !asked) throw new Error('no usable options');
   return { summary: clip(raw.summary, 3500) || '', options };
+}
+
+// ===== Development tasks: a notification on the Mac =====
+// The admin approved a code fix; it waits in dev_tasks for a Claude Code session in the project
+// (the session-start hook lists open tasks, and /support handles them).
+let lastTaskID = null;
+
+async function notifyTasks() {
+  const { data: tasks, error } = await supabase.rpc('bot_open_dev_tasks', { p_token: token });
+  if (error) { log('bot_open_dev_tasks:', error.message); return; }
+  const fresh = lastTaskID === null ? [] : tasks.filter(t => t.id > lastTaskID);
+  lastTaskID = Math.max(lastTaskID ?? 0, ...tasks.map(t => t.id));
+  for (const task of fresh) {
+    log(`dev task ${task.id} added`);
+    // Text goes in as arguments, never into the script.
+    execFileSync('osascript', ['-e', 'on run argv', '-e',
+      'display notification (item 2 of argv) with title (item 1 of argv) subtitle (item 3 of argv) sound name "Glass"',
+      '-e', 'end run', 'מחשבון שכר · משימת פיתוח חדשה', String(task.title).slice(0, 200),
+      'פתח את Claude Code בפרויקט — המשימה מחכה שם']);
+  }
 }
 
 // ===== Wake-ups =====
 supabase.channel('maskoret-support-agent')
   .on('broadcast', { event: 'work' }, () => work('ping'))
+  .on('broadcast', { event: 'dev_task' }, () => notifyTasks().catch(e => log('notify failed:', e.message)))
   .subscribe(status => log('realtime:', status));
 
 setInterval(() => work('safety check'), SAFETY_CHECK_MS);
 log(`support agent started (project ${PROJECT_DIR}, model ${MODEL})`);
 work('start');
+notifyTasks().catch(e => log('notify failed:', e.message));

@@ -9,7 +9,7 @@ struct AdminView: View {
     @EnvironmentObject private var account: UserAccount
     @EnvironmentObject private var support: SupportCenter
 
-    enum Tab: Hashable { case subscribers, inbox }
+    enum Tab: Hashable { case subscribers, inbox, tasks }
     @State private var tab: Tab = .subscribers
     @State private var stats: AdminStats?
 
@@ -24,6 +24,7 @@ struct AdminView: View {
                         Picker("", selection: $tab) {
                             Text("מנויים").tag(Tab.subscribers)
                             Text(support.adminUnread > 0 ? "פניות (\(support.adminUnread))" : "פניות").tag(Tab.inbox)
+                            Text("משימות פיתוח").tag(Tab.tasks)
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
@@ -32,6 +33,7 @@ struct AdminView: View {
                         switch tab {
                         case .subscribers: AdminSubscribersList()
                         case .inbox: AdminInboxList()
+                        case .tasks: AdminDevTasksList()
                         }
                     }
                 }
@@ -234,6 +236,132 @@ private struct AdminInboxList: View {
             let page = try await Task { try await AdminAPI.inbox(status: s, query: q) }.value
             threads = page.threads
             total = page.total
+            error = nil
+        } catch is CancellationError {
+        } catch {
+            self.error = UserAccount.describe(error)
+        }
+    }
+}
+
+// MARK: - Development tasks
+
+/// Code fixes approved from tickets. They wait for a Claude Code session in the project on the Mac: it lists the
+/// open ones when it starts, and /support handles them. A notification on the Mac announces each new one.
+private struct AdminDevTasksList: View {
+    @State private var status = "open"
+    @State private var tasks: [DevTask] = []
+    @State private var expanded: Set<Int64> = []
+    @State private var error: String?
+    @State private var channel: RealtimeChannelV2?
+
+    var body: some View {
+        List {
+            Section {
+                Picker("הצג", selection: $status) {
+                    Text("פתוחות").tag("open")
+                    Text("בוצעו").tag("done")
+                    Text("הכול").tag("all")
+                }
+                .pickerStyle(.segmented)
+                if let error {
+                    Text(error).foregroundStyle(.orange).font(.callout)
+                }
+            } footer: {
+                Text("משימה נרשמת כשבוחרים בהצעה של Claude לתיקון בקוד. על המק תקפוץ התראה, וכשתפתח את Claude Code בתיקיית הפרויקט הוא יציג את המשימות הפתוחות ויציע לטפל בהן (או הקלד ‎/support).")
+            }
+            Section("\(shown.count) משימות") {
+                if shown.isEmpty {
+                    Text(status == "open" ? "אין משימות פתוחות." : "אין משימות.").foregroundStyle(.secondary)
+                }
+                ForEach(shown) { task in
+                    row(task)
+                }
+            }
+        }
+        .task { await start() }
+        .onDisappear {
+            if let channel { Task { await supabase.removeChannel(channel) } }
+        }
+        .refreshable { await load() }
+    }
+
+    private var shown: [DevTask] {
+        switch status {
+        case "open": tasks.filter { $0.status == "open" }
+        case "done": tasks.filter { $0.status != "open" }
+        default: tasks
+        }
+    }
+
+    private func row(_ task: DevTask) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation { if expanded.contains(task.id) { expanded.remove(task.id) } else { expanded.insert(task.id) } }
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: task.status == "open" ? "hammer.fill" : (task.status == "done" ? "checkmark.circle.fill" : "xmark.circle"))
+                        .foregroundStyle(task.status == "open" ? Color.indigo : (task.status == "done" ? Color.green : Color.secondary))
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: "#\(task.id) \(task.title)").font(.callout.weight(.semibold))
+                        Text(verbatim: AdminAPI.date(task.created_at) + (task.status == "open" ? " · ממתינה ל-Claude Code" : ""))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.down").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(expanded.contains(task.id) ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if expanded.contains(task.id) {
+                Text(verbatim: task.details).font(.callout).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 12) {
+                    if let thread = task.thread_id {
+                        NavigationLink(value: AdminRoute.thread(thread)) {
+                            Label("לפנייה", systemImage: "bubble.left.and.text.bubble.right")
+                        }
+                    }
+                    Spacer()
+                    if task.status == "open" {
+                        Button("סמן כבוצעה") { setStatus(task, "done") }
+                        Button("ביטול המשימה", role: .destructive) { setStatus(task, "dropped") }
+                    } else {
+                        Button("החזרה לפתוחות") { setStatus(task, "open") }
+                    }
+                }
+                .font(.caption)
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func setStatus(_ task: DevTask, _ status: String) {
+        Task {
+            do {
+                try await AdminAPI.setTaskStatus(task.id, status)
+                await load()
+            } catch {
+                self.error = UserAccount.describe(error)
+            }
+        }
+    }
+
+    private func start() async {
+        await load()
+        let channel = supabase.channel("admin-dev-tasks")
+        let changes = channel.postgresChange(AnyAction.self, schema: "public", table: "dev_tasks")
+        self.channel = channel
+        await channel.subscribe()
+        for await _ in changes { await load() }
+    }
+
+    private func load() async {
+        do {
+            tasks = try await Task { try await AdminAPI.devTasks() }.value
             error = nil
         } catch is CancellationError {
         } catch {
@@ -628,11 +756,33 @@ enum AdminAPI {
 
     // MARK: Claude's proposals
 
-    static func pendingProposal(thread: UUID) async throws -> SupportProposal? {
+    /// Everything Claude proposed in a thread, oldest first (the open one is the last, if any).
+    static func proposals(thread: UUID) async throws -> [SupportProposal] {
         try await supabase.from("support_proposals").select()
-            .eq("thread_id", value: thread).eq("status", value: "pending")
-            .order("id", ascending: false).limit(1)
-            .decoded([SupportProposal].self).first
+            .eq("thread_id", value: thread).order("id", ascending: true)
+            .decoded([SupportProposal].self)
+    }
+
+    static func questions(thread: UUID) async throws -> [SupportAIQuestion] {
+        try await supabase.from("support_ai_questions").select()
+            .eq("thread_id", value: thread).order("id", ascending: true)
+            .decoded([SupportAIQuestion].self)
+    }
+
+    /// Asks Claude about the thread; the answer arrives as the next proposal.
+    static func ask(thread: UUID, question: String) async throws {
+        struct Params: Encodable { let p_thread: UUID, p_question: String }
+        try await supabase.rpc("admin_ask_claude", params: Params(p_thread: thread, p_question: question)).execute()
+    }
+
+    static func devTasks() async throws -> [DevTask] {
+        try await supabase.from("dev_tasks").select().order("id", ascending: false).limit(200)
+            .decoded([DevTask].self)
+    }
+
+    static func setTaskStatus(_ task: Int64, _ status: String) async throws {
+        struct Params: Encodable { let p_task: Int64, p_status: String }
+        try await supabase.rpc("admin_set_dev_task_status", params: Params(p_task: task, p_status: status)).execute()
     }
 
     static func decide(_ proposal: Int64, status: String, option: String? = nil) async throws {
