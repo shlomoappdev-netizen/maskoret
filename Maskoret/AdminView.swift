@@ -626,6 +626,44 @@ enum AdminAPI {
         try await supabase.rpc("admin_delete_user", params: ["target": id]).execute()
     }
 
+    // MARK: Claude's proposals
+
+    static func pendingProposal(thread: UUID) async throws -> SupportProposal? {
+        try await supabase.from("support_proposals").select()
+            .eq("thread_id", value: thread).eq("status", value: "pending")
+            .order("id", ascending: false).limit(1)
+            .decoded([SupportProposal].self).first
+    }
+
+    static func decide(_ proposal: Int64, status: String, option: String? = nil) async throws {
+        struct Params: Encodable { let p_proposal: Int64, p_status: String, p_option: String? }
+        try await supabase.rpc("admin_decide_proposal", params: Params(p_proposal: proposal, p_status: status, p_option: option))
+            .execute()
+    }
+
+    static func setAIMode(thread: UUID, on: Bool) async throws {
+        struct Params: Encodable { let p_thread: UUID, p_mode: String }
+        try await supabase.rpc("admin_set_ai_mode", params: Params(p_thread: thread, p_mode: on ? "on" : "off")).execute()
+    }
+
+    static func requestProposal(thread: UUID) async throws {
+        try await supabase.rpc("admin_request_proposal", params: ["p_thread": thread]).execute()
+    }
+
+    /// Does what a chosen option asks for besides the reply.
+    static func perform(_ option: SupportProposal.Option, thread: SupportThread) async throws {
+        switch option.action {
+        case "confirm_email": try await confirmEmail(thread.user_id)
+        case "sign_out_user": try await signOut(thread.user_id)
+        case "dev_task":
+            struct Params: Encodable { let p_thread: UUID, p_title: String, p_details: String }
+            try await supabase.rpc("admin_add_dev_task",
+                                   params: Params(p_thread: thread.id, p_title: option.task_title ?? option.title,
+                                                  p_details: option.task_details ?? option.explanation)).execute()
+        default: break
+        }
+    }
+
     static func date(_ text: String) -> String {
         guard let d = ISO8601DateFormatter.flexible(text) else { return "—" }
         return d.formatted(.dateTime.day().month().year().hour().minute().locale(Fmt.locale))

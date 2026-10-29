@@ -103,6 +103,9 @@ struct SupportThread: Decodable, Identifiable, Hashable {
     let last_message_at: String
     let user_unread: Int
     let admin_unread: Int
+    /// AI help in this thread (admin only): "on" / "off", and whether a proposal is being prepared.
+    var ai_mode: String? = nil
+    var ai_pending: Bool? = nil
 
     var isOpen: Bool { status == "open" }
     var lastMessageDate: Date? { ISO8601DateFormatter.flexible(last_message_at) }
@@ -226,6 +229,35 @@ final class SupportCenter: ObservableObject {
     static func thread(_ id: UUID) async throws -> SupportThread {
         try await supabase.from("support_threads").select().eq("id", value: id).single().decoded(SupportThread.self)
     }
+}
+
+/// Claude's options for one support thread — seen by the admin only, done only when the admin picks one.
+struct SupportProposal: Decodable, Identifiable {
+    struct Option: Decodable, Identifiable, Hashable {
+        let id: String
+        let title: String
+        let explanation: String
+        let action: String
+        let reply: String?
+        let task_title: String?
+        let task_details: String?
+
+        /// What happens besides the reply, in words (nil for a plain reply).
+        var actionLabel: String? {
+            switch action {
+            case "confirm_email": return "אישור המייל של המנוי"
+            case "sign_out_user": return "ניתוק המנוי מכל המכשירים"
+            case "dev_task": return "רישום משימת פיתוח: \(task_title ?? title)"
+            default: return nil
+            }
+        }
+    }
+    let id: Int64
+    let thread_id: UUID
+    let summary: String
+    let options: [Option]
+    let status: String
+    let created_at: String
 }
 
 struct AdminStats: Decodable {

@@ -189,6 +189,10 @@ struct SupportChatView: View {
     @State private var error: String?
     @State private var shownLog: String?
     @State private var channel: RealtimeChannelV2?
+    // Admin: Claude's open proposal, and the option whose action runs when the reply is sent.
+    @State private var proposal: SupportProposal?
+    @State private var chosen: SupportProposal.Option?
+    @State private var confirming: SupportProposal.Option?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -212,6 +216,7 @@ struct SupportChatView: View {
                     if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
                 }
             }
+            if asAdmin { aiPanel }
             Divider()
             composer
         }
@@ -237,6 +242,131 @@ struct SupportChatView: View {
         }
         .sheet(isPresented: Binding(get: { shownLog != nil }, set: { if !$0 { shownLog = nil } })) {
             LogSheet(text: shownLog ?? "")
+        }
+        .confirmationDialog(confirming?.title ?? "", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                            titleVisibility: .visible, presenting: confirming) { option in
+            Button("ביצוע") { Task { await carryOut(option, reply: nil) } }
+            Button("ביטול", role: .cancel) {}
+        } message: { option in
+            Text(option.actionLabel ?? option.explanation)
+        }
+    }
+
+    // MARK: Claude (admin only)
+
+    @ViewBuilder private var aiPanel: some View {
+        if let thread {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label("הצעות Claude", systemImage: "sparkles").font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text("רק אתה רואה את זה").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    if thread.ai_mode == "off" {
+                        HStack {
+                            Text("Claude לא מטפל בפנייה הזו.").font(.callout).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("בקש הצעה") { aiRun { try await AdminAPI.requestProposal(thread: threadID) } }
+                        }
+                    } else if let proposal {
+                        Text(verbatim: proposal.summary).font(.callout).textSelection(.enabled)
+                        ForEach(proposal.options) { option in
+                            Button {
+                                choose(option)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(verbatim: option.title).font(.callout.weight(.semibold))
+                                    if !option.explanation.isEmpty {
+                                        Text(verbatim: option.explanation).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    if let label = option.actionLabel {
+                                        Label(label, systemImage: "bolt.fill").font(.caption2).foregroundStyle(.orange)
+                                    }
+                                    if option.reply != nil {
+                                        Label("כולל תשובה למנוי — תוכל לערוך לפני השליחה", systemImage: "text.bubble")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                                .background(chosen == option ? Color.accentColor.opacity(0.22) : Color.secondary.opacity(0.08),
+                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        HStack {
+                            Button("אכתוב בעצמי") {
+                                chosen = nil
+                                aiRun { try await AdminAPI.decide(proposal.id, status: "dismissed") }
+                            }
+                            Spacer()
+                            Button("בלי AI בפנייה הזו", role: .destructive) {
+                                chosen = nil
+                                aiRun { try await AdminAPI.setAIMode(thread: threadID, on: false) }
+                            }
+                        }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                    } else if thread.ai_pending == true {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Claude מנתח את הפנייה… (רץ על המק כשהוא דלוק)").font(.callout).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        HStack {
+                            Text("אין הצעה פתוחה.").font(.callout).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("בקש הצעה") { aiRun { try await AdminAPI.requestProposal(thread: threadID) } }
+                            Button("בלי AI") { aiRun { try await AdminAPI.setAIMode(thread: threadID, on: false) } }
+                        }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                    }
+                }
+                .padding(12)
+            }
+            .frame(maxHeight: proposal == nil ? 70 : 320)
+            .fixedSize(horizontal: false, vertical: proposal == nil)
+            .background(Color.purple.opacity(0.07))
+        }
+    }
+
+    /// An option with a reply goes into the message box for editing (its action runs on send);
+    /// an option without one asks for confirmation and runs.
+    private func choose(_ option: SupportProposal.Option) {
+        if let reply = option.reply {
+            chosen = option
+            draft = reply
+        } else {
+            confirming = option
+        }
+    }
+
+    /// Runs the option's action, records the decision, then sends the reply (if any).
+    private func carryOut(_ option: SupportProposal.Option, reply: String?) async {
+        guard let thread, let proposal else { return }
+        do {
+            try await AdminAPI.perform(option, thread: thread)
+            try await AdminAPI.decide(proposal.id, status: "chosen", option: option.id)
+            if let reply { try await support.send(thread: threadID, body: reply, log: nil) }
+            chosen = nil
+            draft = ""
+            error = nil
+            await load()
+        } catch {
+            self.error = UserAccount.describe(error)
+        }
+    }
+
+    private func aiRun(_ action: @escaping () async throws -> Void) {
+        Task {
+            do {
+                try await action()
+                await load()
+            } catch {
+                self.error = UserAccount.describe(error)
+            }
         }
     }
 
@@ -298,6 +428,23 @@ struct SupportChatView: View {
             if attachLog {
                 Text("היומן הטכני יצורף להודעה").font(.caption2).foregroundStyle(.secondary)
             }
+            if let chosen {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                    Text(verbatim: "הצעה נבחרה: \(chosen.title)" + (chosen.actionLabel.map { " · בשליחה יבוצע גם: \($0)" } ?? ""))
+                        .lineLimit(2)
+                    Spacer()
+                    Button {
+                        self.chosen = nil
+                        draft = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
         }
         .padding(10)
     }
@@ -308,8 +455,18 @@ struct SupportChatView: View {
         let inserts = channel.postgresChange(InsertAction.self, schema: "public", table: "support_messages",
                                              filter: "thread_id=eq.\(threadID.uuidString.lowercased())")
         self.channel = channel
+        // The admin also follows Claude's proposals and the thread's AI state.
+        let proposals = channel.postgresChange(AnyAction.self, schema: "public", table: "support_proposals",
+                                               filter: "thread_id=eq.\(threadID.uuidString.lowercased())")
+        let threadChanges = channel.postgresChange(UpdateAction.self, schema: "public", table: "support_threads",
+                                                   filter: "id=eq.\(threadID.uuidString.lowercased())")
         await channel.subscribe()
-        for await _ in inserts {
+        let changes = AsyncStream<Void> { continuation in
+            Task { for await _ in inserts { continuation.yield() } }
+            Task { for await _ in proposals { continuation.yield() } }
+            Task { for await _ in threadChanges { continuation.yield() } }
+        }
+        for await _ in changes {
             await load()
         }
     }
@@ -319,6 +476,10 @@ struct SupportChatView: View {
             async let t = SupportCenter.thread(threadID)
             async let m = SupportCenter.messages(in: threadID)
             (thread, messages) = try await (t, m)
+            if asAdmin {
+                proposal = try await AdminAPI.pendingProposal(thread: threadID)
+                if let chosen, !(proposal?.options.contains(chosen) ?? false) { self.chosen = nil }
+            }
             let unread = asAdmin ? (thread?.admin_unread ?? 0) : (thread?.user_unread ?? 0)
             if unread > 0 {
                 await support.markRead(thread: threadID)
@@ -335,6 +496,13 @@ struct SupportChatView: View {
         guard !text.isEmpty, !sending else { return }
         sending = true
         let log = attachLog ? Diagnostics.report(account: account, sync: sync) : nil
+        if asAdmin, let chosen {
+            Task {
+                defer { sending = false }
+                await carryOut(chosen, reply: text)
+            }
+            return
+        }
         Task {
             defer { sending = false }
             do {

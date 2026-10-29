@@ -1,0 +1,8 @@
+{
+  "name": "maskoret-support-agent",
+  "private": true,
+  "type": "module",
+  "description": "Wakes on every new support message and asks Claude Code (read-only) for proposals the admin decides on.",
+  "scripts": { "start": "node agent.mjs" },
+  "dependencies": { "@supabase/supabase-js": "2.49.4" }
+}

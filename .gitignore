@@ -19,3 +19,6 @@ flutter_app/.dart_tool/
 חשוב/
 *.jks
 client_secret_*.json
+
+# Support agent dependencies
+tools/support-agent/node_modules/
