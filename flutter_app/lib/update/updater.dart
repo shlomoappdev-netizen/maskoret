@@ -1,31 +1,41 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:device_info_plus/device_info_plus.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import '../sync/account.dart';
 
-/// A published version (releases/latest.json, written by the GitHub workflow).
+/// A published version: the shared manifest of every platform (written when a release is published to
+/// github.com/shlomoappdev-netizen/maskoret-releases). `build` is one counter for all the apps (version.json).
 class Release {
   Release(Map<String, dynamic> j)
       : version = j['version'] as String? ?? '',
         build = (j['build'] as num?)?.toInt() ?? 0,
         date = j['date'] as String?,
         notes = ((j['notes'] as List?) ?? const []).whereType<String>().toList(),
-        android = ((j['android'] as Map?) ?? const {}).cast<String, dynamic>().map((k, v) => MapEntry(k, v as String)),
-        windows = j['windows'] as String?;
+        platforms = ((j['platforms'] as Map?) ?? const {})
+            .map((k, v) => MapEntry(k as String, v is Map ? ReleaseFile(v.cast<String, dynamic>()) : null))
+          ..removeWhere((k, v) => v == null);
 
   final String version;
   final int build;
   final String? date;
   final List<String> notes;
+  final Map<String, ReleaseFile?> platforms;
 
-  /// Processor type (arm64-v8a, armeabi-v7a, x86_64) → APK address.
-  final Map<String, String> android;
-  final String? windows;
+  ReleaseFile? get forThisDevice => platforms[Platform.isWindows ? 'windows' : 'android'];
+}
+
+class ReleaseFile {
+  ReleaseFile(Map<String, dynamic> j)
+      : url = j['url'] as String? ?? '',
+        sha256 = (j['sha256'] as String?)?.toLowerCase(),
+        size = (j['size'] as num?)?.toInt();
+  final String url;
+  final String? sha256;
+  final int? size;
 }
 
 enum UpdatePhase { idle, checking, downloading, installing, failed }
@@ -36,7 +46,7 @@ enum UpdatePhase { idle, checking, downloading, installing, failed }
 class Updater extends ChangeNotifier {
   /// Overridable only for testing the update flow against a local server (--dart-define=UPDATE_URL=…).
   static const latestUrl = String.fromEnvironment('UPDATE_URL',
-      defaultValue: '${SupabaseConfig.url}/storage/v1/object/public/releases/latest.json');
+      defaultValue: 'https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json');
   static const _channel = MethodChannel('maskoret/update');
 
   String currentVersion = '';
@@ -50,12 +60,8 @@ class Updater extends ChangeNotifier {
   /// Only where updates are published (not on the iPhone/Mac, and not in tests).
   static bool get supported => Platform.isAndroid || Platform.isWindows;
 
-  bool get available => latest != null && latest!.build > currentBuild && _downloadUrl(latest!) != null;
+  bool get available => latest != null && latest!.build > currentBuild && latest!.forThisDevice != null;
   bool get busy => phase == UpdatePhase.checking || phase == UpdatePhase.downloading || phase == UpdatePhase.installing;
-
-  String? _abiUrl;
-
-  String? _downloadUrl(Release r) => Platform.isWindows ? r.windows : _abiUrl;
 
   /// Checks for a newer version (quietly; at launch, on return to the app, and from the updates screen).
   Future<void> check({bool force = false}) async {
@@ -74,12 +80,7 @@ class Updater extends ChangeNotifier {
       final request = await client.getUrl(Uri.parse('$latestUrl?t=${DateTime.now().millisecondsSinceEpoch}'));
       final response = await request.close();
       if (response.statusCode == 200) {
-        final release = Release(jsonDecode(await response.transform(utf8.decoder).join()) as Map<String, dynamic>);
-        if (Platform.isAndroid) {
-          final abis = (await DeviceInfoPlugin().androidInfo).supportedAbis;
-          _abiUrl = abis.map((a) => release.android[a]).whereType<String>().firstOrNull;
-        }
-        latest = release;
+        latest = Release(jsonDecode(await response.transform(utf8.decoder).join()) as Map<String, dynamic>);
       } else if (response.statusCode != 400 && response.statusCode != 404) {
         // 400/404: nothing published yet.
         throw HttpException('HTTP ${response.statusCode}');
@@ -96,9 +97,8 @@ class Updater extends ChangeNotifier {
 
   /// Downloads the new version and installs it.
   Future<void> install() async {
-    final release = latest;
-    final url = release == null ? null : _downloadUrl(release);
-    if (url == null || busy) return;
+    final target = latest?.forThisDevice;
+    if (target == null || busy) return;
     phase = UpdatePhase.downloading;
     progress = 0;
     error = null;
@@ -106,7 +106,13 @@ class Updater extends ChangeNotifier {
     try {
       final dir = await Directory.systemTemp.createTemp('maskoret-update');
       final file = File('${dir.path}/${Platform.isWindows ? 'maskoret-windows.zip' : 'maskoret.apk'}');
-      await _download(url, file);
+      await _download(target.url, file);
+      // The file must be exactly the published one.
+      if (target.sha256 != null) {
+        final digest = await Sha256().hash(await file.readAsBytes());
+        final hex = digest.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+        if (hex != target.sha256) throw const _Corrupt();
+      }
       phase = UpdatePhase.installing;
       notifyListeners();
       if (Platform.isAndroid) {
@@ -123,7 +129,9 @@ class Updater extends ChangeNotifier {
       }
     } catch (e) {
       phase = UpdatePhase.failed;
-      error = e is FileSystemException && Platform.isWindows
+      error = e is _Corrupt
+          ? 'הקובץ שהורד פגום. נסה שוב.'
+          : e is FileSystemException && Platform.isWindows
           ? 'אין הרשאה לעדכן את התיקייה של האפליקציה. העבר אותה לתיקייה שלך (למשל ‎C:\\מחשבון שכר‎) ונסה שוב.'
           : 'העדכון נכשל. נסה שוב בעוד רגע.';
     }
@@ -178,4 +186,8 @@ Start-Process -FilePath ${q(exe)}
     );
     exit(0);
   }
+}
+
+class _Corrupt implements Exception {
+  const _Corrupt();
 }

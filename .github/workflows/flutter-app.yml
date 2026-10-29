@@ -1,12 +1,11 @@
-# Builds the Flutter version of "מחשבון שכר" (flutter_app/) for Windows and Android, and publishes it
-# as an update: the files go to the public "releases" folder on Supabase, and the apps read
-# releases/latest.json to offer the new version. The builds are also on the run's page under "Artifacts".
+# Builds the Flutter version of "מחשבון שכר" (flutter_app/) for Windows and Android. The results are on the
+# run's page under "Artifacts". Releases (and the update manifest the apps read) are published to the public
+# repo shlomoappdev-netizen/maskoret-releases, together with the Mac build.
 #
-# Secrets (GitHub → Settings → Secrets and variables → Actions):
-#   SUPABASE_SERVICE_KEY       — Supabase → Project Settings → API Keys → the secret / service_role key
-#   ANDROID_KEYSTORE_BASE64    — the permanent Android signing key (base64 of flutter_app/android/maskoret-release.jks)
+# The version and build number come from version.json — one counter for all the apps.
+# Optional secrets, so the APK is signed with the permanent key (otherwise it can't update an installed app):
+#   ANDROID_KEYSTORE_BASE64    — base64 of flutter_app/android/maskoret-release.jks
 #   ANDROID_KEYSTORE_PASSWORD  — its password
-# Without them the builds still run, but nothing is published.
 name: Flutter app (Windows + Android)
 
 on:
@@ -15,14 +14,12 @@ on:
     paths:
       - 'flutter_app/**'
       - 'rates/**'
+      - 'version.json'
       - '.github/workflows/flutter-app.yml'
   workflow_dispatch:
 
 env:
   FLUTTER_VERSION: '3.44.4'
-  SUPABASE_URL: https://pukbrxsuucqrukiaojlp.supabase.co
-  # Always higher than any earlier build (and than local builds, which are +1).
-  BUILD_NUMBER: ${{ github.run_number }}0
 
 jobs:
   windows:
@@ -43,8 +40,8 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          $version = (Get-Content release.json -Raw | ConvertFrom-Json).version
-          flutter build windows --release --build-name $version --build-number $env:BUILD_NUMBER
+          $v = Get-Content ../version.json -Raw | ConvertFrom-Json
+          flutter build windows --release --build-name $v.version --build-number $v.build
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath build/maskoret-windows.zip -Force
       - uses: actions/upload-artifact@v4
         with:
@@ -77,69 +74,15 @@ jobs:
             echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
             echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           else
-            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret — the APK is signed with a temporary key and won't be published."
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret — the APK is signed with a temporary key and can't update an installed app."
           fi
       - name: Build
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          version=$(jq -r .version release.json)
-          # One APK per processor type keeps each file small (the update downloads only the phone's own).
-          flutter build apk --release --split-per-abi --build-name "$version" --build-number "$BUILD_NUMBER"
+          flutter build apk --release --build-name "$(jq -r .version ../version.json)" --build-number "$(jq -r .build ../version.json)"
       - uses: actions/upload-artifact@v4
         with:
           name: maskoret-android
-          path: flutter_app/build/app/outputs/flutter-apk/app-*-release.apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
-
-  publish:
-    needs: [windows, android]
-    runs-on: ubuntu-latest
-    env:
-      KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check secrets
-        id: secrets
-        run: |
-          if [ -z "$KEY" ] || [ "$HAS_KEYSTORE" != "true" ]; then
-            echo "::notice::Not published: add the SUPABASE_SERVICE_KEY and ANDROID_KEYSTORE_* secrets to publish updates."
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/download-artifact@v4
-        if: steps.secrets.outputs.ok == 'true'
-        with:
-          path: out
-      - name: Upload to Supabase
-        if: steps.secrets.outputs.ok == 'true'
-        run: |
-          set -euo pipefail
-          api="$SUPABASE_URL/storage/v1"
-          auth=(-H "Authorization: Bearer $KEY" -H "apikey: $KEY")
-          # The public "releases" folder (created on the first publish; "already exists" is fine).
-          curl -s "${auth[@]}" -H "Content-Type: application/json" -X POST "$api/bucket" \
-            -d '{"id":"releases","name":"releases","public":true,"file_size_limit":52428800}' || true
-          upload() { # local file, path in the folder, content type
-            code=$(curl -s -o /tmp/resp -w '%{http_code}' "${auth[@]}" -H "x-upsert: true" -H "Content-Type: $3" \
-              -H "Cache-Control: ${4:-max-age=31536000}" --data-binary @"$1" "$api/object/releases/$2")
-            if [ "$code" != "200" ]; then echo "Upload of $2 failed ($code): $(cat /tmp/resp)"; exit 1; fi
-          }
-          base="$SUPABASE_URL/storage/v1/object/public/releases"
-          dir="builds/$BUILD_NUMBER"
-          android='{}'
-          for f in out/maskoret-android/app-*-release.apk; do
-            abi=$(basename "$f" | sed 's/^app-//; s/-release.apk$//')
-            upload "$f" "$dir/maskoret-$abi.apk" application/vnd.android.package-archive
-            android=$(jq -c --arg abi "$abi" --arg url "$base/$dir/maskoret-$abi.apk" '. + {($abi): $url}' <<< "$android")
-          done
-          upload out/maskoret-windows/maskoret-windows.zip "$dir/maskoret-windows.zip" application/zip
-          # Last: the file the apps check. It points to the files above, so they're all in place first.
-          jq -n --arg version "$(jq -r .version flutter_app/release.json)" --argjson build "$BUILD_NUMBER" \
-                --arg date "$(date -u +%Y-%m-%d)" --argjson notes "$(jq -c .notes flutter_app/release.json)" \
-                --argjson android "$android" --arg windows "$base/$dir/maskoret-windows.zip" \
-                '{version: $version, build: $build, date: $date, notes: $notes, android: $android, windows: $windows}' > latest.json
-          cat latest.json
-          upload latest.json latest.json application/json "no-cache, max-age=0"
