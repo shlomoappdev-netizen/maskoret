@@ -5,6 +5,7 @@ import '../data/max_import.dart';
 import 'budget_screens.dart';
 import 'card_screen.dart';
 import 'forecast_screen.dart';
+import 'history_screen.dart';
 import 'common.dart';
 import 'households_screen.dart';
 import 'money_screens.dart';
@@ -27,6 +28,7 @@ enum Dest {
   card('כרטיס אשראי', Icons.credit_card),
   transactions('תנועות', Icons.swap_horiz),
   forecast('תחזית', Icons.show_chart),
+  history('חודשים', Icons.calendar_month),
   account('חשבון ומשק בית', Icons.account_circle_outlined, ownScaffold: true),
   support('תמיכה ודיווח תקלות', Icons.support_agent, ownScaffold: true),
   versions('גרסאות קודמות', Icons.history, ownScaffold: true),
@@ -51,6 +53,7 @@ enum Dest {
         card => const CardScreen(),
         transactions => const TransactionsScreen(),
         forecast => const ForecastScreen(),
+        history => const HistoryScreen(),
         account => const HouseholdsScreen(),
         support => const SupportScreen(),
         versions => const VersionsScreen(),
@@ -60,7 +63,7 @@ enum Dest {
   /// The sidebar sections (החודש / הכסף שלי / מעקב / הגדרות).
   static List<(String, List<Dest>)> sections() => [
         ('החודש', [summary, incomes, deductions, expenses]),
-        ('הכסף שלי', [accounts, card, transactions, forecast]),
+        ('הכסף שלי', [accounts, card, transactions, forecast, history]),
         ('הגדרות', [account, support, versions, if (Updater.supported) updates]),
       ];
 
