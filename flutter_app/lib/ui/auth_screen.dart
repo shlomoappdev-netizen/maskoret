@@ -79,7 +79,7 @@ class _AuthScreenState extends State<AuthScreen> {
           final needsCode = await account.signUp(email.text, password.text, name.text);
           if (needsCode) {
             mode = _Mode.verify;
-            info = 'שלחנו קוד בן 6 ספרות אל ${email.text.trim()}';
+            info = 'שלחנו קוד אל ${email.text.trim()}';
           } else {
             widget.onDone?.call();
           }
@@ -195,7 +195,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         keyboardType: TextInputType.number,
                         textDirection: TextDirection.ltr,
                         textAlign: TextAlign.center,
-                        maxLength: 6,
+                        // The server's code length is a setting (6 today); accept any length up to 10.
+                        maxLength: 10,
                         autofillHints: const [AutofillHints.oneTimeCode],
                         style: theme.textTheme.headlineSmall?.copyWith(letterSpacing: 8),
                         decoration: const InputDecoration(labelText: 'הקוד מהמייל', border: OutlineInputBorder()),

@@ -127,7 +127,7 @@ struct AuthView: View {
                     }
                     if needsCode {
                         mode = .verify
-                        show("שלחנו קוד בן 6 ספרות ל-\(email). הכנס אותו כאן.")
+                        show("שלחנו קוד ל-\(email). הכנס אותו כאן.")
                     } else {
                         onDone()
                     }
@@ -171,7 +171,7 @@ struct AuthView: View {
                 run {
                     try await account.sendPasswordReset(email: email)
                     mode = .reset
-                    show("אם יש חשבון עם המייל הזה, נשלח אליו קוד בן 6 ספרות.")
+                    show("אם יש חשבון עם המייל הזה, נשלח אליו קוד.")
                 }
             }
             .buttonStyle(.borderedProminent)
