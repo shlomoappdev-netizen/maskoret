@@ -150,8 +150,11 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
     final changed = userId != user.id.toLowerCase();
     userId = user.id.toLowerCase();
     email = user.email;
-    final name = user.userMetadata?['display_name'];
-    if (name is String) displayName = name;
+    // Email sign-ups store "display_name"; Google gives "full_name" / "name".
+    final meta = user.userMetadata ?? const {};
+    final name = [meta['display_name'], meta['full_name'], meta['name']]
+        .firstWhere((v) => v is String && v.isNotEmpty, orElse: () => '');
+    displayName = name as String;
     notifyListeners();
     if (changed) {
       await refreshHouseholds();
