@@ -1,0 +1,62 @@
+# Builds the Flutter version of "מחשבון שכר" (flutter_app/) for Windows and Android.
+# The results are on the run's page under "Artifacts".
+name: Flutter app (Windows + Android)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - 'rates/**'
+      - '.github/workflows/flutter-app.yml'
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.44.4'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # The Swift cross-check needs a Mac; every other test runs here.
+      - run: flutter test --exclude-tags swift
+      - run: flutter build windows --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maskoret-windows
+          path: flutter_app/build/windows/x64/runner/Release/
+          retention-days: 30
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maskoret-android
+          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30

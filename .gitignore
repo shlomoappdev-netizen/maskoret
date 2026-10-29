@@ -1,0 +1,16 @@
+# Personal files that must never reach a repository
+*.xlsx
+*.xls
+להפצה/
+ארכיון/
+.version-check
+
+# macOS / Xcode
+.DS_Store
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# Flutter (flutter_app/ has its own .gitignore too)
+flutter_app/build/
+flutter_app/.dart_tool/
