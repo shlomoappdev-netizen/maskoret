@@ -5,6 +5,7 @@ import 'common.dart';
 import 'households_screen.dart';
 import 'money_screens.dart';
 import 'summary_screen.dart';
+import 'updates_screen.dart';
 
 class _Dest {
   const _Dest(this.label, this.icon, this.selectedIcon, this.page);
@@ -40,10 +41,13 @@ class _HomeShellState extends State<HomeShell> {
     final scope = context.scope;
     final wide = isWide(context);
     return ListenableBuilder(
-      listenable: Listenable.merge([scope.store, scope.account, scope.sync]),
+      listenable: Listenable.merge([scope.store, scope.account, scope.sync, scope.updater]),
       builder: (context, _) {
         _maybeAskLocalChoice(context);
-        final page = _dests[index].page;
+        final page = Column(children: [
+          if (scope.updater.available) const UpdateBanner(),
+          Expanded(child: _dests[index].page),
+        ]);
         final appBar = AppBar(
           title: _Title(),
           actions: [

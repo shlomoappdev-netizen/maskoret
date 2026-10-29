@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../sync/account.dart';
 import 'common.dart';
+import 'updates_screen.dart';
 
 enum _Mode { signIn, signUp, verify, forgot, reset }
 
@@ -128,7 +129,14 @@ class _AuthScreenState extends State<AuthScreen> {
     return Scaffold(
       appBar: widget.welcome ? null : AppBar(title: Text(title)),
       body: SafeArea(
-        child: Center(
+        child: Column(children: [
+          // An old version can be updated before signing in, too.
+          if (widget.welcome)
+            ListenableBuilder(
+              listenable: context.scope.updater,
+              builder: (context, _) => context.scope.updater.available ? const UpdateBanner() : const SizedBox.shrink(),
+            ),
+          Expanded(child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
@@ -275,8 +283,8 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
               ),
             ),
-          ),
-        ),
+          ))),
+        ]),
       ),
     );
   }

@@ -4,8 +4,10 @@ import 'package:flutter/services.dart';
 import '../data/fmt.dart';
 import '../sync/account.dart';
 import '../sync/server_sync.dart';
+import '../update/updater.dart';
 import 'auth_screen.dart';
 import 'common.dart';
+import 'updates_screen.dart';
 
 /// Households and the user's account — like FamilyView.swift / the account part of AuthView.swift.
 class HouseholdsScreen extends StatelessWidget {
@@ -85,6 +87,18 @@ class HouseholdsScreen extends StatelessWidget {
                 ]),
               ],
             ),
+            if (Updater.supported)
+              SectionCard(title: 'האפליקציה', children: [
+                ListTile(
+                  leading: const Icon(Icons.system_update_alt),
+                  title: const Text('עדכונים'),
+                  subtitle: Text(scope.updater.available
+                      ? 'יש גרסה חדשה: ${scope.updater.latest!.version}'
+                      : 'גרסה ${scope.updater.currentVersion}'),
+                  trailing: const Icon(Icons.chevron_left),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdatesScreen())),
+                ),
+              ]),
             SectionCard(title: 'החשבון שלי', children: [
               ListTile(
                 leading: const Icon(Icons.person_outline),

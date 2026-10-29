@@ -6,6 +6,7 @@ import '../data/fmt.dart';
 import '../state/store.dart';
 import '../sync/account.dart';
 import '../sync/server_sync.dart';
+import '../update/updater.dart';
 
 /// Gives every screen the store, the account and the sync.
 class AppScope extends InheritedWidget {
@@ -15,6 +16,7 @@ class AppScope extends InheritedWidget {
     required this.account,
     required this.sync,
     required this.prefs,
+    required this.updater,
     required super.child,
   });
 
@@ -22,6 +24,7 @@ class AppScope extends InheritedWidget {
   final UserAccount account;
   final ServerSync sync;
   final SharedPreferences prefs;
+  final Updater updater;
 
   static AppScope of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<AppScope>()!;
 

@@ -15,6 +15,7 @@ import 'sync/server_sync.dart';
 import 'ui/auth_screen.dart';
 import 'ui/common.dart';
 import 'ui/home_shell.dart';
+import 'update/updater.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,7 +36,8 @@ Future<void> main() async {
   )..attach();
   account.onChanged = sync.accountChanged;
   account.start();
-  runApp(MaskoretApp(store: store, account: account, sync: sync, prefs: prefs));
+  final updater = Updater()..check();
+  runApp(MaskoretApp(store: store, account: account, sync: sync, prefs: prefs, updater: updater));
 }
 
 /// Shown on the server next to each save ("updated from …"), like `Platform.deviceName` in Swift.
@@ -53,11 +55,13 @@ Future<String> _deviceName() async {
 }
 
 class MaskoretApp extends StatefulWidget {
-  const MaskoretApp({super.key, required this.store, required this.account, required this.sync, required this.prefs});
+  const MaskoretApp(
+      {super.key, required this.store, required this.account, required this.sync, required this.prefs, required this.updater});
   final AppStore store;
   final UserAccount account;
   final ServerSync sync;
   final SharedPreferences prefs;
+  final Updater updater;
 
   @override
   State<MaskoretApp> createState() => _MaskoretAppState();
@@ -70,7 +74,10 @@ class _MaskoretAppState extends State<MaskoretApp> {
   void initState() {
     super.initState();
     // Back in the app: check the server right away.
-    _lifecycle = AppLifecycleListener(onResume: widget.sync.sync);
+    _lifecycle = AppLifecycleListener(onResume: () {
+      widget.sync.sync();
+      widget.updater.check();
+    });
   }
 
   @override
@@ -92,6 +99,7 @@ class _MaskoretAppState extends State<MaskoretApp> {
       account: widget.account,
       sync: widget.sync,
       prefs: widget.prefs,
+      updater: widget.updater,
       child: MaterialApp(
         title: 'מחשבון שכר',
         debugShowCheckedModeBanner: false,

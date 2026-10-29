@@ -4,4 +4,6 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Debug builds only: lets the update flow be tested against a local http server. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>
