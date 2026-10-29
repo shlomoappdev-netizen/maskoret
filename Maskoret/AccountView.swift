@@ -213,6 +213,7 @@ struct AccountView: View {
 
     private var accountSection: some View {
         Section("החשבון") {
+            MemberNumberRow()
             RateLine(title: "מייל", value: account.email ?? "")
             HStack {
                 RateLine(title: "שם", value: account.displayName.isEmpty ? "—" : account.displayName)
@@ -464,6 +465,7 @@ struct HouseholdSwitcher: View {
 /// Reacts to account changes and asks what to do with this device's data on the first sign-in.
 struct ServerSyncLifecycle: ViewModifier {
     @EnvironmentObject private var account: UserAccount
+    @EnvironmentObject private var support: SupportCenter
     @EnvironmentObject private var sync: ServerSync
     @EnvironmentObject private var store: Store
 
@@ -482,6 +484,9 @@ struct ServerSyncLifecycle: ViewModifier {
                 Task { await sync.accountChanged() }
             }
             .onChange(of: account.households) { _, _ in Task { await sync.accountChanged() } }
+            .task(id: "\(account.userID?.uuidString ?? "")|\(account.isAdmin)") {
+                await support.start(userID: account.userID, isAdmin: account.isAdmin)
+            }
             .onChange(of: account.activeHouseholdID) { _, _ in Task { await sync.accountChanged() } }
             #if os(iOS)
             .fullScreenCover(isPresented: signInRequired) { WelcomeView() }

@@ -66,6 +66,8 @@ final class UserAccount: ObservableObject {
     @Published private(set) var didLoad = false
     /// The app's owner — sees the admin screen (the server checks it again on every call).
     @Published private(set) var isAdmin = false
+    /// The short subscriber number users quote when they write to support.
+    @Published private(set) var memberNo: Int64?
     /// How this account can sign in ("email", "google").
     @Published private(set) var signInMethods: [String] = []
     var hasGoogle: Bool { signInMethods.contains("google") }
@@ -113,6 +115,8 @@ final class UserAccount: ObservableObject {
         if changed {
             await refreshHouseholds()
             isAdmin = (try? await supabase.rpc("am_i_admin").decoded(Bool.self)) ?? false
+            struct Profile: Decodable { let member_no: Int64? }
+            memberNo = (try? await supabase.rpc("my_profile").decoded(Profile.self))?.member_no
         }
     }
 
@@ -122,6 +126,7 @@ final class UserAccount: ObservableObject {
         displayName = ""
         households = []
         isAdmin = false
+        memberNo = nil
         signInMethods = []
     }
 
@@ -338,35 +343,6 @@ final class UserAccount: ObservableObject {
 
     // MARK: Admin
 
-    struct AdminOverview: Decodable {
-        struct User: Decodable, Identifiable {
-            struct Membership: Decodable, Hashable { let id: UUID; let name: String; let role: String }
-            let id: UUID
-            let email: String?
-            let display_name: String
-            let created_at: String
-            let last_sign_in_at: String?
-            let confirmed: Bool
-            let households: [Membership]
-        }
-        struct Household: Decodable, Identifiable {
-            let id: UUID
-            let name: String
-            let created_at: String
-            let member_count: Int
-            let revision: Int64
-            let updated_at: String?
-            let device: String?
-            let size_bytes: Int?
-        }
-        let users: [User]
-        let households: [Household]
-    }
-
-    func adminOverview() async throws -> AdminOverview {
-        try await supabase.rpc("admin_overview").decoded(AdminOverview.self)
-    }
-
     func adminDeleteUser(_ id: UUID) async throws {
         try await supabase.rpc("admin_delete_user", params: ["target": id]).execute()
     }
@@ -379,6 +355,7 @@ final class UserAccount: ObservableObject {
     // MARK: Errors in Hebrew
 
     static func describe(_ error: Error) -> String {
+        AppLog.add("error", String(describing: error))
         let text = String(describing: error).lowercased() + " " + error.localizedDescription.lowercased()
         if let url = error as? URLError {
             return url.code == .notConnectedToInternet || url.code == .networkConnectionLost

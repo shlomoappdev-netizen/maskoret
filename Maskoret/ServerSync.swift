@@ -10,10 +10,14 @@ import Supabase
 /// and the other is kept as a backup (and the server keeps its last 30 versions).
 @MainActor
 final class ServerSync: ObservableObject {
-    @Published private(set) var status = ""
+    @Published private(set) var status = "" {
+        didSet { if !status.isEmpty, status != oldValue { AppLog.add("sync", status) } }
+    }
     @Published private(set) var isSyncing = false
     @Published private(set) var lastSync: Date?
-    @Published private(set) var lastError: String?
+    @Published private(set) var lastError: String? {
+        didSet { if let lastError, lastError != oldValue { AppLog.add("sync-error", lastError) } }
+    }
     /// Signed in for the first time with data already on this device, and the account has households:
     /// ask whether to upload this data as a new household or use one from the server.
     @Published var pendingLocalChoice = false

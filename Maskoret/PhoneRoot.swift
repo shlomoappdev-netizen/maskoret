@@ -5,6 +5,8 @@ import SwiftUI
 struct PhoneRoot: View {
     @EnvironmentObject private var store: Store
     @EnvironmentObject private var sync: ServerSync
+    @EnvironmentObject private var support: SupportCenter
+    @EnvironmentObject private var account: UserAccount
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab: SidebarItem = .summary
 
@@ -23,7 +25,8 @@ struct PhoneRoot: View {
             }
             MoreView()
                 .tabItem { Label("עוד", systemImage: "ellipsis.circle") }
-                .badge(sync.lastError != nil ? Text(verbatim: "!") : nil)
+                .badge(sync.lastError != nil ? Text(verbatim: "!")
+                       : support.unread + support.adminUnread > 0 ? Text(verbatim: "\(support.unread + support.adminUnread)") : nil)
                 .tag(SidebarItem.updates)
         }
         .task {
@@ -35,6 +38,7 @@ struct PhoneRoot: View {
             case .active:
                     Task { await sync.sync() }
                 Task { await store.refreshPrime() }
+                Task { await support.refresh(isAdmin: account.isAdmin) }
             case .background:
                 // Push the last changes before iOS suspends the app.
                 let id = UIApplication.shared.beginBackgroundTask(withName: "sync")
@@ -54,13 +58,14 @@ struct MoreView: View {
     @EnvironmentObject private var store: Store
     @EnvironmentObject private var sync: ServerSync
     @EnvironmentObject private var account: UserAccount
+    @EnvironmentObject private var support: SupportCenter
     @State private var selection: SidebarItem?
 
     private let sections: [(String, [SidebarItem])] = [
         ("החודש", [.incomes, .deductions, .expenses]),
         ("הכסף שלי", [.forecast, .history, .maaser, .owed]),
         ("מעקב", [.tracked, .trends, .insights]),
-        ("הגדרות", [.account, .tax, .backup])
+        ("הגדרות", [.account, .support, .tax, .backup])
     ]
 
     var body: some View {
@@ -91,6 +96,7 @@ struct MoreView: View {
                     Section("מנהל") {
                         NavigationLink(value: SidebarItem.admin) {
                             Label(SidebarItem.admin.title, systemImage: SidebarItem.admin.icon)
+                                .badge(support.adminUnread)
                         }
                     }
                 }
@@ -99,7 +105,8 @@ struct MoreView: View {
                         ForEach(items) { item in
                             NavigationLink(value: item) {
                                 Label(item.title, systemImage: item.icon)
-                                    .badge(item == .account && sync.lastError != nil ? Text(verbatim: "!") : nil)
+                                    .badge(item == .account && sync.lastError != nil ? Text(verbatim: "!")
+                                           : item == .support && support.unread > 0 ? Text(verbatim: "\(support.unread)") : nil)
                             }
                         }
                     }

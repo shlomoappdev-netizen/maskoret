@@ -9,6 +9,7 @@ struct MaskoretApp: App {
     @StateObject private var insights = InsightsEngine()
     @StateObject private var account = UserAccount()
     @StateObject private var sync = ServerSync()
+    @StateObject private var support = SupportCenter()
     #if os(macOS)
     @StateObject private var updater = Updater()
     #endif
@@ -24,6 +25,7 @@ struct MaskoretApp: App {
                 .environmentObject(insights)
                 .environmentObject(sync)
                 .environmentObject(account)
+                .environmentObject(support)
                 .hebrew()
                 .frame(minWidth: 900, minHeight: 620)
         }
@@ -40,6 +42,7 @@ struct MaskoretApp: App {
                 .environmentObject(insights)
                 .environmentObject(sync)
                 .environmentObject(account)
+                .environmentObject(support)
                 .hebrew()
                 .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
         }
@@ -48,7 +51,7 @@ struct MaskoretApp: App {
 }
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case summary, incomes, deductions, expenses, card, accounts, transactions, forecast, history, maaser, owed, tracked, trends, insights, tax, account, admin, backup, updates
+    case summary, incomes, deductions, expenses, card, accounts, transactions, forecast, history, maaser, owed, tracked, trends, insights, tax, account, support, admin, backup, updates
 
     var id: String { rawValue }
 
@@ -70,6 +73,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .history: return "חודשים"
         case .tax: return "נתוני מס"
         case .account: return "חשבון ומשק בית"
+        case .support: return "תמיכה ודיווח תקלות"
         case .admin: return "ניהול משתמשים"
         case .backup: return "גרסאות קודמות"
         case .updates: return "עדכונים"
@@ -94,6 +98,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .history: return "calendar"
         case .tax: return "slider.horizontal.3"
         case .account: return "person.crop.circle"
+        case .support: return "bubble.left.and.text.bubble.right"
         case .admin: return "person.2.badge.gearshape"
         case .backup: return "clock.arrow.circlepath"
         case .updates: return "arrow.down.circle"
@@ -121,6 +126,7 @@ extension SidebarItem {
         case .history: HistoryView()
         case .tax: TaxSettingsView()
         case .account: AccountView()
+        case .support: SupportView()
         case .admin: AdminView()
         case .backup: BackupView()
         case .updates:
@@ -139,6 +145,7 @@ struct ContentView: View {
     @EnvironmentObject private var updater: Updater
     @EnvironmentObject private var sync: ServerSync
     @EnvironmentObject private var account: UserAccount
+    @EnvironmentObject private var support: SupportCenter
     @State private var selection: SidebarItem? = .summary
 
     var body: some View {
@@ -171,8 +178,13 @@ struct ContentView: View {
                 Section("הגדרות") {
                     Label(SidebarItem.tax.title, systemImage: SidebarItem.tax.icon).tag(SidebarItem.tax)
                     Label(SidebarItem.account.title, systemImage: SidebarItem.account.icon).tag(SidebarItem.account)
+                    Label(SidebarItem.support.title, systemImage: SidebarItem.support.icon)
+                        .badge(support.unread)
+                        .tag(SidebarItem.support)
                     if account.isAdmin {
-                        Label(SidebarItem.admin.title, systemImage: SidebarItem.admin.icon).tag(SidebarItem.admin)
+                        Label(SidebarItem.admin.title, systemImage: SidebarItem.admin.icon)
+                            .badge(support.adminUnread)
+                            .tag(SidebarItem.admin)
                     }
                     Label(SidebarItem.backup.title, systemImage: SidebarItem.backup.icon).tag(SidebarItem.backup)
                     Label(SidebarItem.updates.title, systemImage: SidebarItem.updates.icon)
