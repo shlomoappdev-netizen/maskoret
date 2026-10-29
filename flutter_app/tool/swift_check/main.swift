@@ -12,6 +12,18 @@ struct Dashboard {
 }
 var dashboard = Dashboard(budget: .starter, money: MoneyData(), history: [])
 
+// "max <file.xlsx>": the Swift app's own reading of a Max statement (XLSXReader + MaxParser in Card.swift).
+if CommandLine.arguments[1] == "max" {
+    let result = try MaxParser.parse(XLSXReader.read(URL(fileURLWithPath: CommandLine.arguments[2])))
+    let rows: [[String: Any]] = result.transactions.map { t in
+        ["id": t.id, "amount": t.amount, "originalAmount": t.originalAmount, "date": t.date.timeIntervalSinceReferenceDate,
+         "chargeDate": t.chargeDate?.timeIntervalSinceReferenceDate ?? 0, "status": t.status.rawValue,
+         "category": t.category, "merchant": t.merchant, "note": t.note, "installment": t.installment.map { "\($0.number)/\($0.of)" } ?? ""]
+    }
+    print(String(data: try JSONSerialization.data(withJSONObject: ["label": result.billingLabel, "rows": rows], options: [.sortedKeys]), encoding: .utf8)!)
+    exit(0)
+}
+
 let path = CommandLine.arguments[1]
 let data = try Data(contentsOf: URL(fileURLWithPath: path))
 let family = try JSONDecoder().decode(FamilyBackup.self, from: data)
@@ -50,7 +62,23 @@ for (id, file) in family.files {
                        "toSavings": p.toSavingsTotal, "spending": p.spendingTotal, "periodic": p.periodic,
                        "installmentsAfter": p.installmentsAfterThisMonth, "cardEstimated": p.cardEstimated])
     }
+    var cards: [[String: Any]] = []
+    for key in money.cardBillingKeys {
+        let c = CardMonthSummary.of(money.cardTransactions(billingKey: key))
+        cards.append(["key": key, "total": c.total, "fixedLinked": c.fixedLinked, "trackedLinked": c.trackedLinked,
+                      "variable": c.variable, "pending": c.pending, "owed": c.owed, "installments": c.installments,
+                      "ignored": c.ignored, "count": c.count])
+    }
+    let plans = money.installmentPlans.map { p -> [String: Any] in
+        ["id": p.id, "total": p.total, "count": p.count, "payments": p.payments.map { $0.amount },
+         "keys": p.payments.map { $0.billingKey }, "variable": p.countsAsVariable]
+    }
+    let cardInfo: [String: Any] = ["months": cards, "average": money.averageCardVariable(),
+                                   "usualDay": money.usualChargeDay ?? 0, "statementKeys": money.cardStatementKeys,
+                                   "plans": plans,
+                                   "manual": money.manualCardPayments.map { ["amount": $0.amount, "key": $0.billingKey] }]
     files[id] = [
+        "card": cardInfo,
         "months": months,
         "gross": budget.gross, "net": budget.net, "totalDeductions": budget.totalDeductions,
         "totalExpenses": budget.totalExpenses, "periodicTotal": budget.periodicTotal, "remaining": budget.remaining,

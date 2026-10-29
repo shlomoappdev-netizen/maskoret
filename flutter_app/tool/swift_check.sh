@@ -4,8 +4,11 @@
 set -e
 here=${0:A:h}
 src=$here/../../Maskoret
-build=${TMPDIR:-/tmp}/maskoret_swift_check
+cache=${TMPDIR:-/tmp}/maskoret_swift_check
+# Each run writes its intermediate files in its own folder (tests run in parallel).
+build=$cache/run.$$
 mkdir -p $build
+trap 'rm -rf $build' EXIT
 # The parts of Store.swift / Family.swift / Components.swift that the models need (no SwiftUI).
 { echo 'import Foundation'; awk '/^enum Fmt \{/,/^\}/' $src/Components.swift; } > $build/Fmt.swift
 { echo 'import Foundation'; echo 'enum Store {'; awk '/    struct SaveFile: Codable \{/,/^    \}$/' $src/Store.swift; echo '}'; } > $build/SaveFile.swift
@@ -22,5 +25,12 @@ done
   awk '/^struct MonthPicture \{/,/^\}/' $src/Sync.swift
   awk '/^    func monthPicture\(year: Int, month: Int, budget override: Budget\? = nil\) -> MonthPicture \{/,/^    \}$/' $src/Sync.swift
 } > $build/MonthPicture.swift
-swiftc -O -o $build/check $here/swift_check/main.swift $build/Fmt.swift $build/SaveFile.swift $build/FamilyTypes.swift $build/MonthPicture.swift $models
-$build/check "$@"
+sources=($here/swift_check/main.swift $build/Fmt.swift $build/SaveFile.swift $build/FamilyTypes.swift $build/MonthPicture.swift $models)
+# Compiled once per version of the sources (tests run in parallel and share it).
+hash=$(cat $sources | shasum | cut -c1-16)
+bin=$cache/check-$hash
+if [ ! -x $bin ]; then
+  swiftc -O -o $bin.$$ $sources
+  mv -f $bin.$$ $bin
+fi
+$bin "$@"

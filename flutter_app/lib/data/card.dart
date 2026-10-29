@@ -78,6 +78,15 @@ class InstallmentPlan {
   final int count;
   final List<InstallmentPayment> payments;
   final bool countsAsVariable;
+
+  DateTime? get lastCharge => payments.isEmpty ? null : payments.last.chargeDate;
+  bool get isActive {
+    final now = DateTime.now();
+    final last = lastCharge;
+    return last != null && !last.isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  InstallmentPayment? get next => payments.where((p) => p.chargeDate.isAfter(DateTime.now())).firstOrNull;
 }
 
 /// One expected card charge of a purchase recorded by hand as "paid by card".
@@ -108,18 +117,42 @@ class CategoryAmount {
   final double amount;
 }
 
-/// Port of `CardMonthSummary` (only what the month picture uses).
+/// Port of `CardMonthSummary`.
 class CardMonthSummary {
+  double total = 0;
+  double fixedLinked = 0;
+  double trackedLinked = 0;
   double variable = 0;
+  double pending = 0;
+  double ignored = 0;
   double installments = 0;
+
+  /// Paid for others — they owe it back.
+  double owed = 0;
   List<CategoryAmount> byCategory = [];
+  int count = 0;
 
   static CardMonthSummary of(List<CardTransaction> txs) {
     final s = CardMonthSummary();
     final categories = <String, double>{};
     for (final t in txs) {
-      if (t.ignored || t.linkedExpenseID != null || t.linkedTrackedID != null) continue;
+      s.count++;
+      if (t.ignored) {
+        s.ignored += t.amount;
+        continue;
+      }
+      s.total += t.amount;
+      if (t.status == 'pending') s.pending += t.amount;
+      if (t.linkedExpenseID != null) {
+        s.fixedLinked += t.amount;
+        continue;
+      }
+      if (t.linkedTrackedID != null) {
+        s.trackedLinked += t.amount;
+        continue;
+      }
       s.variable += t.myAmount;
+      s.owed += t.amount - t.myAmount;
       if (t.installment != null) {
         s.installments += t.myAmount;
       } else if (t.myAmount != 0) {
@@ -143,6 +176,26 @@ class CardData {
 
   final MoneyData money;
   late final List<CardTransaction> cardTransactions;
+
+  /// Card charges linked to each fixed expense in a billing month.
+  Map<String, double> actuals(int billingKey) {
+    final result = <String, double>{};
+    for (final t in chargedIn(billingKey)) {
+      final id = t.linkedExpenseID;
+      if (!t.ignored && id != null) result[id] = (result[id] ?? 0) + t.amount;
+    }
+    return result;
+  }
+
+  List<Json> get imports => JObj(money.raw).objects('cardImports');
+
+  /// 1 for the first identical purchase in the statement, 2 for the second…
+  static int occurrence(CardTransaction t) => int.tryParse(t.id.split('#').last) ?? 1;
+
+  static String baseID(CardTransaction t) {
+    final i = t.id.lastIndexOf('#');
+    return i < 0 ? t.id : t.id.substring(0, i);
+  }
   late final List<Receivable> receivables;
 
   List<CardTransaction> chargedIn(int key) =>

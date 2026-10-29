@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../data/card.dart';
+import '../data/max_import.dart';
 import 'budget_screens.dart';
+import 'card_screen.dart';
 import 'common.dart';
 import 'households_screen.dart';
 import 'money_screens.dart';
@@ -20,6 +23,7 @@ enum Dest {
   deductions('ניכויים', Icons.account_balance_outlined),
   expenses('הוצאות קבועות', Icons.shopping_cart_outlined),
   accounts('חשבונות וחיסכון', Icons.savings_outlined),
+  card('כרטיס אשראי', Icons.credit_card),
   transactions('תנועות', Icons.swap_horiz),
   account('חשבון ומשק בית', Icons.account_circle_outlined, ownScaffold: true),
   support('תמיכה ודיווח תקלות', Icons.support_agent, ownScaffold: true),
@@ -34,7 +38,7 @@ enum Dest {
   final bool ownScaffold;
 
   /// A shorter name for the phone's bottom tabs.
-  String get tabTitle => this == accounts ? 'חשבונות' : title;
+  String get tabTitle => switch (this) { accounts => 'חשבונות', card => 'אשראי', _ => title };
 
   Widget get page => switch (this) {
         summary => const SummaryScreen(),
@@ -42,6 +46,7 @@ enum Dest {
         deductions => const DeductionsScreen(),
         expenses => const ExpensesScreen(),
         accounts => const AccountsScreen(),
+        card => const CardScreen(),
         transactions => const TransactionsScreen(),
         account => const HouseholdsScreen(),
         support => const SupportScreen(),
@@ -52,12 +57,12 @@ enum Dest {
   /// The sidebar sections (החודש / הכסף שלי / מעקב / הגדרות).
   static List<(String, List<Dest>)> sections() => [
         ('החודש', [summary, incomes, deductions, expenses]),
-        ('הכסף שלי', [accounts, transactions]),
+        ('הכסף שלי', [accounts, card, transactions]),
         ('הגדרות', [account, support, versions, if (Updater.supported) updates]),
       ];
 
   /// The phone's bottom tabs; everything else is under "עוד" (like PhoneRoot.swift).
-  static const tabs = [summary, transactions, accounts];
+  static const tabs = [summary, transactions, card, accounts];
 }
 
 /// Navigation: on wide screens (Windows) a sidebar with sections and the month's numbers at the bottom;
@@ -126,7 +131,15 @@ class _HomeShellState extends State<HomeShell> {
               if (!more) current = Dest.tabs[i];
             }),
             destinations: [
-              for (final d in Dest.tabs) NavigationDestination(icon: Icon(d.icon), label: d.tabTitle),
+              for (final d in Dest.tabs)
+                NavigationDestination(
+                  icon: Badge(
+                    isLabelVisible: d == Dest.card && CardData(scope.store.money).importDue(),
+                    label: const Text('!'),
+                    child: Icon(d.icon),
+                  ),
+                  label: d.tabTitle,
+                ),
               NavigationDestination(
                 icon: Badge(
                   isLabelVisible: scope.sync.lastError != null || scope.support.unread > 0,
@@ -271,6 +284,7 @@ Widget? _badgeFor(BuildContext context, Dest d) {
   if (d == Dest.support && scope.support.unread > 0) return Badge(label: Text('${scope.support.unread}'));
   if (d == Dest.account && scope.sync.lastError != null) return const Badge(label: Text('!'));
   if (d == Dest.updates && scope.updater.available) return const Badge(label: Text('חדש'));
+  if (d == Dest.card && CardData(scope.store.money).importDue()) return const Badge(label: Text('ייבוא'));
   return null;
 }
 
