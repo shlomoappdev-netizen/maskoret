@@ -1,7 +1,10 @@
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:path_provider/path_provider.dart';
@@ -19,6 +22,9 @@ import 'support/app_log.dart';
 import 'support/support.dart';
 import 'update/updater.dart';
 
+/// --dart-define=DEMO=true: open straight into the app with demo data (for checking screens).
+const demo = bool.fromEnvironment('DEMO');
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('he');
@@ -32,6 +38,8 @@ Future<void> main() async {
   final store = await AppStore.open(Directory('${support.path}/Maskoret'), prefs, SystemKeyStore());
   // Older versions had a "continue without an account" mode; now, like the iPhone and Mac app, an account is needed.
   prefs.remove('localOnly');
+  // Checking the screens without an account: the anonymized household from the tests, nothing goes to the server.
+  if (demo) store.replace((jsonDecode(await rootBundle.loadString('assets/demo_household.json')) as Map).cast<String, dynamic>());
   final account = UserAccount(prefs);
   final deviceName = await _deviceName();
   final sync = ServerSync(
@@ -135,7 +143,8 @@ class _MaskoretAppState extends State<MaskoretApp> {
         darkTheme: theme(Brightness.dark),
         home: ListenableBuilder(
           listenable: widget.account,
-          builder: (context, _) => widget.account.isSignedIn ? const HomeShell() : const AuthScreen(welcome: true),
+          builder: (context, _) =>
+              widget.account.isSignedIn || demo ? const HomeShell() : const AuthScreen(welcome: true),
         ),
       ),
     );

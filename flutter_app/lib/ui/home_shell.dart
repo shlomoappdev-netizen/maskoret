@@ -7,25 +7,61 @@ import 'money_screens.dart';
 import 'summary_screen.dart';
 import 'support_screen.dart';
 import 'updates_screen.dart';
+import '../data/fmt.dart';
+import '../data/models.dart';
+import '../data/money_calc.dart';
+import '../data/month_picture.dart';
+import '../update/updater.dart';
 
-class _Dest {
-  const _Dest(this.label, this.icon, this.selectedIcon, this.page);
-  final String label;
+/// Every screen of the app, grouped like the Mac sidebar (SidebarItem in MaskoretApp.swift).
+enum Dest {
+  summary('סיכום', Icons.pie_chart_outline),
+  incomes('הכנסות', Icons.payments_outlined),
+  deductions('ניכויים', Icons.account_balance_outlined),
+  expenses('הוצאות קבועות', Icons.shopping_cart_outlined),
+  accounts('חשבונות וחיסכון', Icons.savings_outlined),
+  transactions('תנועות', Icons.swap_horiz),
+  account('חשבון ומשק בית', Icons.account_circle_outlined, ownScaffold: true),
+  support('תמיכה ודיווח תקלות', Icons.support_agent, ownScaffold: true),
+  versions('גרסאות קודמות', Icons.history, ownScaffold: true),
+  updates('עדכונים', Icons.system_update_alt, ownScaffold: true);
+
+  const Dest(this.title, this.icon, {this.ownScaffold = false});
+  final String title;
   final IconData icon;
-  final IconData selectedIcon;
-  final Widget page;
+
+  /// Screens with their own app bar (the others get the household's).
+  final bool ownScaffold;
+
+  /// A shorter name for the phone's bottom tabs.
+  String get tabTitle => this == accounts ? 'חשבונות' : title;
+
+  Widget get page => switch (this) {
+        summary => const SummaryScreen(),
+        incomes => const IncomesScreen(),
+        deductions => const DeductionsScreen(),
+        expenses => const ExpensesScreen(),
+        accounts => const AccountsScreen(),
+        transactions => const TransactionsScreen(),
+        account => const HouseholdsScreen(),
+        support => const SupportScreen(),
+        versions => const VersionsScreen(),
+        updates => const UpdatesScreen(),
+      };
+
+  /// The sidebar sections (החודש / הכסף שלי / מעקב / הגדרות).
+  static List<(String, List<Dest>)> sections() => [
+        ('החודש', [summary, incomes, deductions, expenses]),
+        ('הכסף שלי', [accounts, transactions]),
+        ('הגדרות', [account, support, versions, if (Updater.supported) updates]),
+      ];
+
+  /// The phone's bottom tabs; everything else is under "עוד" (like PhoneRoot.swift).
+  static const tabs = [summary, transactions, accounts];
 }
 
-const _dests = [
-  _Dest('סיכום', Icons.dashboard_outlined, Icons.dashboard, SummaryScreen()),
-  _Dest('הכנסות', Icons.payments_outlined, Icons.payments, IncomesScreen()),
-  _Dest('ניכויים', Icons.receipt_long_outlined, Icons.receipt_long, DeductionsScreen()),
-  _Dest('הוצאות', Icons.shopping_bag_outlined, Icons.shopping_bag, ExpensesScreen()),
-  _Dest('תנועות', Icons.swap_vert, Icons.swap_vert_circle, TransactionsScreen()),
-  _Dest('חשבונות', Icons.account_balance_outlined, Icons.account_balance, AccountsScreen()),
-];
-
-/// Navigation: a bottom bar on phones (5 items + "more"), a side rail on desktop.
+/// Navigation: on wide screens (Windows) a sidebar with sections and the month's numbers at the bottom;
+/// on phones bottom tabs + "עוד".
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -34,7 +70,10 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  int index = 0;
+  Dest current = Dest.summary;
+
+  /// Phone: the "עוד" tab is selected.
+  bool more = false;
   bool _askedLocalChoice = false;
 
   @override
@@ -42,55 +81,60 @@ class _HomeShellState extends State<HomeShell> {
     final scope = context.scope;
     final wide = isWide(context);
     return ListenableBuilder(
-      listenable: Listenable.merge([scope.store, scope.account, scope.sync, scope.updater]),
+      listenable: Listenable.merge([scope.store, scope.account, scope.sync, scope.updater, scope.support]),
       builder: (context, _) {
         _maybeAskLocalChoice(context);
-        final page = Column(children: [
-          if (scope.updater.available) const UpdateBanner(),
-          Expanded(child: _dests[index].page),
-        ]);
         final appBar = AppBar(
           title: _Title(),
           actions: [
             _MemberPicker(),
             _SyncIcon(),
             const SupportIconButton(),
-            IconButton(
-              tooltip: 'משקי בית וחשבון',
-              icon: const Icon(Icons.home_work_outlined),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HouseholdsScreen())),
-            ),
           ],
         );
+        Widget content(Dest d) => d.page;
         if (wide) {
           return Scaffold(
             appBar: appBar,
             body: Row(children: [
-              NavigationRail(
-                extended: MediaQuery.sizeOf(context).width >= 1100,
-                labelType: MediaQuery.sizeOf(context).width >= 1100 ? NavigationRailLabelType.none : NavigationRailLabelType.all,
-                selectedIndex: index,
-                onDestinationSelected: (i) => setState(() => index = i),
-                destinations: [
-                  for (final d in _dests)
-                    NavigationRailDestination(icon: Icon(d.icon), selectedIcon: Icon(d.selectedIcon), label: Text(d.label)),
-                ],
+              SizedBox(
+                width: 250,
+                child: Sidebar(selected: current, onSelect: (d) => setState(() => current = d)),
               ),
               const VerticalDivider(width: 1),
-              Expanded(child: page),
+              Expanded(
+                child: Column(children: [
+                  if (scope.updater.available) const UpdateBanner(),
+                  Expanded(child: content(current)),
+                ]),
+              ),
             ]),
           );
         }
+        final tabIndex = more ? Dest.tabs.length : Dest.tabs.indexOf(current).clamp(0, Dest.tabs.length - 1);
         return Scaffold(
           appBar: appBar,
-          body: page,
+          body: Column(children: [
+            if (scope.updater.available) const UpdateBanner(),
+            Expanded(child: more ? const MoreScreen() : content(Dest.tabs[tabIndex])),
+          ]),
           bottomNavigationBar: NavigationBar(
-            selectedIndex: index,
+            selectedIndex: tabIndex,
             labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            onDestinationSelected: (i) => setState(() => index = i),
+            onDestinationSelected: (i) => setState(() {
+              more = i == Dest.tabs.length;
+              if (!more) current = Dest.tabs[i];
+            }),
             destinations: [
-              for (final d in _dests)
-                NavigationDestination(icon: Icon(d.icon), selectedIcon: Icon(d.selectedIcon), label: d.label),
+              for (final d in Dest.tabs) NavigationDestination(icon: Icon(d.icon), label: d.tabTitle),
+              NavigationDestination(
+                icon: Badge(
+                  isLabelVisible: scope.sync.lastError != null || scope.support.unread > 0,
+                  label: Text(scope.sync.lastError != null ? '!' : '${scope.support.unread}'),
+                  child: const Icon(Icons.more_horiz),
+                ),
+                label: 'עוד',
+              ),
             ],
           ),
         );
@@ -185,5 +229,116 @@ class _SyncIcon extends StatelessWidget {
         showMessage(context, sync.lastError ?? (sync.status.isEmpty ? 'מסנכרן…' : sync.status));
       },
     );
+  }
+}
+
+/// "עו״ש עכשיו" and "נשאר בסוף החודש" — the numbers at the bottom of the Mac sidebar.
+class MonthNumbers extends StatelessWidget {
+  const MonthNumbers({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.store;
+    final theme = Theme.of(context);
+    final money = store.money;
+    final checking = MoneyCalc(money.primeRate).total(money, {AccountKind.checking});
+    final now = DateTime.now();
+    final remaining = MonthPicture.of(store.file, now.year, now.month).remaining;
+    Widget number(String label, double value, {Color? color}) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            Text(Fmt.money(value),
+                textDirection: TextDirection.rtl,
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color)),
+          ],
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      child: Row(children: [
+        Expanded(child: number('עו״ש עכשיו', checking)),
+        Expanded(
+          child: number('נשאר בסוף החודש', remaining,
+              color: remaining >= 0 ? Colors.green.shade700 : theme.colorScheme.error),
+        ),
+      ]),
+    );
+  }
+}
+
+Widget? _badgeFor(BuildContext context, Dest d) {
+  final scope = context.scope;
+  if (d == Dest.support && scope.support.unread > 0) return Badge(label: Text('${scope.support.unread}'));
+  if (d == Dest.account && scope.sync.lastError != null) return const Badge(label: Text('!'));
+  if (d == Dest.updates && scope.updater.available) return const Badge(label: Text('חדש'));
+  return null;
+}
+
+/// The wide-screen sidebar: sections, and the month's numbers at the bottom.
+class Sidebar extends StatelessWidget {
+  const Sidebar({super.key, required this.selected, required this.onSelect});
+  final Dest selected;
+  final ValueChanged<Dest> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(children: [
+      Expanded(
+        child: ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
+          for (final (title, items) in Dest.sections()) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+              child: Text(title, style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.primary)),
+            ),
+            for (final d in items)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: ListTile(
+                  dense: true,
+                  selected: d == selected,
+                  selectedTileColor: theme.colorScheme.secondaryContainer,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  leading: Icon(d.icon, size: 20),
+                  title: Text(d.title),
+                  trailing: _badgeFor(context, d),
+                  onTap: () => onSelect(d),
+                ),
+              ),
+          ],
+        ]),
+      ),
+      const Divider(height: 1),
+      const MonthNumbers(),
+    ]);
+  }
+}
+
+/// Phone: every screen that isn't a bottom tab, grouped like the Mac sidebar (MoreView in PhoneRoot.swift).
+class MoreScreen extends StatelessWidget {
+  const MoreScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(padding: const EdgeInsets.only(bottom: 24), children: [
+      const MonthNumbers(),
+      const Divider(height: 1),
+      for (final (title, items) in Dest.sections())
+        if (items.any((d) => !Dest.tabs.contains(d)))
+          SectionCard(title: title, children: [
+            for (final d in items.where((d) => !Dest.tabs.contains(d)))
+              ListTile(
+                leading: Icon(d.icon),
+                title: Text(d.title),
+                trailing: _badgeFor(context, d) ?? const Icon(Icons.chevron_left),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => d.ownScaffold ? d.page : Scaffold(appBar: AppBar(title: Text(d.title)), body: d.page),
+                  ),
+                ),
+              ),
+          ]),
+    ].map((w) => w is SectionCard ? Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: w) : w).toList());
   }
 }
