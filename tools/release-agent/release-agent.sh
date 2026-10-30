@@ -2,7 +2,7 @@
 # Automatic publishing for מחשבון שכר. Runs on the owner's Mac every 10 minutes (launchd, see install.sh) — the Mac
 # build is signed with the "Maskoret Signing" certificate, which lives only in this Mac's Keychain.
 #
-# A version is released when, on main of Shlomo116/maskoret:
+# A version is released when, on main of shlomoappdev-netizen/maskoret:
 #   * version.json has "ready": true and a build newer than the one on the site (latest.json), and
 #   * the "Flutter app" GitHub Actions run of that commit succeeded (it builds the Windows setup + ZIP and the APK).
 # Then it checks out that exact commit in a clean folder (never the working copy, which may hold unfinished work),
@@ -10,7 +10,7 @@
 # changelog.json) and shows a notification. Log: ~/Library/Logs/maskoret-release-agent.log
 set -uo pipefail
 
-CODE_REPO="Shlomo116/maskoret"
+CODE_REPO="shlomoappdev-netizen/maskoret"
 SITE="https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json"
 WORK="$HOME/Library/Caches/maskoret-release"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
@@ -21,7 +21,7 @@ notify() {
     -e 'end run' "מחשבון שכר · פרסום גרסה" "$1" >/dev/null 2>&1 || true
 }
 
-CODE_TOKEN="$(gh auth token -u Shlomo116 2>/dev/null)" || { log "no gh token for Shlomo116"; exit 0; }
+CODE_TOKEN="$(gh auth token -u shlomoappdev-netizen 2>/dev/null)" || { log "no gh token for shlomoappdev-netizen"; exit 0; }
 SITE_TOKEN="$(gh auth token -u shlomoappdev-netizen 2>/dev/null)" || { log "no gh token for shlomoappdev-netizen"; exit 0; }
 
 # What main asks for, and what the site has.
