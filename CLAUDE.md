@@ -16,5 +16,11 @@ published yet (no `v<version>` release in shlomoappdev-netizen/maskoret-releases
 it instead of bumping again. Never leave a commit with a user-visible change without its changelog line.
 `tools/publish_release.sh` refuses to publish a version that is missing from `CHANGELOG.md`.
 
-## Publishing
-Publishing a release (`tools/publish_release.sh`) only with the user's explicit approval.
+## Publishing (automatic)
+`tools/release-agent` (launchd on the owner's Mac, every 10 minutes) publishes by itself when main has
+`"ready": true` in `version.json` with a build newer than the site's, and the GitHub Actions run of that commit passed:
+Mac build, Windows setup + ZIP and APK from the run, GitHub release, latest.json and changelog.json (the "מה חדש"
+screen). Log: `~/Library/Logs/maskoret-release-agent.log`.
+- While a version is being worked on, keep `"ready": false`. Set it to `true` (in its own commit, after the work is
+  finished and checked on the platforms it touches) only with the user's approval — that commit is the release.
+- Right after a release, the next change starts the next version (bump, `"ready": false`).

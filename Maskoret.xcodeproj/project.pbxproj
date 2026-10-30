@@ -92,6 +92,8 @@
 		A1C0FFEE00000000000000A1 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = A1C0FFEE00000000000000A2 /* GoogleSignIn */; };
 		7A28AE4BBC3846ADAB0051A5 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 662C00584C80426086941035 /* Supabase */; };
 		B1C0FFEE0000000000000002 /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C0FFEE0000000000000001 /* Support.swift */; };
+		B1C0FFEE0000000000000022 /* Announcements.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C0FFEE0000000000000021 /* Announcements.swift */; };
+		B1C0FFEE0000000000000023 /* Announcements.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C0FFEE0000000000000021 /* Announcements.swift */; };
 		B1C0FFEE0000000000000003 /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C0FFEE0000000000000001 /* Support.swift */; };
 		B1C0FFEE0000000000000012 /* SupportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C0FFEE0000000000000011 /* SupportView.swift */; };
 		B1C0FFEE0000000000000013 /* SupportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C0FFEE0000000000000011 /* SupportView.swift */; };
@@ -152,6 +154,7 @@
 		A44D8F7CEEAB4E5C839A4F88 /* PhoneRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneRoot.swift; sourceTree = "<group>"; };
 		1BFC0D705A2B433DB125CFF0 /* MaskoretiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MaskoretiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1C0FFEE0000000000000001 /* Support.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Support.swift; sourceTree = "<group>"; };
+		B1C0FFEE0000000000000021 /* Announcements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Announcements.swift; sourceTree = "<group>"; };
 		B1C0FFEE0000000000000011 /* SupportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportView.swift; sourceTree = "<group>"; };
 		0323901E34F44589932B42D5 /* SupabaseConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseConfig.swift; sourceTree = "<group>"; };
 		CDF341F3A5874AD4B658C98C /* Account.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Account.swift; sourceTree = "<group>"; };
@@ -237,6 +240,7 @@
 				0323901E34F44589932B42D5 /* SupabaseConfig.swift */,
 				B1C0FFEE0000000000000011 /* SupportView.swift */,
 				B1C0FFEE0000000000000001 /* Support.swift */,
+				B1C0FFEE0000000000000021 /* Announcements.swift */,
 				CDF341F3A5874AD4B658C98C /* Account.swift */,
 				F8502F88490047F1B6A09D43 /* AuthView.swift */,
 				5922564A01D24C8E86CE56DB /* AdminView.swift */,
@@ -378,6 +382,7 @@
 				B66890B49229428783127F65 /* SupabaseConfig.swift in Sources */,
 				B1C0FFEE0000000000000012 /* SupportView.swift in Sources */,
 				B1C0FFEE0000000000000002 /* Support.swift in Sources */,
+				B1C0FFEE0000000000000022 /* Announcements.swift in Sources */,
 				95A6EB2355060BC2B94B35C6 /* MaskoretApp.swift in Sources */,
 				EE1D18F233A18F8FE7380174 /* Models.swift in Sources */,
 				61D043D974340DF5ED0FE451 /* Store.swift in Sources */,
@@ -431,6 +436,7 @@
 				A77D2E37B57B44FAA8546F23 /* SupabaseConfig.swift in Sources */,
 				B1C0FFEE0000000000000013 /* SupportView.swift in Sources */,
 				B1C0FFEE0000000000000003 /* Support.swift in Sources */,
+				B1C0FFEE0000000000000023 /* Announcements.swift in Sources */,
 				C21BE70C035E4BA3BA618178 /* Platform.swift in Sources */,
 				3C068BB3C43D4198B179DF73 /* ServerSync.swift in Sources */,
 				F0D0D654383D42D0BE364177 /* AccountView.swift in Sources */,

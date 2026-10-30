@@ -10,6 +10,8 @@ struct MaskoretApp: App {
     @StateObject private var account = UserAccount()
     @StateObject private var sync = ServerSync()
     @StateObject private var support = SupportCenter()
+    @StateObject private var announcements = AnnouncementCenter()
+    @StateObject private var whatsNew = WhatsNewCenter()
     #if os(macOS)
     @StateObject private var updater = Updater()
     #endif
@@ -18,14 +20,17 @@ struct MaskoretApp: App {
         #if os(macOS)
         WindowGroup("מחשבון שכר") {
             ContentView()
-                // Inside the environment objects below — it reads them.
+                // Inside the environment objects below — they read them.
                 .serverSyncLifecycle()
+                .modifier(UpdatePrompt())
+                .modifier(AppNews(announcements: announcements, whatsNew: whatsNew))
                 .environmentObject(store)
                 .environmentObject(updater)
                 .environmentObject(insights)
                 .environmentObject(sync)
                 .environmentObject(account)
                 .environmentObject(support)
+                .environmentObject(announcements)
                 .hebrew()
                 .frame(minWidth: 900, minHeight: 620)
         }
@@ -36,13 +41,15 @@ struct MaskoretApp: App {
         #else
         WindowGroup {
             PhoneRoot()
-                // Inside the environment objects below — it reads them.
+                // Inside the environment objects below — they read them.
                 .serverSyncLifecycle()
+                .modifier(AppNews(announcements: announcements, whatsNew: whatsNew))
                 .environmentObject(store)
                 .environmentObject(insights)
                 .environmentObject(sync)
                 .environmentObject(account)
                 .environmentObject(support)
+                .environmentObject(announcements)
                 .hebrew()
                 .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
         }

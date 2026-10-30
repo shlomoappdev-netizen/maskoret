@@ -78,17 +78,33 @@ notes += "\n\n**התקנה:** אנדרואיד — maskoret-android.apk · Windo
 open(os.path.join(out, "notes.md"), "w", encoding="utf-8").write(notes)
 PY
 
+# --- changelog.json (every version, newest first) for the "מה חדש" screen after an update
+python3 - "$ROOT/CHANGELOG.md" "$WORK/out/changelog.json" <<'PY'
+import json, re, sys
+entries, cur = [], None
+for line in open(sys.argv[1], encoding="utf-8"):
+    m = re.match(r"^## (\d+\.\d+\.\d+) \(build (\d+)\)(?: — (\S+))?", line)
+    if m:
+        cur = {"version": m[1], "build": int(m[2]), "date": m[3], "notes": []}
+        entries.append(cur)
+    elif cur and line.startswith("- "):
+        cur["notes"].append(line[2:].strip())
+    elif line.startswith("## "):
+        cur = None   # e.g. work in progress, not released
+json.dump(entries, open(sys.argv[2], "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+PY
+
 echo "== מעלה את הקבצים ל-GitHub…"
 gh release create "$TAG" "$WORK/out/maskoret-android.apk" "$WORK/out/maskoret-windows.zip" \
   "$WORK/out/maskoret-windows-setup.exe" "$WORK/out/maskoret-mac.dmg" \
   --repo "$REPO" --title "מחשבון שכר $VERSION" --notes-file "$WORK/out/notes.md"
 
 echo "== מעדכן את latest.json באתר…"
-git clone -q "https://github.com/$REPO.git" "$WORK/site"
-cp "$WORK/out/latest.json" "$WORK/site/latest.json"
-git -C "$WORK/site" add latest.json
+git -c credential.helper= -c 'credential.helper=!gh auth git-credential' clone -q "https://github.com/$REPO.git" "$WORK/site"
+cp "$WORK/out/latest.json" "$WORK/out/changelog.json" "$WORK/site/"
+git -C "$WORK/site" add latest.json changelog.json
 git -C "$WORK/site" -c user.name="shlomoappdev-netizen" -c user.email="shlomoappdev@gmail.com" commit -q -m "גרסה $VERSION"
-git -C "$WORK/site" push -q
+git -C "$WORK/site" -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -q
 
 echo "== פורסם: https://github.com/$REPO/releases/tag/$TAG"
 echo "   האפליקציות יציעו את העדכון בבדיקה הבאה (באתר הוא מתעדכן תוך דקה-שתיים)."

@@ -13,6 +13,7 @@ struct SummaryView: View {
         return NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    AnnouncementBanner()
                     PageBar(title: "סיכום — " + picture.title,
                             subtitle: picture.isActual ? "לפי הנטו שנכנס בפועל החודש" : "לפי הערכת הנטו — רשום את הנטו בפועל כשמגיע התלוש") {
                         Button {

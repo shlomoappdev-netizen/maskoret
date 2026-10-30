@@ -9,7 +9,7 @@ struct AdminView: View {
     @EnvironmentObject private var account: UserAccount
     @EnvironmentObject private var support: SupportCenter
 
-    enum Tab: Hashable { case subscribers, inbox, tasks }
+    enum Tab: Hashable { case subscribers, inbox, tasks, announcements }
     @State private var tab: Tab = .subscribers
     @State private var stats: AdminStats?
 
@@ -25,6 +25,7 @@ struct AdminView: View {
                             Text("מנויים").tag(Tab.subscribers)
                             Text(support.adminUnread > 0 ? "פניות (\(support.adminUnread))" : "פניות").tag(Tab.inbox)
                             Text("משימות פיתוח").tag(Tab.tasks)
+                            Text("הודעות").tag(Tab.announcements)
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
@@ -34,6 +35,7 @@ struct AdminView: View {
                         case .subscribers: AdminSubscribersList()
                         case .inbox: AdminInboxList()
                         case .tasks: AdminDevTasksList()
+                        case .announcements: AdminAnnouncementsView()
                         }
                     }
                 }
@@ -363,6 +365,129 @@ private struct AdminDevTasksList: View {
         do {
             tasks = try await Task { try await AdminAPI.devTasks() }.value
             error = nil
+        } catch is CancellationError {
+        } catch {
+            self.error = UserAccount.describe(error)
+        }
+    }
+}
+
+// MARK: - Announcements
+
+/// A message for every user, at the top of their main screen until they close it.
+private struct AdminAnnouncementsView: View {
+    @EnvironmentObject private var announcements: AnnouncementCenter
+    @State private var title = ""
+    @State private var text = ""
+    @State private var days = 0
+    @State private var list: [Announcement] = []
+    @State private var sending = false
+    @State private var error: String?
+    @State private var ending: Announcement?
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("כותרת", text: $title)
+                TextField("טקסט (לא חובה)", text: $text, axis: .vertical)
+                    .lineLimit(3...8)
+                Picker("להציג", selection: $days) {
+                    Text("עד שאפסיק").tag(0)
+                    Text("3 ימים").tag(3)
+                    Text("שבוע").tag(7)
+                    Text("חודש").tag(30)
+                }
+                if let error {
+                    Text(error).foregroundStyle(.orange).font(.callout)
+                }
+                Button {
+                    post()
+                } label: {
+                    Label("שליחה לכל המשתמשים", systemImage: "megaphone.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || sending)
+            } header: {
+                Text("הודעה חדשה")
+            } footer: {
+                Text("ההודעה תופיע מיד לכל המשתמשים (גם בלי חשבון) בראש מסך הסיכום, עם איקס לסגירה. מי שסגר אותה לא יראה אותה שוב באותו מכשיר.")
+            }
+            Section("הודעות") {
+                if list.isEmpty {
+                    Text("עוד לא נשלחו הודעות.").foregroundStyle(.secondary)
+                }
+                ForEach(list) { a in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(verbatim: a.title).font(.callout.weight(.semibold))
+                            Spacer()
+                            Text(isLive(a) ? "מוצגת" : "הסתיימה")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 8).padding(.vertical, 2)
+                                .background((isLive(a) ? Color.green : Color.secondary).opacity(0.18), in: Capsule())
+                        }
+                        if !a.body.isEmpty {
+                            Text(verbatim: a.body).font(.caption).foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Text(verbatim: AdminAPI.date(a.created_at)
+                                 + (a.expires_at.map { " · עד " + AdminAPI.date($0) } ?? ""))
+                                .font(.caption2).foregroundStyle(.secondary)
+                            Spacer()
+                            if isLive(a) {
+                                Button("הפסק להציג", role: .destructive) { ending = a }
+                                    .buttonStyle(.borderless)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .task { await load() }
+        .confirmationDialog(Text(verbatim: "להפסיק להציג את ״\(ending?.title ?? "")״?"),
+                            isPresented: Binding(get: { ending != nil }, set: { if !$0 { ending = nil } }),
+                            titleVisibility: .visible, presenting: ending) { a in
+            Button("הפסק להציג", role: .destructive) {
+                run { try await AdminAPI.endAnnouncement(a.id) }
+            }
+            Button("ביטול", role: .cancel) {}
+        }
+    }
+
+    private func isLive(_ a: Announcement) -> Bool {
+        a.active && (a.expires_at.flatMap(ISO8601DateFormatter.flexible).map { $0 > Date() } ?? true)
+    }
+
+    private func post() {
+        let (t, b, d) = (title, text, days)
+        sending = true
+        run {
+            try await AdminAPI.postAnnouncement(title: t, body: b, days: d == 0 ? nil : d)
+            title = ""
+            text = ""
+        }
+    }
+
+    private func run(_ action: @escaping () async throws -> Void) {
+        Task {
+            defer { sending = false }
+            do {
+                try await action()
+                error = nil
+                await load()
+                await announcements.refresh()
+            } catch {
+                self.error = UserAccount.describe(error)
+            }
+        }
+    }
+
+    private func load() async {
+        do {
+            list = try await Task { try await AdminAPI.announcements() }.value
         } catch is CancellationError {
         } catch {
             self.error = UserAccount.describe(error)
@@ -812,6 +937,23 @@ enum AdminAPI {
                                                   p_details: option.task_details ?? option.explanation)).execute()
         default: break
         }
+    }
+
+    // MARK: Announcements
+
+    /// All announcements, newest first (the admin also sees the ended ones).
+    static func announcements() async throws -> [Announcement] {
+        try await supabase.from("announcements").select().order("id", ascending: false).limit(50)
+            .decoded([Announcement].self)
+    }
+
+    static func postAnnouncement(title: String, body: String, days: Int?) async throws {
+        struct Params: Encodable { let p_title: String, p_body: String, p_days: Int? }
+        try await supabase.rpc("admin_post_announcement", params: Params(p_title: title, p_body: body, p_days: days)).execute()
+    }
+
+    static func endAnnouncement(_ id: Int64) async throws {
+        try await supabase.rpc("admin_end_announcement", params: ["p_id": id]).execute()
     }
 
     static func date(_ text: String) -> String {
