@@ -14,7 +14,7 @@ $flutterVersion = '3.44.4'   # same as .github/workflows/flutter-app.yml
 
 Step '1/4 Visual Studio Build Tools (C++) — לוקח כמה דקות'
 winget install --id Microsoft.VisualStudio.2022.BuildTools -e --silent --accept-package-agreements --accept-source-agreements `
-    --override '--wait --quiet --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
+    --override '--wait --quiet --norestart --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.ATL --includeRecommended'
 
 Step '2/4 Flutter'
 if (-not (Test-Path 'C:\flutter\bin\flutter.bat')) {
