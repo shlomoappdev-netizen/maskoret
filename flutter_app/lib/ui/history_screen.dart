@@ -8,6 +8,7 @@ import '../data/json.dart';
 import '../data/models.dart';
 import '../data/month_picture.dart';
 import 'common.dart';
+import 'theme.dart';
 import 'summary_screen.dart';
 
 /// The saved months: the actual net against the estimate, and what was left at the end of each month —
@@ -100,7 +101,7 @@ class HistoryScreen extends StatelessWidget {
                   trailing: Text('נשאר ${Fmt.money(remaining)}',
                       textDirection: TextDirection.rtl,
                       style: TextStyle(color: remaining >= 0 ? Colors.green.shade700 : theme.colorScheme.error)),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecordDetailScreen(recordId: r.id))),
+                  onTap: () => Navigator.push(context, glassRoute((_) => RecordDetailScreen(recordId: r.id))),
                 );
               }(),
             const EmptyHint('״נשאר״ = מה שנשאר בעו״ש בסוף החודש — אותו חישוב כמו ״נשאר בסוף החודש״ בסיכום: הנטו (בפועל אם '
@@ -125,25 +126,8 @@ class _Tile extends StatelessWidget {
   final IconData icon;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(children: [
-          Icon(icon, color: theme.colorScheme.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: theme.textTheme.labelSmall),
-              Text(value, textDirection: TextDirection.rtl, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-            ]),
-          ),
-        ]),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      Padding(padding: const EdgeInsets.only(bottom: 12), child: StatTile(title: title, value: value, icon: icon));
 }
 
 class _HistoryChart extends StatelessWidget {

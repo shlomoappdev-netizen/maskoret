@@ -32,7 +32,7 @@ class HouseholdsScreen extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: FilledButton(
                     onPressed: () => Navigator.push(
-                        context, MaterialPageRoute(builder: (_) => AuthScreen(onDone: () => Navigator.pop(context)))),
+                        context, glassRoute((_) => AuthScreen(onDone: () => Navigator.pop(context)))),
                     child: const Text('התחברות או הרשמה'),
                   ),
                 ),
@@ -53,7 +53,7 @@ class HouseholdsScreen extends StatelessWidget {
                 title: const Text('גרסאות קודמות'),
                 subtitle: const Text('30 הגרסאות האחרונות של משק הבית, שמורות בשרת'),
                 trailing: const Icon(Icons.chevron_left),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VersionsScreen())),
+                onTap: () => Navigator.push(context, glassRoute((_) => const VersionsScreen())),
               ),
             ]),
             SectionCard(
@@ -70,7 +70,7 @@ class HouseholdsScreen extends StatelessWidget {
                       icon: const Icon(Icons.more_vert),
                       tooltip: 'ניהול',
                       onPressed: () => Navigator.push(
-                          context, MaterialPageRoute(builder: (_) => HouseholdDetail(householdId: h.id))),
+                          context, glassRoute((_) => HouseholdDetail(householdId: h.id))),
                     ),
                     onTap: h.id == account.activeHouseholdId ? null : () => sync.switchTo(h.id),
                   ),
@@ -98,7 +98,7 @@ class HouseholdsScreen extends StatelessWidget {
                   trailing: scope.support.unread > 0
                       ? Badge(label: Text('${scope.support.unread}'))
                       : const Icon(Icons.chevron_left),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportScreen())),
+                  onTap: () => Navigator.push(context, glassRoute((_) => const SupportScreen())),
                 ),
               ),
             ]),
@@ -111,7 +111,7 @@ class HouseholdsScreen extends StatelessWidget {
                       ? 'יש גרסה חדשה: ${scope.updater.latest!.version}'
                       : 'גרסה ${scope.updater.currentVersion}'),
                   trailing: const Icon(Icons.chevron_left),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdatesScreen())),
+                  onTap: () => Navigator.push(context, glassRoute((_) => const UpdatesScreen())),
                 ),
               ]),
             SectionCard(title: 'החשבון שלי', children: [

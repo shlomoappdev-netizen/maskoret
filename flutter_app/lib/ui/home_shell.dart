@@ -11,6 +11,7 @@ import 'households_screen.dart';
 import 'money_screens.dart';
 import 'summary_screen.dart';
 import 'support_screen.dart';
+import 'theme.dart';
 import 'updates_screen.dart';
 import '../data/fmt.dart';
 import '../data/models.dart';
@@ -108,11 +109,16 @@ class _HomeShellState extends State<HomeShell> {
           return Scaffold(
             appBar: appBar,
             body: Row(children: [
-              SizedBox(
-                width: 250,
-                child: Sidebar(selected: current, onSelect: (d) => setState(() => current = d)),
+              Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(12, 4, 0, 12),
+                child: SizedBox(
+                  width: 250,
+                  child: Glass(
+                    radius: 20,
+                    child: Sidebar(selected: current, onSelect: (d) => setState(() => current = d)),
+                  ),
+                ),
               ),
-              const VerticalDivider(width: 1),
               Expanded(
                 child: Column(children: [
                   if (scope.updater.available) const UpdateBanner(),
@@ -129,7 +135,10 @@ class _HomeShellState extends State<HomeShell> {
             if (scope.updater.available) const UpdateBanner(),
             Expanded(child: more ? const MoreScreen() : content(Dest.tabs[tabIndex])),
           ]),
-          bottomNavigationBar: NavigationBar(
+          extendBody: true,
+          bottomNavigationBar: Glass(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: NavigationBar(
             selectedIndex: tabIndex,
             labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
             onDestinationSelected: (i) => setState(() {
@@ -155,6 +164,7 @@ class _HomeShellState extends State<HomeShell> {
                 label: 'עוד',
               ),
             ],
+          ),
           ),
         );
       },
@@ -226,7 +236,7 @@ class _SyncIcon extends StatelessWidget {
       return IconButton(
         tooltip: 'לא מחובר — הנתונים רק במכשיר הזה',
         icon: const Icon(Icons.cloud_off_outlined),
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HouseholdsScreen())),
+        onPressed: () => Navigator.push(context, glassRoute((_) => const HouseholdsScreen())),
       );
     }
     final theme = Theme.of(context);
@@ -269,7 +279,7 @@ class MonthNumbers extends StatelessWidget {
             Text(label, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             Text(Fmt.money(value),
                 textDirection: TextDirection.rtl,
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color)),
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color, fontFeatures: tabular)),
           ],
         );
     return Padding(
@@ -278,7 +288,7 @@ class MonthNumbers extends StatelessWidget {
         Expanded(child: number('עו״ש עכשיו', checking)),
         Expanded(
           child: number('נשאר בסוף החודש', remaining,
-              color: remaining >= 0 ? Colors.green.shade700 : theme.colorScheme.error),
+              color: remaining >= 0 ? AppColors.positive(context) : AppColors.negative(context)),
         ),
       ]),
     );
@@ -317,8 +327,9 @@ class Sidebar extends StatelessWidget {
                 child: ListTile(
                   dense: true,
                   selected: d == selected,
-                  selectedTileColor: theme.colorScheme.secondaryContainer,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  selectedColor: theme.colorScheme.primary,
+                  selectedTileColor: theme.colorScheme.primary.withValues(alpha: 0.14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   leading: Icon(d.icon, size: 20),
                   title: Text(d.title),
                   trailing: _badgeFor(context, d),
@@ -328,7 +339,7 @@ class Sidebar extends StatelessWidget {
           ],
         ]),
       ),
-      const Divider(height: 1),
+      Divider(height: 1, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08)),
       const MonthNumbers(),
     ]);
   }
@@ -353,8 +364,8 @@ class MoreScreen extends StatelessWidget {
                 trailing: _badgeFor(context, d) ?? const Icon(Icons.chevron_left),
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => d.ownScaffold ? d.page : Scaffold(appBar: AppBar(title: Text(d.title)), body: d.page),
+                  glassRoute(
+                    (_) => d.ownScaffold ? d.page : Scaffold(appBar: AppBar(title: Text(d.title)), body: d.page),
                   ),
                 ),
               ),

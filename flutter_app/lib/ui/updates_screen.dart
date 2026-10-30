@@ -14,7 +14,7 @@ class UpdateBanner extends StatelessWidget {
     return Material(
       color: theme.colorScheme.secondaryContainer,
       child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdatesScreen())),
+        onTap: () => Navigator.push(context, glassRoute((_) => const UpdatesScreen())),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(children: [

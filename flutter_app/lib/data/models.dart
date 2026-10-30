@@ -329,6 +329,9 @@ class Budget {
   double get periodicTotal =>
       trackedItems.where((t) => t.includeInBudget).fold(0.0, (a, t) => a + t.monthlyCost);
   double get remaining => net - totalExpenses - periodicTotal;
+
+  double get totalHours =>
+      incomes.where((i) => i.isActive && i.kind == IncomeKind.hourly).fold(0.0, (a, i) => a + i.hours);
 }
 
 // MARK: - History

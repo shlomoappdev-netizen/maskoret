@@ -8,6 +8,7 @@ import '../data/fmt.dart';
 import '../data/forecast.dart';
 import '../data/models.dart';
 import 'common.dart';
+import 'theme.dart';
 
 /// The forecast — port of ForecastView.swift.
 class ForecastScreen extends StatelessWidget {
@@ -56,26 +57,8 @@ class ForecastScreen extends StatelessWidget {
           onSelectionChanged: (s) => store.edit((f) => ForecastSettings.of(f).months = s.first),
         ),
         const SizedBox(height: 12),
-        Wrap(spacing: 10, runSpacing: 10, children: [
-          for (final (title, value, icon) in tiles)
-            SizedBox(
-              width: isWide(context) ? 220 : (MediaQuery.sizeOf(context).width - 42) / 2,
-              child: Card(
-                margin: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Icon(icon, size: 16, color: theme.colorScheme.primary),
-                      const SizedBox(width: 6),
-                      Expanded(child: Text(title, style: theme.textTheme.labelSmall, maxLines: 2)),
-                    ]),
-                    const SizedBox(height: 4),
-                    Text(value, textDirection: TextDirection.rtl, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                  ]),
-                ),
-              ),
-            ),
+        TileGrid(minWidth: 130, children: [
+          for (final (title, value, icon) in tiles) StatTile(title: title, value: value, icon: icon),
         ]),
         const SizedBox(height: 12),
         if (lowest.checking < 0)

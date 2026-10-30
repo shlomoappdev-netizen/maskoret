@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +19,7 @@ import 'sync/server_sync.dart';
 import 'ui/auth_screen.dart';
 import 'ui/common.dart';
 import 'ui/home_shell.dart';
+import 'ui/theme.dart';
 import 'support/app_log.dart';
 import 'support/support.dart';
 import 'update/updater.dart';
@@ -27,6 +29,8 @@ const demo = bool.fromEnvironment('DEMO');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The font is bundled with the app (assets/google_fonts) — never downloaded.
+  GoogleFonts.config.allowRuntimeFetching = false;
   await initializeDateFormatting('he');
   await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
   final prefs = await SharedPreferences.getInstance();
@@ -116,12 +120,6 @@ class _MaskoretAppState extends State<MaskoretApp> {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF2E7D6B);
-    ThemeData theme(Brightness b) => ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: b),
-          useMaterial3: true,
-          cardTheme: const CardThemeData(elevation: 0),
-        );
     return AppScope(
       store: widget.store,
       account: widget.account,
@@ -139,12 +137,13 @@ class _MaskoretAppState extends State<MaskoretApp> {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        theme: theme(Brightness.light),
-        darkTheme: theme(Brightness.dark),
+        theme: buildTheme(Brightness.light),
+        darkTheme: buildTheme(Brightness.dark),
         home: ListenableBuilder(
           listenable: widget.account,
-          builder: (context, _) =>
-              widget.account.isSignedIn || demo ? const HomeShell() : const AuthScreen(welcome: true),
+          builder: (context, _) => GlassBackground(
+            child: widget.account.isSignedIn || demo ? const HomeShell() : const AuthScreen(welcome: true),
+          ),
         ),
       ),
     );

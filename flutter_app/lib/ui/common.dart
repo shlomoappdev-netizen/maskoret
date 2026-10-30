@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/fmt.dart';
+import 'theme.dart';
 import '../state/store.dart';
 import '../sync/account.dart';
 import '../sync/server_sync.dart';
@@ -58,7 +59,7 @@ bool isWide(BuildContext context) => MediaQuery.sizeOf(context).width >= wideBre
 
 /// A list page with a max width on desktop.
 class PageList extends StatelessWidget {
-  const PageList({super.key, required this.children, this.padding = const EdgeInsets.fromLTRB(16, 12, 16, 96)});
+  const PageList({super.key, required this.children, this.padding = const EdgeInsets.fromLTRB(20, 12, 20, 110)});
   final List<Widget> children;
   final EdgeInsets padding;
 
@@ -67,7 +68,7 @@ class PageList extends StatelessWidget {
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
+        constraints: const BoxConstraints(maxWidth: 1100),
         child: ListView(padding: padding, children: children),
       ),
     );
@@ -84,22 +85,22 @@ class SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Glass(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (title != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 6),
               child: Row(
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(title!, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                        Text(title!, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                         if (subtitle != null)
                           Text(subtitle!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                       ],
@@ -110,8 +111,9 @@ class SectionCard extends StatelessWidget {
               ),
             ),
           ...children,
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
         ],
+      ),
       ),
     );
   }
@@ -151,7 +153,7 @@ class AmountRow extends StatelessWidget {
             ),
             Text(
               (negative && amount != 0 ? '−' : '') + Fmt.money(amount),
-              style: style?.copyWith(color: color),
+              style: style?.copyWith(color: color, fontFeatures: tabular),
               textDirection: TextDirection.rtl,
             ),
           ],
@@ -408,3 +410,7 @@ class EmptyHint extends StatelessWidget {
         child: Text(text, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
       );
 }
+
+/// Pushes a page with the app's glass background behind it.
+Route<T> glassRoute<T>(WidgetBuilder builder) =>
+    MaterialPageRoute<T>(builder: (context) => GlassBackground(child: builder(context)));

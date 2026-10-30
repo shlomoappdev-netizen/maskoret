@@ -63,7 +63,7 @@ class SupportIconButton extends StatelessWidget {
           label: Text('${support.unread}'),
           child: const Icon(Icons.support_agent),
         ),
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportScreen())),
+        onPressed: () => Navigator.push(context, glassRoute((_) => const SupportScreen())),
       ),
     );
   }
@@ -91,7 +91,7 @@ class _SupportScreenState extends State<SupportScreen> {
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.edit_outlined),
         label: const Text('פנייה חדשה'),
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NewSupportThreadScreen())),
+        onPressed: () => Navigator.push(context, glassRoute((_) => const NewSupportThreadScreen())),
       ),
       body: ListenableBuilder(
         listenable: support,
@@ -111,7 +111,7 @@ class _SupportScreenState extends State<SupportScreen> {
                 title: Text(t.subject, maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text('${SupportThread.titleOf(t.category)} · ${t.isOpen ? 'פתוחה' : 'סגורה'} · ${_when(t.lastMessageAt)}'),
                 trailing: t.userUnread > 0 ? Badge(label: Text('${t.userUnread}')) : null,
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SupportChatScreen(threadId: t.id))),
+                onTap: () => Navigator.push(context, glassRoute((_) => SupportChatScreen(threadId: t.id))),
               ),
           ]),
         ]),
@@ -160,7 +160,7 @@ class _NewSupportThreadScreenState extends State<NewSupportThreadScreen> {
       final id = await scope.support.openThread(
           subject: subject.text.trim(), category: category, body: body.text.trim(), log: log);
       if (!mounted) return;
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => SupportChatScreen(threadId: id)));
+      Navigator.pushReplacement(context, glassRoute((_) => SupportChatScreen(threadId: id)));
     } catch (e) {
       setState(() {
         sending = false;

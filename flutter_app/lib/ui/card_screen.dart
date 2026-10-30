@@ -7,6 +7,7 @@ import '../data/json.dart';
 import '../data/max_import.dart';
 import '../data/models.dart';
 import 'common.dart';
+import 'theme.dart';
 
 /// Credit card: importing the Max statement, the month's charges, linking them to fixed expenses,
 /// categories, installments — port of CardView.swift.
@@ -218,31 +219,10 @@ class _CardScreenState extends State<CardScreen> {
       if (s.owed > 0) ('שילמתי בשביל אחרים', s.owed, Icons.undo),
       if (s.pending != 0) ('ממתין לקליטה (כלול)', s.pending, Icons.hourglass_empty),
     ];
-    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Wrap(spacing: 10, runSpacing: 10, children: [
-        for (final (title, value, icon) in tiles)
-          SizedBox(
-            width: isWide(context) ? 200 : (MediaQuery.sizeOf(context).width - 42) / 2,
-            child: Card(
-              margin: EdgeInsets.zero,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Icon(icon, size: 16, color: theme.colorScheme.primary),
-                    const SizedBox(width: 6),
-                    Expanded(child: Text(title, style: theme.textTheme.labelSmall, maxLines: 2)),
-                  ]),
-                  const SizedBox(height: 4),
-                  Text(Fmt.money(_r(value)),
-                      textDirection: TextDirection.rtl,
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                ]),
-              ),
-            ),
-          ),
+      padding: const EdgeInsets.only(bottom: 14),
+      child: TileGrid(minWidth: 130, children: [
+        for (final (title, value, icon) in tiles) StatTile(title: title, value: Fmt.money(_r(value)), icon: icon),
       ]),
     );
   }
@@ -385,9 +365,10 @@ class _Banner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
-      margin: const EdgeInsets.only(bottom: 12),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Glass(
+      tint: theme.colorScheme.primary.withValues(alpha: 0.10),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -403,6 +384,7 @@ class _Banner extends StatelessWidget {
           ]),
           Align(alignment: AlignmentDirectional.centerEnd, child: TextButton(onPressed: onAction, child: Text(action))),
         ]),
+      ),
       ),
     );
   }

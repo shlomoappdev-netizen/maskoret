@@ -51,6 +51,7 @@ dependencies:
   xml: ^7.0.1
   file_picker: ^13.3.0
   fl_chart: ^1.3.0
+  google_fonts: ^8.2.1
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +63,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -71,6 +73,8 @@ flutter:
   # Only for checking the screens with --dart-define=DEMO=true (the anonymized household from the tests).
   assets:
     - assets/demo_household.json
+    # The Hebrew font, bundled (google_fonts uses these files instead of downloading).
+    - assets/google_fonts/
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
@@ -107,3 +111,16 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# The app icon — the same artwork as the iPhone/Mac app (Maskoret/Assets.xcassets/AppIcon.appiconset).
+# Regenerate with: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  image_path_android: "assets/icon/icon_full.png"
+  adaptive_icon_background: "#0D8C78"
+  adaptive_icon_foreground: "assets/icon/icon_full.png"
+  adaptive_icon_foreground_inset: 16
+  windows:
+    generate: true
+    image_path: "assets/icon/icon_rounded.png"
+    icon_size: 256

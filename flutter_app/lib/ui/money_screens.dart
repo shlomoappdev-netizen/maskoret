@@ -50,7 +50,7 @@ class AccountsScreen extends StatelessWidget {
                       subtitle: Text(_subtitle(a, calc, now)),
                       trailing: Text(Fmt.money(calc.value(a, now, tx)), textDirection: TextDirection.rtl,
                           style: Theme.of(context).textTheme.titleMedium),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AccountDetail(accountId: a.id))),
+                      onTap: () => Navigator.push(context, glassRoute((_) => AccountDetail(accountId: a.id))),
                     ),
                 ],
               ),
