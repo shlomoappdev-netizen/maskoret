@@ -43,10 +43,20 @@ jobs:
           $v = Get-Content ../version.json -Raw | ConvertFrom-Json
           flutter build windows --release --build-name $v.version --build-number $v.build
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath build/maskoret-windows.zip -Force
+      - name: Installer
+        shell: pwsh
+        run: |
+          $v = Get-Content ../version.json -Raw | ConvertFrom-Json
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$($v.version)" "/DAppBuild=$($v.build)" windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # The ZIP stays for copies of 4.1.x, which update by unpacking it; new copies install with the setup.
       - uses: actions/upload-artifact@v4
         with:
           name: maskoret-windows
-          path: flutter_app/build/maskoret-windows.zip
+          path: |
+            flutter_app/build/maskoret-windows.zip
+            flutter_app/build/maskoret-windows-setup.exe
           retention-days: 30
 
   android:

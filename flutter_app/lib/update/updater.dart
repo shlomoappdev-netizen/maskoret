@@ -25,7 +25,8 @@ class Release {
   final List<String> notes;
   final Map<String, ReleaseFile?> platforms;
 
-  ReleaseFile? get forThisDevice => platforms[Platform.isWindows ? 'windows' : 'android'];
+  /// Windows installs with the setup; "windows" (a ZIP) is only for copies of 4.1.x, which update by unpacking it.
+  ReleaseFile? get forThisDevice => platforms[Platform.isWindows ? 'windows_setup' : 'android'];
 }
 
 class ReleaseFile {
@@ -41,8 +42,8 @@ class ReleaseFile {
 enum UpdatePhase { idle, checking, downloading, installing, failed }
 
 /// Updates for Android and Windows: the app checks releases/latest.json on the server and, when there's a
-/// newer build, downloads and installs it (Android: the system installer; Windows: replaces its own files
-/// and reopens). The iPhone gets its versions from Xcode; the Mac has its own updater.
+/// newer build, downloads and installs it (Android: the system installer; Windows: the setup, run silently,
+/// which reopens the app). The iPhone gets its versions from Xcode; the Mac has its own updater.
 class Updater extends ChangeNotifier {
   /// Overridable only for testing the update flow against a local server (--dart-define=UPDATE_URL=…).
   static const latestUrl = String.fromEnvironment('UPDATE_URL',
@@ -105,7 +106,7 @@ class Updater extends ChangeNotifier {
     notifyListeners();
     try {
       final dir = await Directory.systemTemp.createTemp('maskoret-update');
-      final file = File('${dir.path}/${Platform.isWindows ? 'maskoret-windows.zip' : 'maskoret.apk'}');
+      final file = File('${dir.path}/${Platform.isWindows ? 'maskoret-windows-setup.exe' : 'maskoret.apk'}');
       await _download(target.url, file);
       // The file must be exactly the published one.
       if (target.sha256 != null) {
@@ -131,8 +132,6 @@ class Updater extends ChangeNotifier {
       phase = UpdatePhase.failed;
       error = e is _Corrupt
           ? 'הקובץ שהורד פגום. נסה שוב.'
-          : e is FileSystemException && Platform.isWindows
-          ? 'אין הרשאה לעדכן את התיקייה של האפליקציה. העבר אותה לתיקייה שלך (למשל ‎C:\\מחשבון שכר‎) ונסה שוב.'
           : 'העדכון נכשל. נסה שוב בעוד רגע.';
     }
     notifyListeners();
@@ -160,28 +159,12 @@ class Updater extends ChangeNotifier {
     }
   }
 
-  /// Windows: a small PowerShell script waits for the app to close, unpacks the new files over the app's
-  /// folder and opens it again. The folder must be writable (not Program Files).
-  Future<void> _installWindows(File zip) async {
-    final exe = Platform.resolvedExecutable;
-    final folder = File(exe).parent.path;
-    // Writing a test file fails early (with a clear message) when the folder isn't writable.
-    final probe = File('$folder\\.update-test');
-    probe.writeAsStringSync('ok');
-    probe.deleteSync();
-    final script = File('${zip.parent.path}\\update.ps1');
-    String q(String s) => "'${s.replaceAll("'", "''")}'";
-    // With a BOM, so Windows PowerShell reads Hebrew folder names correctly.
-    script.writeAsStringSync('\uFEFF' '''
-\$ErrorActionPreference = 'Stop'
-Wait-Process -Id $pid -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 500
-Expand-Archive -LiteralPath ${q(zip.path)} -DestinationPath ${q(folder)} -Force
-Start-Process -FilePath ${q(exe)}
-''', encoding: utf8);
+  /// Windows: runs the downloaded installer silently and closes; the installer replaces the app (closing it if
+  /// needed) and opens the new version. A copy that was unpacked from a ZIP (4.1.x) moves to the installed one.
+  Future<void> _installWindows(File setup) async {
     await Process.start(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script.path],
+      setup.path,
+      ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
       mode: ProcessStartMode.detached,
     );
     exit(0);

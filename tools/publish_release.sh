@@ -1,7 +1,7 @@
 #!/bin/bash
 # Publishes a new version of מחשבון שכר to everyone:
 #   1. builds the Mac app (Release) and packs maskoret-mac.dmg
-#   2. takes the Android APK and the Windows ZIP from the להפצה folder (built by flutter_app/tool/build_android.sh
+#   2. takes the Android APK and the Windows setup + ZIP (the ZIP only updates copies of 4.1.x) from the להפצה folder (built by flutter_app/tool/build_android.sh
 #      and by GitHub Actions)
 #   3. creates a GitHub release in shlomoappdev-netizen/maskoret-releases with the three files
 #   4. updates latest.json on the site — the apps check it and offer the update
@@ -33,7 +33,8 @@ fi
 
 APK="$DIST/Android/מחשבון שכר.apk"
 WINZIP="$DIST/Windows/מחשבון שכר - Windows.zip"
-for f in "$APK" "$WINZIP"; do
+WINSETUP="$DIST/Windows/מחשבון שכר - התקנה.exe"
+for f in "$APK" "$WINZIP" "$WINSETUP"; do
   [ -f "$f" ] || { echo "חסר קובץ: $f" >&2; exit 1; }
 done
 
@@ -57,6 +58,7 @@ hdiutil create -volname "מחשבון שכר $VERSION" -srcfolder "$WORK/stage" 
 cp "$WORK/out/maskoret-mac.dmg" "$DIST/מחשבון שכר.dmg"
 cp "$APK" "$WORK/out/maskoret-android.apk"
 cp "$WINZIP" "$WORK/out/maskoret-windows.zip"
+cp "$WINSETUP" "$WORK/out/maskoret-windows-setup.exe"
 
 # --- Release notes + latest.json
 python3 - "$ROOT/version.json" "$WORK/out" "$REPO" "$TAG" <<'PY'
@@ -68,15 +70,17 @@ def asset(name):
     p = os.path.join(out, name)
     return {"url": base + name, "sha256": hashlib.sha256(open(p, "rb").read()).hexdigest(), "size": os.path.getsize(p)}
 manifest = {"version": v["version"], "build": v["build"], "date": v.get("date"), "notes": v.get("notes", []),
-            "platforms": {"android": asset("maskoret-android.apk"), "windows": asset("maskoret-windows.zip"), "mac": asset("maskoret-mac.dmg")}}
+            "platforms": {"android": asset("maskoret-android.apk"), "windows": asset("maskoret-windows.zip"),
+                          "windows_setup": asset("maskoret-windows-setup.exe"), "mac": asset("maskoret-mac.dmg")}}
 json.dump(manifest, open(os.path.join(out, "latest.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 notes = f"## מחשבון שכר {v['version']}\n\n" + "\n".join("- " + n for n in v.get("notes", []))
-notes += "\n\n**התקנה:** אנדרואיד — maskoret-android.apk · Windows — maskoret-windows.zip (לפתוח ולהפעיל את maskoret.exe) · Mac — maskoret-mac.dmg\n"
+notes += "\n\n**התקנה:** אנדרואיד — maskoret-android.apk · Windows — maskoret-windows-setup.exe (תוכנת התקנה) · Mac — maskoret-mac.dmg\n"
 open(os.path.join(out, "notes.md"), "w", encoding="utf-8").write(notes)
 PY
 
 echo "== מעלה את הקבצים ל-GitHub…"
-gh release create "$TAG" "$WORK/out/maskoret-android.apk" "$WORK/out/maskoret-windows.zip" "$WORK/out/maskoret-mac.dmg" \
+gh release create "$TAG" "$WORK/out/maskoret-android.apk" "$WORK/out/maskoret-windows.zip" \
+  "$WORK/out/maskoret-windows-setup.exe" "$WORK/out/maskoret-mac.dmg" \
   --repo "$REPO" --title "מחשבון שכר $VERSION" --notes-file "$WORK/out/notes.md"
 
 echo "== מעדכן את latest.json באתר…"
