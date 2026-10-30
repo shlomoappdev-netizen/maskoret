@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'data/rates_update.dart';
 import 'state/secure_file.dart';
 import 'state/store.dart';
 import 'sync/account.dart';
@@ -48,6 +49,8 @@ Future<void> main() async {
   prefs.remove('localOnly');
   // Checking the screens without an account: the anonymized household from the tests, nothing goes to the server.
   if (demo) store.replace((jsonDecode(await rootBundle.loadString('assets/demo_household.json')) as Map).cast<String, dynamic>());
+  // The rates file (if the household set one): twice a day at most, like Store.refreshRates.
+  if (!demo) _checkRates(store);
   final account = UserAccount(prefs);
   final deviceName = await _deviceName();
   final sync = ServerSync(
@@ -79,6 +82,11 @@ Future<void> main() async {
       updater: updater,
       support: supportCenter,
       announcements: announcements));
+}
+
+Future<void> _checkRates(AppStore store) async {
+  final (_, newer, fetched) = await RatesUpdate.check(store.file);
+  if (fetched || newer != null) store.edit((f) => RatesUpdate.apply(f, newer, checked: fetched));
 }
 
 /// Shown on the server next to each save ("updated from …"), like `Platform.deviceName` in Swift.

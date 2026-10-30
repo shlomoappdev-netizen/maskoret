@@ -13,6 +13,7 @@ import 'households_screen.dart';
 import 'money_screens.dart';
 import 'summary_screen.dart';
 import 'support_screen.dart';
+import 'tax_settings_screen.dart';
 import 'theme.dart';
 import 'updates_screen.dart';
 import '../data/fmt.dart';
@@ -34,6 +35,7 @@ enum Dest {
   history('חודשים', Icons.calendar_month),
   maaser('מעשרות', Icons.volunteer_activism_outlined),
   owed('חייבים לי', Icons.assignment_return_outlined),
+  tax('נתוני מס', Icons.percent),
   account('חשבון ומשק בית', Icons.account_circle_outlined, ownScaffold: true),
   support('תמיכה ודיווח תקלות', Icons.support_agent, ownScaffold: true),
   versions('גרסאות קודמות', Icons.history, ownScaffold: true),
@@ -61,6 +63,7 @@ enum Dest {
         history => const HistoryScreen(),
         maaser => const MaaserScreen(),
         owed => const ReceivablesScreen(),
+        tax => const TaxSettingsScreen(),
         account => const HouseholdsScreen(),
         support => const SupportScreen(),
         versions => const VersionsScreen(),
@@ -71,7 +74,7 @@ enum Dest {
   static List<(String, List<Dest>)> sections() => [
         ('החודש', [summary, incomes, deductions, expenses]),
         ('הכסף שלי', [accounts, card, transactions, forecast, history, maaser, owed]),
-        ('הגדרות', [account, support, versions, if (Updater.supported) updates]),
+        ('הגדרות', [tax, account, support, versions, if (Updater.supported) updates]),
       ];
 
   /// The phone's bottom tabs; everything else is under "עוד" (like PhoneRoot.swift).

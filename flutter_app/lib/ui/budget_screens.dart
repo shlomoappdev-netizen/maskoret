@@ -4,6 +4,7 @@ import '../data/fmt.dart';
 import '../data/json.dart';
 import '../data/models.dart';
 import 'common.dart';
+import 'tax_settings_screen.dart';
 
 // MARK: - Incomes
 
@@ -151,6 +152,14 @@ class DeductionsScreen extends StatelessWidget {
                         ? ' — ${Fmt.date(ts.pensionStart!)}'
                         : '')),
                 onTap: () => _editTax(context),
+              ),
+              ListTile(
+                leading: const Icon(Icons.percent),
+                title: const Text('כל נתוני המס'),
+                subtitle: const Text('מדרגות, ביטוח לאומי, עדכון השיעורים ומקורות'),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () => Navigator.push(
+                    context, glassRoute((_) => Scaffold(appBar: AppBar(title: const Text('נתוני מס')), body: const TaxSettingsScreen()))),
               ),
             ],
           ),
