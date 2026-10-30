@@ -208,10 +208,26 @@ async function notifyTasks() {
 }
 
 // ===== Wake-ups =====
-supabase.channel('maskoret-support-agent')
-  .on('broadcast', { event: 'work' }, () => work('ping'))
-  .on('broadcast', { event: 'dev_task' }, () => notifyTasks().catch(e => log('notify failed:', e.message)))
-  .subscribe(status => log('realtime:', status));
+// The ping channel: when it drops (network change, sleep, server restart), join it again after a short wait, and
+// do a pass in case a ping was missed meanwhile.
+let channel = null;
+function listen() {
+  channel = supabase.channel('maskoret-support-agent')
+    .on('broadcast', { event: 'work' }, () => work('ping'))
+    .on('broadcast', { event: 'dev_task' }, () => notifyTasks().catch(e => log('notify failed:', e.message)))
+    .subscribe(status => {
+      log('realtime:', status);
+      if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+        const dropped = channel;
+        channel = null;
+        setTimeout(async () => {
+          if (dropped) await supabase.removeChannel(dropped).catch(() => {});
+          if (!channel) { listen(); work('reconnect'); }
+        }, 30 * 1000);
+      }
+    });
+}
+listen();
 
 setInterval(() => work('safety check'), SAFETY_CHECK_MS);
 
