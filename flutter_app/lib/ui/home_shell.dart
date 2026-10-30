@@ -4,6 +4,7 @@ import '../data/card.dart';
 import '../data/max_import.dart';
 import 'budget_screens.dart';
 import 'card_screen.dart';
+import 'family_screen.dart';
 import 'forecast_screen.dart';
 import 'history_screen.dart';
 import 'maaser_screen.dart';
@@ -35,6 +36,7 @@ enum Dest {
   history('חודשים', Icons.calendar_month),
   maaser('מעשרות', Icons.volunteer_activism_outlined),
   owed('חייבים לי', Icons.assignment_return_outlined),
+  family('בני משפחה', Icons.groups_outlined),
   tax('נתוני מס', Icons.percent),
   account('חשבון ומשק בית', Icons.account_circle_outlined, ownScaffold: true),
   support('תמיכה ודיווח תקלות', Icons.support_agent, ownScaffold: true),
@@ -63,6 +65,7 @@ enum Dest {
         history => const HistoryScreen(),
         maaser => const MaaserScreen(),
         owed => const ReceivablesScreen(),
+        family => const FamilyScreen(),
         tax => const TaxSettingsScreen(),
         account => const HouseholdsScreen(),
         support => const SupportScreen(),
@@ -74,7 +77,7 @@ enum Dest {
   static List<(String, List<Dest>)> sections() => [
         ('החודש', [summary, incomes, deductions, expenses]),
         ('הכסף שלי', [accounts, card, transactions, forecast, history, maaser, owed]),
-        ('הגדרות', [tax, account, support, versions, if (Updater.supported) updates]),
+        ('הגדרות', [family, tax, account, support, versions, if (Updater.supported) updates]),
       ];
 
   /// The phone's bottom tabs; everything else is under "עוד" (like PhoneRoot.swift).
@@ -227,10 +230,14 @@ class _MemberPicker extends StatelessWidget {
     return PopupMenuButton<String>(
       tooltip: 'בן משפחה',
       icon: const Icon(Icons.people_outline),
-      onSelected: (id) => store.activeMemberId = id,
+      onSelected: (id) => id == '' 
+          ? Navigator.push(context, glassRoute((_) => Scaffold(appBar: AppBar(title: const Text('בני משפחה')), body: const FamilyScreen())))
+          : store.activeMemberId = id,
       itemBuilder: (_) => [
         for (final m in store.members)
           CheckedPopupMenuItem(value: m.id, checked: m.id == store.activeMemberId, child: Text(m.title)),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: '', child: Text('ניהול בני משפחה…')),
       ],
     );
   }

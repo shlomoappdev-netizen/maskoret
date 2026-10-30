@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/data/card.dart';
+import 'package:maskoret/data/family.dart';
 import 'package:maskoret/data/forecast.dart';
 import 'package:maskoret/data/maaser.dart';
 import 'package:maskoret/data/receivables.dart';
@@ -339,6 +340,29 @@ void main() {
     expect(cards.cardTransactions.any((t) => t.owedPortion > 0), isTrue);
     compare(doc);
     actions.removeCardFromReceivables(charges[2].id);
+    compare(doc);
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
+  test('family: a member added, renamed and another deleted here is read by Swift with the same numbers', () {
+    final doc = loadFixture();
+    final family = FamilyBackup(doc);
+    final source = family.fileForEditing(family.state.activeID);
+    final actions = FamilyActions(family);
+    final noa = actions.add(name: 'נועה', emoji: '👩', copyFrom: source);
+    final shared = actions.add(name: 'משותף', emoji: '🏠', copyFrom: source);
+    actions.update(noa, name: 'נועה כהן', emoji: '👩‍💼');
+    final f = family.fileForEditing(noa);
+    f.budget.upsertIncome(IncomeItem.create(name: 'משכורת')..['amount'] = 9800);
+    for (final t in AutoDeduction.values) {
+      if (!f.budget.hasAuto(t)) f.budget.upsertDeduction(CostItem.automatic(t));
+    }
+    expect(actions.delete(shared, shared), family.state.primaryID);
+    expect(family.state.members.map((m) => m.id), isNot(contains(shared)));
+    expect((doc['files'] as Map).containsKey(shared), isFalse);
+    expect(actions.delete(family.state.primaryID, noa), noa, reason: 'the first member is never deleted');
+    final s = swift(doc, DateTime.now())['files'] as Map<String, dynamic>;
+    expect(s.keys, containsAll([family.state.primaryID, noa]));
+    expect(s[noa]['net'], closeTo(f.budget.net, 0.01));
     compare(doc);
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 

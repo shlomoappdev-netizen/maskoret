@@ -82,6 +82,15 @@ class AppStore extends ChangeNotifier {
     onDataChange?.call();
   }
 
+  /// Changes to the household itself (family members): like [edit], on the whole document.
+  void editFamily(void Function(FamilyBackup family) change) {
+    change(family);
+    _fixActiveMember();
+    _write();
+    notifyListeners();
+    onDataChange?.call();
+  }
+
   /// Replaces everything with another household's data (from the server or the cache).
   void replace(Json newDoc) {
     doc = newDoc;
