@@ -8,7 +8,8 @@
   Claude (in the chat) the token's fingerprint it prints, and type this Windows user's password for the task.
   Log: %LOCALAPPDATA%\maskoret\agent.log
 #>
-param([string]$Dir = 'C:\maskoret')
+# Its own clone, apart from the development folder (C:\maskoret): the agent pulls it every hour.
+param([string]$Dir = 'C:\maskoret-agent')
 $ErrorActionPreference = 'Stop'
 function Step($text) { Write-Host "`n== $text" -ForegroundColor Cyan }
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
