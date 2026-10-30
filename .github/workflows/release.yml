@@ -14,10 +14,19 @@ on:
   push:
     branches: [main]
     paths: ['version.json']
+  # A safety net: a release that failed (a broken build, a GitHub outage) is tried again every 3 hours until it's out.
+  schedule:
+    - cron: '23 */3 * * *'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and sign everything, without publishing'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: release
@@ -36,7 +45,9 @@ jobs:
           version=$(jq -r .version version.json); build=$(jq -r .build version.json); ready=$(jq -r '.ready // false' version.json)
           site=$(curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)" | jq -r .build)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [ "$ready" = "true" ] && [ "$build" -gt "$site" ]; then
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"; echo "Dry run: building $version ($build) without publishing."
+          elif [ "$ready" = "true" ] && [ "$build" -gt "$site" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"; echo "Releasing $version ($build); the site has build $site."
           else
             echo "go=false" >> "$GITHUB_OUTPUT"; echo "Nothing to release: $version ($build), ready=$ready, site build $site."
@@ -103,6 +114,7 @@ jobs:
 
   publish:
     needs: [check, apps, mac]
+    if: inputs.dry_run != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -122,8 +134,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${{ needs.check.outputs.version }}"
-          gh release create "v$v" out/maskoret-android.apk out/maskoret-windows-setup.exe out/maskoret-windows.zip \
-            out/maskoret-mac.dmg --title "מחשבון שכר $v" --notes-file out/notes.md --target "$GITHUB_SHA"
+          files="out/maskoret-android.apk out/maskoret-windows-setup.exe out/maskoret-windows.zip out/maskoret-mac.dmg"
+          # A retry after a failure further on: the release may already exist — replace its files.
+          if gh release view "v$v" >/dev/null 2>&1; then
+            gh release upload "v$v" $files --clobber
+          else
+            gh release create "v$v" $files --title "מחשבון שכר $v" --notes-file out/notes.md --target "$GITHUB_SHA"
+          fi
       - name: Update the download site
         env:
           DEPLOY_KEY: ${{ secrets.SITE_DEPLOY_KEY }}
@@ -137,3 +154,36 @@ jobs:
           git -c user.name="maskoret-release" -c user.email="shlomoappdev@gmail.com" commit -q -m "גרסה ${{ needs.check.outputs.version }}"
           git push -q
           echo "Published ${{ needs.check.outputs.version }} — the apps offer it on their next check."
+
+  # A failed release opens an issue (GitHub notifies the owner); the scheduled run keeps trying meanwhile.
+  alert:
+    needs: [check, apps, mac, publish]
+    if: failure() && inputs.dry_run != true
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="הפרסום של גרסה ${{ needs.check.outputs.version }} נכשל"
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          existing=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" -R "$GITHUB_REPOSITORY" --body "נכשל שוב: $url"
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" \
+              --body "הפרסום האוטומטי נכשל: $url — הוא ינסה שוב בעוד עד 3 שעות. אם זה חוזר, צריך לתקן את הבנייה."
+          fi
+
+  # A successful release closes the failure issue of that version, if one was opened.
+  resolved:
+    needs: [check, publish]
+    if: success() && inputs.dry_run != true && needs.check.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="הפרסום של גרסה ${{ needs.check.outputs.version }} נכשל"
+          for n in $(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[].number'); do
+            gh issue close "$n" -R "$GITHUB_REPOSITORY" --comment "פורסם בהצלחה: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          done

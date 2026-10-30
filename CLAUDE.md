@@ -22,9 +22,16 @@ build newer than the site's: Windows setup + ZIP and APK (flutter-app.yml), the 
 signed with "Maskoret Signing", a GitHub release in this repo, and latest.json + changelog.json (the "מה חדש" screen) on
 the download site. Secrets are set once with `tools/setup_cloud_release.sh`. `tools/publish_release.sh` is a manual
 fallback from the Mac.
-- While a version is being worked on, keep `"ready": false`. Set it to `true` (in its own commit, after the work is
-  finished and checked on the platforms it touches) only with the user's approval — that commit is the release.
+
+**Every finished version is published — the user asked for it (2026-10-30); no separate approval is needed.**
+- While a version is being worked on, keep `"ready": false`.
+- When the piece of work you were doing is finished and checked (it builds, the tests pass, and you looked at it on
+  the platforms it touches), set `"ready": true` in its own commit and push. That commit is the release. Don't end your
+  work leaving a finished version unpublished; if you're unsure it's finished, ask the user.
 - Right after a release, the next change starts the next version (bump, `"ready": false`).
+- After a release, check that it went out (the site's latest.json has the new build, usually within ~25 minutes). If
+  the run failed, release.yml opens an issue and retries every 3 hours — fix the cause rather than waiting.
+- Never publish by hand while a cloud release of the same version is running.
 
 ## Open source
 The repo is public (shlomoappdev-netizen/maskoret, GPL-3.0); contributions come as pull requests (main is protected
