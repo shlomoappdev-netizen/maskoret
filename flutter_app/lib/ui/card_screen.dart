@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 
 import '../data/card.dart';
 import '../data/maaser.dart';
+import '../data/receivables.dart';
 import '../data/fmt.dart';
 import '../data/json.dart';
 import '../data/max_import.dart';
 import '../data/models.dart';
 import 'common.dart';
+import 'receivables_screen.dart';
 import 'theme.dart';
 
 /// Credit card: importing the Max statement, the month's charges, linking them to fixed expenses,
@@ -508,6 +510,12 @@ class _LinkMenu extends StatelessWidget {
             item('${t['emoji'] ?? ''} ${t['name'] ?? ''}', (f) => CardActions(f).toggleInTrend(tx.id, t['id'] as String),
                 checked: (t['cardIDs'] as List?)?.contains(tx.id) == true),
         ],
+        const PopupMenuDivider(),
+        header('חייבים לי'),
+        if (tx.owedPortion > 0)
+          item('ביטול — לא צריך להחזיר', (f) => ReceivableActions(f).removeCardFromReceivables(tx.id))
+        else if (tx.amount > 0)
+          PopupMenuItem(value: () => showOwedQuick(context, tx), child: const Text('מישהו צריך להחזיר לי…')),
         if (maaser.enabled) ...[
           const PopupMenuDivider(),
           header('מעשרות'),

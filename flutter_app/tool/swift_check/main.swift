@@ -92,6 +92,10 @@ for (id, file) in family.files {
     ]
     files[id] = [
         "maaser": maaser,
+        "owed": ["total": money.totalOwedToMe, "each": money.receivables.map { money.outstanding($0) },
+                 "returned": money.receivables.map { money.returned($0) }, "expected": money.receivables.map { $0.expected },
+                 "debtors": money.debtors.map { $0.amount },
+                 "portions": money.cardTransactions.map { $0.owedPortion }],
         "forecast": forecast,
         "expectedNet": expected.amount,
         "card": cardInfo,

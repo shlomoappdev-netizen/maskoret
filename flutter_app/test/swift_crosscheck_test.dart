@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/data/card.dart';
 import 'package:maskoret/data/forecast.dart';
 import 'package:maskoret/data/maaser.dart';
+import 'package:maskoret/data/receivables.dart';
 import 'package:maskoret/data/json.dart';
 import 'package:maskoret/data/max_import.dart';
 import 'package:maskoret/data/models.dart';
@@ -84,6 +85,14 @@ void main() {
       };
       final ms = MaaserCalc.status(f, now: now);
       files[m.id] = {
+        'owed': {
+          'total': cards.totalOwedToMe(money.transactions),
+          'each': [for (final r in cards.receivables) cards.outstanding(r, money.transactions)],
+          'returned': [for (final r in cards.receivables) cards.returned(r, money.transactions)],
+          'expected': [for (final r in cards.receivables) r.expected],
+          'debtors': [for (final d in cards.debtors(money.transactions)) d.amount],
+          'portions': [for (final t in cards.cardTransactions) t.owedPortion],
+        },
         'maaser': {
           'balance': ms.balance, 'thisMonthOwed': ms.thisMonthOwed, 'thisMonthPaid': ms.thisMonthPaid,
           'paidThisYear': ms.paidThisYear, 'missing': ms.missingMonths,
@@ -148,7 +157,7 @@ void main() {
       for (final k in (d[id] as Map).keys) {
         final dv = d[id][k];
         final sv = s[id][k];
-        if (k == 'card' || k == 'forecast' || k == 'maaser') {
+        if (k == 'card' || k == 'forecast' || k == 'maaser' || k == 'owed') {
           deepClose(dv, sv, 'card');
         } else if (k == 'months') {
           final sm = sv as List;
@@ -298,6 +307,39 @@ void main() {
       expect(status.months.fold(0.0, (s, x) => s + x.paid), greaterThan(400 + 99.9 + 150 * 6 - 0.01));
       compare(doc);
     }
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
+  test('owed to me: Swift agrees on every debt, what came back, and the card portions', () {
+    final doc = loadFixture();
+    final family = FamilyBackup(doc);
+    final file = family.fileForEditing(family.state.activeID);
+    final actions = ReceivableActions(file);
+    final charges = CardData(file.money).cardTransactions.where((t) => t.amount > 0).toList();
+    final credit = CardData(file.money).cardTransactions.where((t) => t.amount < 0).firstOrNull;
+    actions.addCardToReceivable(charges[0], person: 'דנה', amount: charges[0].amount / 2, note: 'הופעה');
+    actions.addCardToReceivable(charges[1], person: 'דנה', amount: 40.5, note: '');
+    actions.addCardToReceivable(charges[2], person: 'יוסי', amount: charges[2].amount + 100, note: 'יותר מהחיוב');
+    final checking = file.money.ensureChecking();
+    final expense = MoneyTransaction.create(accountID: checking.id)..['amount'] = 300;
+    file.money.upsertTransaction(expense);
+    final dana = CardData(file.money).receivables.firstWhere((r) => r.person == 'דנה');
+    final edited = deepCopy(dana.json) as Json;
+    (edited['transactionShares'] as Map)[expense['id']] = 120;
+    edited['manualAmount'] = 55.25;
+    (edited['returns'] as List).add(ReceivableActions.returnEntry(date: DateTime.now(), amount: 70, note: 'מזומן'));
+    if (credit != null) (edited['cardCreditIDs'] as List).add(credit.id);
+    actions.upsert(edited);
+    final bit = actions.addReturnIncome('דנה', ReceivableActions.returnEntry(date: DateTime.now(), amount: 33.3, note: 'ביט'));
+    actions.linkIncome(bit, edited['id'] as String);
+    final forgiven = ReceivableActions.create(person: 'אבא')..['manualAmount'] = 500..['forgiven'] = true;
+    actions.upsert(forgiven);
+    final cards = CardData(file.money);
+    expect(cards.receivables.length, greaterThanOrEqualTo(4));
+    expect(cards.totalOwedToMe(file.money.transactions), greaterThan(0));
+    expect(cards.cardTransactions.any((t) => t.owedPortion > 0), isTrue);
+    compare(doc);
+    actions.removeCardFromReceivables(charges[2].id);
+    compare(doc);
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 
   test('a new household made by this app is read by Swift', () {

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../data/card.dart';
 import '../data/fmt.dart';
+import '../data/receivables.dart';
 import '../data/json.dart';
 import '../data/models.dart';
 import '../data/money_calc.dart';
 import 'common.dart';
+import 'receivables_screen.dart';
 
 IconData accountIcon(AccountKind k) => switch (k) {
       AccountKind.checking => Icons.account_balance,
@@ -245,6 +248,8 @@ class TransactionsScreen extends StatelessWidget {
       final list = money.transactions..sort((a, b) => b.date.compareTo(a.date));
       final planned = list.where((t) => t.isPlanned).toList().reversed.toList();
       final past = list.where((t) => !t.isPlanned).toList();
+      final cards = CardData(money);
+      final open = openReceivables(money);
       Widget tile(MoneyTransaction t) {
         final theme = Theme.of(context);
         final color = switch (t.kind) {
@@ -255,6 +260,8 @@ class TransactionsScreen extends StatelessWidget {
         final where = t.kind == TransactionKind.transfer
             ? '${money.account(t.accountID)?.name ?? '?'} ← ${money.account(t.toAccountID)?.name ?? '?'}'
             : (t.paidByCard ? 'באשראי${t.cardInstallments > 1 ? ' · ${t.cardInstallments} תשלומים' : ''}' : money.account(t.accountID)?.name ?? '');
+        final debt = t.kind == TransactionKind.income ? cards.receivables.where((r) => r.incomeIDs.contains(t.id)).firstOrNull : null;
+        final canLink = t.kind == TransactionKind.income && t.salaryKey == null && debt == null && open.isNotEmpty;
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: color.withValues(alpha: 0.12),
@@ -267,9 +274,24 @@ class TransactionsScreen extends StatelessWidget {
                 color: color),
           ),
           title: Text(t.title.isEmpty ? t.kind.title : t.title),
-          subtitle: Text('${Fmt.date(t.date)}${where.isEmpty ? '' : ' · $where'}'),
-          trailing: Text((t.kind == TransactionKind.expense ? '−' : '') + Fmt.money(t.amount),
-              textDirection: TextDirection.rtl, style: theme.textTheme.titleMedium?.copyWith(color: color)),
+          subtitle: Text('${Fmt.date(t.date)}${where.isEmpty ? '' : ' · $where'}${debt == null ? '' : ' · ↩︎ החזר חוב של ${debt.person}'}'),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (canLink)
+              PopupMenuButton<String>(
+                tooltip: 'שייך להחזר חוב',
+                icon: const Icon(Icons.assignment_return_outlined, size: 20),
+                onSelected: (id) => store.edit((f) => ReceivableActions(f).linkIncome(t.id, id)),
+                itemBuilder: (_) => [
+                  const PopupMenuItem(enabled: false, height: 32, child: Text('זה תשלום על חוב של…')),
+                  for (final r in open)
+                    PopupMenuItem(
+                        value: r.id,
+                        child: Text('${r.person} — נשאר ${Fmt.money(cards.outstanding(r, money.transactions))}')),
+                ],
+              ),
+            Text((t.kind == TransactionKind.expense ? '−' : '') + Fmt.money(t.amount),
+                textDirection: TextDirection.rtl, style: theme.textTheme.titleMedium?.copyWith(color: color)),
+          ]),
           onTap: () => editTransaction(context, t),
         );
       }

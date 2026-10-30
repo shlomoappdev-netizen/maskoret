@@ -105,10 +105,23 @@ class Receivable {
   Receivable(this.json);
   final Json json;
   JObj get _o => JObj(json);
+  String get id => _o.s('id');
+  String get person => _o.s('person');
+  String get note => _o.s('note');
+  DateTime get createdAt => _o.date('createdAt') ?? DateTime.now();
   bool get forgiven => _o.b('forgiven');
+  double get manualAmount => _o.d('manualAmount');
   List<String> get incomeIDs => ((_o.raw('incomeIDs') as List?) ?? const []).whereType<String>().toList();
+  List<String> get cardCreditIDs => ((_o.raw('cardCreditIDs') as List?) ?? const []).whereType<String>().toList();
   Map<String, dynamic> get transactionShares =>
       (_o.raw('transactionShares') as Map?)?.cast<String, dynamic>() ?? const {};
+  Map<String, dynamic> get cardShares => (_o.raw('cardShares') as Map?)?.cast<String, dynamic>() ?? const {};
+  List<Json> get returns => _o.objects('returns');
+
+  static double _sum(Map<String, dynamic> m) => m.values.fold(0.0, (s, v) => s + ((v as num?)?.toDouble() ?? 0));
+
+  /// What you paid for them.
+  double get expected => _sum(cardShares) + _sum(transactionShares) + manualAmount;
 }
 
 class CategoryAmount {
