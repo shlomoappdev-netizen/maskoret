@@ -1,0 +1,139 @@
+# Publishes a new version of מחשבון שכר to everyone, in the cloud:
+#   when version.json on main has "ready": true and a build newer than the site's latest.json —
+#   builds Windows + Android (flutter-app.yml) and the Mac app (signed with the "Maskoret Signing" certificate),
+#   creates the GitHub release in this repo with the files, and updates latest.json + changelog.json on the
+#   download site (shlomoappdev-netizen/maskoret-releases), which every app checks for updates.
+#
+# Secrets (set once with tools/setup_cloud_release.sh):
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD  the permanent Android signing key
+#   MAC_CERT_P12, MAC_CERT_PASSWORD                     the "Maskoret Signing" certificate (base64 of a .p12)
+#   SITE_DEPLOY_KEY                                     SSH key that may push only to maskoret-releases
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: ['version.json']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.v.outputs.go }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          version=$(jq -r .version version.json); build=$(jq -r .build version.json); ready=$(jq -r '.ready // false' version.json)
+          site=$(curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)" | jq -r .build)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$ready" = "true" ] && [ "$build" -gt "$site" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"; echo "Releasing $version ($build); the site has build $site."
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"; echo "Nothing to release: $version ($build), ready=$ready, site build $site."
+          fi
+
+  apps:
+    needs: check
+    if: needs.check.outputs.go == 'true'
+    uses: ./.github/workflows/flutter-app.yml
+    secrets: inherit
+
+  mac:
+    needs: check
+    if: needs.check.outputs.go == 'true'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Signing certificate
+        env:
+          P12: ${{ secrets.MAC_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          if [ -z "$P12" ]; then echo "::error::Missing MAC_CERT_P12 (run tools/setup_cloud_release.sh)"; exit 1; fi
+          KC="$RUNNER_TEMP/signing.keychain-db"; KCPW="$(uuidgen)"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          echo "$P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPW" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          # The certificate is self-signed: trust it for signing on this runner.
+          security find-certificate -c "Maskoret Signing" -p "$KC" > "$RUNNER_TEMP/cert.pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
+          rm "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning "$KC"
+      - name: Build
+        run: |
+          export DEVELOPER_DIR="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
+          xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain || true   # MLX compiles Metal shaders
+          version=$(jq -r .version version.json); build=$(jq -r .build version.json)
+          set -o pipefail
+          xcodebuild -project Maskoret.xcodeproj -scheme Maskoret -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath build/dd CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" \
+            -skipMacroValidation -skipPackagePluginValidation build > build.log 2>&1 \
+            || { grep -E "error:" build.log | sort -u | head -40; tail -30 build.log; exit 1; }
+          tail -2 build.log
+      - name: Sign and pack
+        run: |
+          APP="$(ls -d build/dd/Build/Products/Release/*.app | head -1)"
+          codesign --force --deep --sign "Maskoret Signing" "$APP"
+          codesign -dvv "$APP" 2>&1 | grep -E "Authority|Identifier"
+          mkdir -p stage out
+          ditto "$APP" "stage/$(basename "$APP")"
+          ln -s /Applications stage/Applications
+          hdiutil create -volname "מחשבון שכר $(jq -r .version version.json)" -srcfolder stage -ov -format UDZO out/maskoret-mac.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maskoret-mac
+          path: out/maskoret-mac.dmg
+          retention-days: 30
+
+  publish:
+    needs: [check, apps, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dl
+      - name: Collect the files
+        run: |
+          mkdir out
+          cp dl/maskoret-android/app-release.apk out/maskoret-android.apk
+          cp dl/maskoret-windows/maskoret-windows.zip dl/maskoret-windows/maskoret-windows-setup.exe out/
+          cp dl/maskoret-mac/maskoret-mac.dmg out/
+          python3 tools/release_manifest.py out "$GITHUB_REPOSITORY" "v${{ needs.check.outputs.version }}"
+          ls -la out
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ needs.check.outputs.version }}"
+          gh release create "v$v" out/maskoret-android.apk out/maskoret-windows-setup.exe out/maskoret-windows.zip \
+            out/maskoret-mac.dmg --title "מחשבון שכר $v" --notes-file out/notes.md --target "$GITHUB_SHA"
+      - name: Update the download site
+        env:
+          DEPLOY_KEY: ${{ secrets.SITE_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh && echo "$DEPLOY_KEY" > ~/.ssh/site && chmod 600 ~/.ssh/site
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/site -o StrictHostKeyChecking=accept-new"
+          git clone -q git@github.com:shlomoappdev-netizen/maskoret-releases.git site
+          cp out/latest.json out/changelog.json site/
+          cd site
+          git add latest.json changelog.json
+          git -c user.name="maskoret-release" -c user.email="shlomoappdev@gmail.com" commit -q -m "גרסה ${{ needs.check.outputs.version }}"
+          git push -q
+          echo "Published ${{ needs.check.outputs.version }} — the apps offer it on their next check."

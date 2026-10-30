@@ -17,6 +17,8 @@ on:
       - 'version.json'
       - '.github/workflows/flutter-app.yml'
   workflow_dispatch:
+  # release.yml calls it for a release; the files stay in that run.
+  workflow_call:
 
 env:
   FLUTTER_VERSION: '3.44.4'
@@ -85,6 +87,8 @@ jobs:
             echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           else
             echo "::warning::No ANDROID_KEYSTORE_BASE64 secret — the APK is signed with a temporary key and can't update an installed app."
+            # A release must never ship such an APK.
+            if [ "${{ github.event_name }}" = "workflow_call" ] || [ "${{ github.workflow }}" = "Release" ]; then exit 1; fi
           fi
       - name: Build
         env:

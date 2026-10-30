@@ -1,5 +1,5 @@
 #!/bin/bash
-# Publishes a new version of מחשבון שכר to everyone:
+# Manual fallback (the normal path is .github/workflows/release.yml, in the cloud). Publishes a new version to everyone:
 #   1. builds the Mac app (Release) and packs maskoret-mac.dmg
 #   2. takes the Android APK and the Windows setup + ZIP (the ZIP only updates copies of 4.1.x) from the להפצה folder (built by flutter_app/tool/build_android.sh
 #      and by GitHub Actions)
