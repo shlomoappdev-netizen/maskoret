@@ -51,6 +51,8 @@ proposal (`support_proposals.answers_question`), where the summary is the answer
 Publishing a version (tools/publish_release.sh) always needs the user's explicit approval.
 
 ## Background agent
-New subscriber messages are normally handled by the agent on the Mac (`tools/support-agent`, launchd
-`com.shlomodavid.maskoret.support-agent`, log `~/Library/Logs/maskoret-support-agent.log`). If threads stay
-`ai_pending` for long, check the log — usually the Mac was off or `claude` needs a fresh login.
+New subscriber messages are handled by the agent on the always-on Windows server (`tools/support-agent/agent.mjs`,
+scheduled task "Maskoret Support Agent", clone in `C:\maskoret-agent`, log `%LOCALAPPDATA%\maskoret\agent.log`; set up
+with `tools/windows-server/install-agent.ps1`). It pulls the code from GitHub on start and every hour. If threads stay
+`ai_pending` for long, ask the user to check that log — usually the server is off or `claude` there needs a fresh login.
+The Mac can run it too (`tools/support-agent/install.sh`), but never both at once.
