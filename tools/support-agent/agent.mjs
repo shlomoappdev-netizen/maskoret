@@ -35,10 +35,19 @@ function readToken() {
   }
   const file = path.join(process.env.LOCALAPPDATA, 'maskoret', 'agent-token.dpapi');
   return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    '$s = Get-Content -Raw -LiteralPath $env:TOKEN_FILE | ConvertTo-SecureString; ' +
+    '$s = (Get-Content -Raw -LiteralPath $env:TOKEN_FILE).Trim() | ConvertTo-SecureString; ' +
     '[Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))'],
     { env: { ...process.env, TOKEN_FILE: file } }).toString().trim();
 }
+// On the server the code is a clone of GitHub: get the latest before anything else, so a fix pushed there reaches a
+// crashing agent on its next restart. (Never on the developer's Mac, whose working copy may hold unfinished work.)
+const PULL = process.env.MASKORET_AGENT_PULL === '1';
+function pull() {
+  try { execFileSync('git', ['-C', PROJECT_DIR, 'pull', '-q', '--ff-only'], { stdio: 'ignore' }); }
+  catch (e) { log('git pull failed:', e.message); }
+}
+if (PULL) pull();
+
 const token = readToken();
 const supabase = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
 
@@ -231,16 +240,8 @@ listen();
 
 setInterval(() => work('safety check'), SAFETY_CHECK_MS);
 
-// On the server the code is a clone of GitHub: keep it current, so Claude reads the code that's actually shipping.
-// (Never on the developer's Mac, whose working copy may hold unfinished work.)
-if (process.env.MASKORET_AGENT_PULL === '1') {
-  const pull = () => {
-    try { execFileSync('git', ['-C', PROJECT_DIR, 'pull', '-q', '--ff-only'], { stdio: 'ignore' }); }
-    catch (e) { log('git pull failed:', e.message); }
-  };
-  pull();
-  setInterval(pull, 60 * 60 * 1000);
-}
+// Keep the server's clone current, so Claude reads the code that's actually shipping.
+if (PULL) setInterval(pull, 60 * 60 * 1000);
 log(`support agent started (project ${PROJECT_DIR}, model ${MODEL})`);
 work('start');
 notifyTasks().catch(e => log('notify failed:', e.message));
