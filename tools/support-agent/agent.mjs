@@ -1,6 +1,7 @@
 // Support agent for מחשבון שכר.
 //
-// Runs in the background on the owner's Mac (launchd, see install.sh). Every new message from a subscriber
+// Runs in the background on an always-on computer: the Windows server (a scheduled task, see
+// tools/windows-server/install-agent.ps1) or the owner's Mac (launchd, see install.sh). Every new message from a subscriber
 // sends a content-free Realtime ping; the agent then fetches the threads waiting for a proposal (with its token),
 // asks Claude Code for options — read-only: it may read the project's code and nothing else — and stores them.
 // The proposals are visible to the admin alone, and nothing is done until the admin picks one in the app.
@@ -12,11 +13,13 @@ import { createClient } from '@supabase/supabase-js';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
 
 const SUPABASE_URL = 'https://pukbrxsuucqrukiaojlp.supabase.co';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB1a2JyeHN1dWNxcnVraWFvamxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyNTIwMjksImV4cCI6MjEwODgyODAyOX0.EOR76pbmTJQUaM8IxCzevHUJM7WT4EF4EIUjk3xip1I';
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const CLAUDE = process.env.CLAUDE_BIN || path.join(process.env.HOME, '.local/bin/claude');
+const WINDOWS = process.platform === 'win32';
+const CLAUDE = process.env.CLAUDE_BIN || path.join(os.homedir(), '.local', 'bin', WINDOWS ? 'claude.exe' : 'claude');
 const MODEL = process.env.SUPPORT_AGENT_MODEL || 'claude-opus-5-5';
 const ACTIONS = new Set(['reply', 'confirm_email', 'sign_out_user', 'dev_task']);
 const SAFETY_CHECK_MS = 15 * 60 * 1000;   // in case a ping was missed (Mac asleep, network change)
@@ -24,8 +27,19 @@ const RETRY_AFTER_FAILURE_MS = 10 * 60 * 1000;
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
 
-const token = execFileSync('security', ['find-generic-password', '-s', 'maskoret-support-agent', '-a', 'token', '-w'])
-  .toString().trim();
+// The agent's token: in the Keychain on the Mac; on Windows in a file only this Windows user can decrypt (DPAPI).
+function readToken() {
+  if (!WINDOWS) {
+    return execFileSync('security', ['find-generic-password', '-s', 'maskoret-support-agent', '-a', 'token', '-w'])
+      .toString().trim();
+  }
+  const file = path.join(process.env.LOCALAPPDATA, 'maskoret', 'agent-token.dpapi');
+  return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    '$s = Get-Content -Raw -LiteralPath $env:TOKEN_FILE | ConvertTo-SecureString; ' +
+    '[Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))'],
+    { env: { ...process.env, TOKEN_FILE: file } }).toString().trim();
+}
+const token = readToken();
 const supabase = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
 
 // ===== Work loop: one pass at a time; a ping during a pass schedules another pass =====
@@ -184,6 +198,7 @@ async function notifyTasks() {
   lastTaskID = Math.max(lastTaskID ?? 0, ...tasks.map(t => t.id));
   for (const task of fresh) {
     log(`dev task ${task.id} added`);
+    if (WINDOWS) continue;   // a server has nobody at the screen; the tasks wait in the app and in Claude Code
     // Text goes in as arguments, never into the script.
     execFileSync('osascript', ['-e', 'on run argv', '-e',
       'display notification (item 2 of argv) with title (item 1 of argv) subtitle (item 3 of argv) sound name "Glass"',
@@ -199,6 +214,17 @@ supabase.channel('maskoret-support-agent')
   .subscribe(status => log('realtime:', status));
 
 setInterval(() => work('safety check'), SAFETY_CHECK_MS);
+
+// On the server the code is a clone of GitHub: keep it current, so Claude reads the code that's actually shipping.
+// (Never on the developer's Mac, whose working copy may hold unfinished work.)
+if (process.env.MASKORET_AGENT_PULL === '1') {
+  const pull = () => {
+    try { execFileSync('git', ['-C', PROJECT_DIR, 'pull', '-q', '--ff-only'], { stdio: 'ignore' }); }
+    catch (e) { log('git pull failed:', e.message); }
+  };
+  pull();
+  setInterval(pull, 60 * 60 * 1000);
+}
 log(`support agent started (project ${PROJECT_DIR}, model ${MODEL})`);
 work('start');
 notifyTasks().catch(e => log('notify failed:', e.message));
