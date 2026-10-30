@@ -55,5 +55,13 @@ Type: filesandordirs; Name: "{app}\data"
 Name: "{autoprograms}\מחשבון שכר"; Filename: "{app}\maskoret.exe"
 Name: "{autodesktop}\מחשבון שכר"; Filename: "{app}\maskoret.exe"; Tasks: desktopicon
 
+[Registry]
+; The app registers its sign-in link itself on launch (main.cpp); this only removes it on uninstall.
+Root: HKCU; Subkey: "Software\Classes\com.shlomodavid.maskoret"; Flags: uninsdeletekey dontcreatekey
+
 [Run]
 Filename: "{app}\maskoret.exe"; Description: "פתח את מחשבון שכר"; Flags: nowait postinstall
+
+[UninstallRun]
+; CloseApplications covers Setup only. Asks the app to close, gives it time to save, then ends it if it's still open.
+Filename: "{cmd}"; Parameters: "/c taskkill /IM maskoret.exe & ping -n 3 127.0.0.1 > nul & taskkill /F /IM maskoret.exe"; Flags: runhidden; RunOnceId: "CloseApp"
