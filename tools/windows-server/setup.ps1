@@ -48,8 +48,20 @@ if (-not (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction Silentl
 Write-Host 'SSH פועל (פורט 22).'
 
 Step '3/4 תוכנות'
+# Windows Server has no Store: install winget with Microsoft's own module (Microsoft.WinGet.Client).
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-    throw 'winget לא מותקן במחשב הזה. התקן את "App Installer" מ-Microsoft Store (או עדכן את Windows) והרץ שוב.'
+    Write-Host 'מתקין את winget (מנהל ההתקנות של Microsoft)…'
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope AllUsers | Out-Null
+    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    Install-Module -Name Microsoft.WinGet.Client -Force -Scope AllUsers -Repository PSGallery | Out-Null
+    Import-Module Microsoft.WinGet.Client
+    Repair-WinGetPackageManager -AllUsers -Latest -Force
+    $env:Path += ";$env:LOCALAPPDATA\Microsoft\WindowsApps"
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        throw 'winget הותקן אבל עוד לא זמין בחלון הזה. סגור את PowerShell, פתח חלון חדש כמנהל והרץ שוב: .\setup.ps1'
+    }
+    winget source update | Out-Null
 }
 foreach ($id in 'Tailscale.Tailscale', 'AnyDeskSoftwareGmbH.AnyDesk', 'Git.Git', 'OpenJS.NodeJS.LTS', 'GitHub.cli') {
     Write-Host "מתקין $id…"
