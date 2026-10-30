@@ -21,6 +21,11 @@ BUILD=$(python3 -c "import json;print(json.load(open('$ROOT/version.json'))['bui
 TAG="v$VERSION"
 echo "== מפרסם את גרסה $VERSION (build $BUILD)"
 
+if ! grep -q "^## $VERSION " "$ROOT/CHANGELOG.md"; then
+  echo "הגרסה $VERSION חסרה ב-CHANGELOG.md. כתוב בו מה השתנה לפני הפרסום." >&2
+  exit 1
+fi
+
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   echo "הגרסה $TAG כבר פורסמה. העלה את build ו-version ב-version.json." >&2
   exit 1
