@@ -7,6 +7,7 @@ import 'theme.dart';
 import '../state/store.dart';
 import '../sync/account.dart';
 import '../sync/server_sync.dart';
+import '../support/announcements.dart';
 import '../support/support.dart';
 import '../update/updater.dart';
 
@@ -20,6 +21,7 @@ class AppScope extends InheritedWidget {
     required this.prefs,
     required this.updater,
     required this.support,
+    required this.announcements,
     required super.child,
   });
 
@@ -29,6 +31,7 @@ class AppScope extends InheritedWidget {
   final SharedPreferences prefs;
   final Updater updater;
   final SupportCenter support;
+  final Announcements announcements;
 
   static AppScope of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<AppScope>()!;
 

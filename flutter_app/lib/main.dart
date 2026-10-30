@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,13 +17,16 @@ import 'state/secure_file.dart';
 import 'state/store.dart';
 import 'sync/account.dart';
 import 'sync/server_sync.dart';
+import 'ui/app_prompts.dart';
 import 'ui/auth_screen.dart';
 import 'ui/common.dart';
 import 'ui/home_shell.dart';
 import 'ui/theme.dart';
+import 'support/announcements.dart';
 import 'support/app_log.dart';
 import 'support/support.dart';
 import 'update/updater.dart';
+import 'update/whats_new.dart';
 
 /// --dart-define=DEMO=true: open straight into the app with demo data (for checking screens).
 const demo = bool.fromEnvironment('DEMO');
@@ -60,9 +64,21 @@ Future<void> main() async {
     await supportCenter.start(account.userId);
   };
   account.start();
-  final updater = Updater()..check();
+  final updater = Updater()..startAutoCheck();
+  final announcements = Announcements(prefs, client: demo ? null : Supabase.instance.client);
+  if (demo) {
+    announcements.showSample();
+  } else {
+    announcements.start();
+  }
   runApp(MaskoretApp(
-      store: store, account: account, sync: sync, prefs: prefs, updater: updater, support: supportCenter));
+      store: store,
+      account: account,
+      sync: sync,
+      prefs: prefs,
+      updater: updater,
+      support: supportCenter,
+      announcements: announcements));
 }
 
 /// Shown on the server next to each save ("updated from …"), like `Platform.deviceName` in Swift.
@@ -87,13 +103,15 @@ class MaskoretApp extends StatefulWidget {
       required this.sync,
       required this.prefs,
       required this.updater,
-      required this.support});
+      required this.support,
+      required this.announcements});
   final AppStore store;
   final UserAccount account;
   final ServerSync sync;
   final SharedPreferences prefs;
   final Updater updater;
   final SupportCenter support;
+  final Announcements announcements;
 
   @override
   State<MaskoretApp> createState() => _MaskoretAppState();
@@ -101,6 +119,11 @@ class MaskoretApp extends StatefulWidget {
 
 class _MaskoretAppState extends State<MaskoretApp> {
   late final AppLifecycleListener _lifecycle;
+  final _navigator = GlobalKey<NavigatorState>();
+
+  /// One window at a time: "מה חדש" first, then "גרסה X זמינה".
+  bool _dialogOpen = false;
+  bool _whatsNewChecked = false;
 
   @override
   void initState() {
@@ -109,13 +132,48 @@ class _MaskoretAppState extends State<MaskoretApp> {
     _lifecycle = AppLifecycleListener(onResume: () {
       widget.sync.sync();
       widget.updater.check();
+      widget.announcements.refresh();
     });
+    widget.updater.addListener(_offerUpdate);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showWhatsNew());
   }
 
   @override
   void dispose() {
+    widget.updater.removeListener(_offerUpdate);
     _lifecycle.dispose();
     super.dispose();
+  }
+
+  Future<void> _showWhatsNew() async {
+    try {
+      await _whatsNew();
+    } finally {
+      _whatsNewChecked = true;
+      _offerUpdate();
+    }
+  }
+
+  Future<void> _whatsNew() async {
+    final info = await PackageInfo.fromPlatform();
+    final build = int.tryParse(info.buildNumber) ?? 0;
+    // Checking the window in demo mode: as if the previous two builds were the last ones seen.
+    if (demo && !widget.prefs.containsKey(WhatsNew.seenKey)) await widget.prefs.setInt(WhatsNew.seenKey, build - 2);
+    final entries = await WhatsNew.pending(widget.prefs, build);
+    final context = _navigator.currentState?.overlay?.context;
+    if (entries == null || context == null || !context.mounted) return;
+    _dialogOpen = true;
+    await showWhatsNew(context, entries);
+    await WhatsNew.markSeen(widget.prefs, build);
+    _dialogOpen = false;
+  }
+
+  Future<void> _offerUpdate() async {
+    final context = _navigator.currentState?.overlay?.context;
+    if (!_whatsNewChecked || _dialogOpen || !widget.updater.shouldPrompt || context == null) return;
+    _dialogOpen = true;
+    await showUpdatePrompt(context, widget.updater);
+    _dialogOpen = false;
   }
 
   @override
@@ -127,7 +185,9 @@ class _MaskoretAppState extends State<MaskoretApp> {
       prefs: widget.prefs,
       updater: widget.updater,
       support: widget.support,
+      announcements: widget.announcements,
       child: MaterialApp(
+        navigatorKey: _navigator,
         title: 'מחשבון שכר',
         debugShowCheckedModeBanner: false,
         locale: const Locale('he', 'IL'),

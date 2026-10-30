@@ -8,6 +8,7 @@ import '../data/json.dart';
 import '../data/models.dart';
 import '../data/money_calc.dart';
 import '../data/month_picture.dart';
+import 'app_prompts.dart';
 import 'common.dart';
 import 'theme.dart';
 
@@ -40,6 +41,7 @@ class SummaryScreen extends StatelessWidget {
       final stats = _StatsGrid(pic: pic, budget: b);
 
       return PageList(children: [
+        const AnnouncementCard(),
         Wrap(spacing: 8, runSpacing: 8, children: [
           FilledButton.icon(
             icon: const Icon(Icons.event_available, size: 18),

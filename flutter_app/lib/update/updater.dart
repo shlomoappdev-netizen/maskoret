@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -57,17 +58,46 @@ class Updater extends ChangeNotifier {
   double progress = 0;
   String? error;
   DateTime? lastCheck;
+  Timer? _timer;
+
+  /// The build the user answered "אחר כך" for — not offered again until the next launch.
+  int? _postponedBuild;
+  bool _prompting = false;
 
   /// Only where updates are published (not on the iPhone/Mac, and not in tests).
   static bool get supported => Platform.isAndroid || Platform.isWindows;
 
   bool get available => latest != null && latest!.build > currentBuild && latest!.forThisDevice != null;
+  /// A newer version the user wasn't asked about yet (since this launch).
+  bool get shouldPrompt => available && !busy && !_prompting && latest!.build != _postponedBuild;
+
+  void promptShown() => _prompting = true;
+
+  /// "אחר כך": closes the window; the same version isn't offered again until the next launch.
+  void postpone() {
+    _prompting = false;
+    _postponedBuild = latest?.build;
+  }
+
+  /// Checks at launch, then every 3 hours while the app is open (and on return to it — see main.dart).
+  void startAutoCheck() {
+    check(force: true);
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(hours: 3), (_) => check(force: true));
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   bool get busy => phase == UpdatePhase.checking || phase == UpdatePhase.downloading || phase == UpdatePhase.installing;
 
-  /// Checks for a newer version (quietly; at launch, on return to the app, and from the updates screen).
+  /// Checks for a newer version (quietly; at launch, every 3 hours, on return to the app, and from the updates screen).
   Future<void> check({bool force = false}) async {
     if (!supported || busy) return;
-    if (!force && lastCheck != null && DateTime.now().difference(lastCheck!) < const Duration(hours: 1)) return;
+    if (!force && lastCheck != null && DateTime.now().difference(lastCheck!) < const Duration(minutes: 10)) return;
     phase = UpdatePhase.checking;
     error = null;
     notifyListeners();
