@@ -8,6 +8,7 @@ import '../data/fmt.dart';
 import '../data/forecast.dart';
 import '../data/models.dart';
 import 'common.dart';
+import 'family_screen.dart';
 import 'theme.dart';
 
 /// The forecast — port of ForecastView.swift.
@@ -17,17 +18,17 @@ class ForecastScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StoreBuilder(builder: (context, store) {
-      final file = store.file;
-      final settings = ForecastSettings.of(file);
-      final months = Forecaster.run(file);
+      final file = store.dashboard;
+      final settings = ForecastSettings.of(store.file);
+      final months = Forecaster.run(file, months: settings.months);
       final theme = Theme.of(context);
       final first = months.first, last = months.last;
       final change = last.liquid - first.liquid;
       final lowest = months.reduce((a, b) => b.checking < a.checking ? b : a);
-      final expected = Forecaster.expectedNet(store.budget, file.history, settings);
+      final expected = Forecaster.expectedNet(file.budget, file.history, settings);
       final next = months.length > 1 ? months[1] : null;
-      final hasPension = store.money.accounts.any((a) => a.kind == AccountKind.pension);
-      final hasCards = CardData(store.money).cardTransactions.isNotEmpty;
+      final hasPension = file.money.accounts.any((a) => a.kind == AccountKind.pension);
+      final hasCards = CardData(file.money).cardTransactions.isNotEmpty;
 
       final tiles = <(String, String, IconData)>[
         ('עו״ש + חיסכון בעוד ${last.index} חודשים', Fmt.money(last.liquid), Icons.trending_up),
@@ -43,6 +44,7 @@ class ForecastScreen extends StatelessWidget {
       ];
 
       return PageList(children: [
+        const FamilyContextLine(),
         Text('לאן הכסף שלך הולך בחודשים הקרובים', style: theme.textTheme.bodySmall),
         const SizedBox(height: 8),
         SegmentedButton<int>(

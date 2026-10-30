@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/json.dart';
+import '../data/dashboard.dart';
 import '../data/models.dart';
 import 'secure_file.dart';
 
@@ -71,6 +72,53 @@ class AppStore extends ChangeNotifier {
   }
 
   SaveFile get file => family.fileForEditing(activeMemberId);
+
+  /// Members in the "together" view (the summary, forecast and sidebar show them merged), kept in the household
+  /// like Swift's `viewIDs`. Always includes at least the member being edited.
+  List<FamilyMember> get viewedMembers {
+    final ids = family.state.viewIDs.toSet();
+    final list = members.where((m) => ids.contains(m.id)).toList();
+    return list.isEmpty ? [if (activeMember != null) activeMember!] : list;
+  }
+
+  bool get isCombined => members.length > 1 && viewedMembers.length > 1;
+
+  /// What the summary, forecast and sidebar look at (Store.dashboard).
+  SaveFile get dashboard {
+    if (!isCombined) return file;
+    final parts = [for (final m in viewedMembers) (m, m.id == activeMemberId ? file : family.fileForEditing(m.id))];
+    return Dashboard.combine(parts, file);
+  }
+
+  /// Start editing another member; in the together view they join it, otherwise only they are shown (setEditing).
+  void setEditing(String id) {
+    if (id == activeMemberId) return;
+    final combined = isCombined;
+    activeMemberId = id;
+    final view = family.state.viewIDs.toSet();
+    editFamily((f) => JObj.lazy(f.json, 'state').set('viewIDs', combined ? [...members.map((m) => m.id).where((m) => view.contains(m) || m == id)] : [id]));
+  }
+
+  /// Show only this member (and edit them).
+  void showOnly(String id) {
+    activeMemberId = id;
+    editFamily((f) => JObj.lazy(f.json, 'state').set('viewIDs', [id]));
+  }
+
+  /// Add / remove a member from the together view (the last one stays).
+  void toggleInView(String id) {
+    final view = viewedMembers.map((m) => m.id).toSet();
+    if (view.contains(id)) {
+      if (view.length < 2) return;
+      view.remove(id);
+      if (id == activeMemberId) activeMemberId = members.firstWhere((m) => view.contains(m.id)).id;
+    } else {
+      view.add(id);
+    }
+    editFamily((f) => JObj.lazy(f.json, 'state').set('viewIDs', [...members.map((m) => m.id).where(view.contains)]));
+  }
+
+  void showEveryone() => editFamily((f) => JObj.lazy(f.json, 'state').set('viewIDs', [...members.map((m) => m.id)]));
   Budget get budget => file.budget;
   MoneyData get money => file.money;
 

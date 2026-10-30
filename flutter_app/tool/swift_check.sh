@@ -12,7 +12,8 @@ trap 'rm -rf $build' EXIT
 # The parts of Store.swift / Family.swift / Components.swift that the models need (no SwiftUI).
 { echo 'import Foundation'; awk '/^enum Fmt \{/,/^\}/' $src/Components.swift; } > $build/Fmt.swift
 { echo 'import Foundation'; echo 'enum Store {'; awk '/    struct SaveFile: Codable \{/,/^    \}$/' $src/Store.swift; echo '}'; } > $build/SaveFile.swift
-{ echo 'import Foundation'; awk '/^struct FamilyMember/,/^\/\/ MARK: - What the dashboards/' $src/Family.swift | sed '$d'; } > $build/FamilyTypes.swift
+{ echo 'import Foundation'; awk '/^struct FamilyMember/,/^\/\/ MARK: - What the dashboards/' $src/Family.swift | sed '$d'
+  awk '/^struct DataSnapshot \{/,/^\}/' $src/Family.swift; } > $build/FamilyTypes.swift
 # The model files themselves, without their `extension Store { … }` blocks (those need the whole app).
 models=()
 for f in Models TaxRates Money Card Maaser Trends Receivables; do

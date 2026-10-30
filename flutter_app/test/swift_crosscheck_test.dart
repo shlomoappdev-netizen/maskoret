@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/data/card.dart';
+import 'package:maskoret/data/dashboard.dart';
 import 'package:maskoret/data/family.dart';
 import 'package:maskoret/data/forecast.dart';
 import 'package:maskoret/data/maaser.dart';
@@ -364,6 +365,70 @@ void main() {
     expect(s.keys, containsAll([family.state.primaryID, noa]));
     expect(s[noa]['net'], closeTo(f.budget.net, 0.01));
     compare(doc);
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
+  test('together: Swift merges the family the same way (net per member, accounts, one card, actual months)', () {
+    final doc = loadFixture();
+    final family = FamilyBackup(doc);
+    final primary = family.fileForEditing(family.state.activeID);
+    final noaId = FamilyActions(family).add(name: 'נועה', emoji: '👩', copyFrom: primary);
+    final noa = family.fileForEditing(noaId);
+    noa.budget.upsertIncome(IncomeItem.create(name: 'משכורת')..['amount'] = 12400);
+    for (final t in AutoDeduction.values) {
+      if (!noa.budget.hasAuto(t)) noa.budget.upsertDeduction(CostItem.automatic(t));
+    }
+    noa.budget.upsertExpense(CostItem.create(name: 'גן', value: 2100));
+    noa.budget.upsertExpense(CostItem.create(name: 'חיסכון', kind: CostKind.percent, value: 5));
+    final checking = noa.money.ensureChecking();
+    checking.upsertBalance(BalanceEntry.create(date: DateTime(2026, 9, 1), amount: 4300));
+    // The same card charge imported by both members counts once.
+    final shared = deepCopy(JObj(primary.money.raw).objects('cardTransactions').first) as Json;
+    JObj.lazy(noa.json, 'money').writeList('cardTransactions').add(shared);
+    final now = DateTime.now();
+    for (final r in primary.history) {
+      noa.upsertRecord({'id': newId(), 'year': r.year, 'month': r.month, 'note': '', 'budget': deepCopy(noa.json['budget']),
+          'savedAt': dateTimeToSwift(now), 'actualNet': 9100.5});
+    }
+    final lonely = addMonths(now, -7);
+    noa.upsertRecord({'id': newId(), 'year': lonely.year, 'month': lonely.month, 'note': '', 'budget': deepCopy(noa.json['budget']),
+        'savedAt': dateTimeToSwift(now), 'actualNet': 8000});
+
+    final parts = [for (final m in family.state.members) (m, family.file(m.id)!)];
+    final c = Dashboard.combine(parts, family.file(family.state.activeID)!);
+    final s = swift(doc, now)['combined'] as Map<String, dynamic>;
+    final calc = MoneyCalc(c.money.primeRate);
+    expect(c.budget.net, closeTo(primary.budget.net + noa.budget.net, 0.01));
+    final mine = {
+      'net': c.budget.net,
+      'totalExpenses': c.budget.totalExpenses,
+      'periodicTotal': c.budget.periodicTotal,
+      'accounts': [for (final a in c.money.accounts) calc.value(a, now, c.money.transactions)],
+      'cards': CardData(c.money).cardTransactions.length,
+      'owed': CardData(c.money).totalOwedToMe(c.money.transactions),
+      'history': [for (final r in c.history..sort((a, b) => a.sortKey.compareTo(b.sortKey))) r.actualNet ?? -1],
+      'expectedNet': Forecaster.expectedNet(c.budget, c.history, ForecastSettings.of(c)).amount,
+      'months': [
+        for (var o = -3; o <= 2; o++)
+          () {
+            final p = MonthPicture.of(c, addMonths(now, o).year, addMonths(now, o).month);
+            return {
+              'key': p.year * 100 + p.month, 'remaining': p.remaining, 'net': p.net, 'spending': p.spendingTotal,
+              'periodic': p.periodic, 'toSavings': p.toSavingsTotal, 'card': p.cardTotal,
+              'installments': p.installmentsTotal, 'oneOffs': p.oneOffTotal,
+            };
+          }(),
+      ],
+      'forecast': [
+        for (final x in Forecaster.run(c, months: 12, now: now))
+          {
+            'index': x.index, 'checking': x.checking, 'savings': x.savings, 'pension': x.pension, 'card': x.card,
+            'spending': x.spending, 'toSavings': x.toSavings, 'income': x.income,
+          },
+      ],
+    };
+    expect(mine['cards'], CardData(primary.money).cardTransactions.length, reason: 'the shared charge counts once');
+    expect((mine['history'] as List).contains(-1), isTrue, reason: 'a month only one member recorded is not actual');
+    deepClose(mine, s, 'combined');
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 
   test('a new household made by this app is read by Swift', () {

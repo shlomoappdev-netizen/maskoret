@@ -30,16 +30,32 @@ class FamilyScreen extends StatelessWidget {
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
-          SectionCard(title: 'בני המשפחה', children: [
+          SectionCard(
+            title: 'בני המשפחה',
+            trailing: members.length > 1
+                ? TextButton(
+                    onPressed: () => store.viewedMembers.length == members.length ? store.showOnly(store.activeMemberId) : store.showEveryone(),
+                    child: Text(store.viewedMembers.length == members.length ? 'כל אחד לבד' : 'כולם יחד'),
+                  )
+                : null,
+            children: [
             for (final m in members)
               () {
                 final editing = m.id == store.activeMemberId;
                 final file = store.family.file(m.id);
+                final inView = store.viewedMembers.any((v) => v.id == m.id);
                 return ListTile(
-                  leading: CircleAvatar(
+                  leading: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (members.length > 1)
+                      Tooltip(
+                        message: 'להציג בסיכום, בתחזית ובסרגל',
+                        child: Checkbox(value: inView, onChanged: (_) => store.toggleInView(m.id)),
+                      ),
+                    CircleAvatar(
                     backgroundColor: editing ? AppColors.teal.withValues(alpha: 0.15) : theme.colorScheme.surfaceContainerHighest,
                     child: FittedBox(child: Padding(padding: const EdgeInsets.all(4), child: Text(m.emoji, style: const TextStyle(fontSize: 20)))),
-                  ),
+                    ),
+                  ]),
                   title: Text(m.name, style: TextStyle(fontWeight: editing ? FontWeight.w700 : FontWeight.w500)),
                   subtitle: Text([
                     if (editing) '✏️ בעריכה במכשיר הזה',
@@ -68,10 +84,12 @@ class FamilyScreen extends StatelessWidget {
                       if (m.id != primary) const PopupMenuItem(value: 'delete', child: Text('מחיקה, עם הנתונים')),
                     ],
                   ),
-                  onTap: editing ? null : () => store.activeMemberId = m.id,
+                  onTap: editing ? null : () => store.setEditing(m.id),
                 );
               }(),
-            const EmptyHint('לחיצה על בן משפחה עוברת לעריכת הנתונים שלו. הבחירה נשמרת במכשיר הזה בלבד.'),
+            const EmptyHint('לחיצה על בן משפחה עוברת לעריכת הנתונים שלו (הבחירה נשמרת במכשיר הזה). סימון ✓ מצרף לתצוגה המשותפת: '
+                'הסיכום, התחזית והסרגל מציגים את המסומנים יחד — כל אחד עם הנטו שלו, החשבונות של כולם, וכרטיס אשראי שיובא אצל '
+                'שניים נספר פעם אחת.'),
           ]),
         ]),
       );
@@ -140,4 +158,32 @@ Future<void> editMember(BuildContext context, FamilyMember? member) async {
       }
     },
   );
+}
+
+/// "סיכום ותחזית: 👨 אבא + 👩 אמא" above the dashboards in the together view (FamilyContextBar).
+class FamilyContextLine extends StatelessWidget {
+  const FamilyContextLine({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.store;
+    if (!store.isCombined) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Wrap(spacing: 14, runSpacing: 4, children: [
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.groups, size: 16, color: theme.colorScheme.primary),
+          const SizedBox(width: 4),
+          Text('יחד: ${store.viewedMembers.map((m) => m.title).join(' + ')}', style: theme.textTheme.bodySmall),
+        ]),
+        if (store.activeMember != null)
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.edit, size: 14, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text('עריכה: ${store.activeMember!.title}', style: theme.textTheme.bodySmall),
+          ]),
+      ]),
+    );
+  }
 }

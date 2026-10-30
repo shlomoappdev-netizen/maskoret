@@ -110,4 +110,35 @@ for (id, file) in family.files {
     ]
 }
 out["files"] = files
+
+// The "together" view of every member (Store.dashboard with all members in view), the active member as the base.
+if family.state.members.count > 1, let base = family.files[family.state.activeID.uuidString] {
+    let parts = family.state.members.compactMap { m in family.files[m.id.uuidString].map { (member: m, file: $0) } }
+    let c = DataSnapshot.combine(parts, base: base.budget, baseMoney: base.money ?? MoneyData())
+    MoneyCalc.prime = c.money.primeRate
+    dashboard = Dashboard(budget: c.budget, money: c.money, history: c.history)
+    let now = Date(timeIntervalSinceReferenceDate: Double(CommandLine.arguments[2])!)
+    let cal = Calendar.current
+    var months: [[String: Any]] = []
+    for offset in -3...2 {
+        let d = cal.date(byAdding: .month, value: offset, to: now)!
+        let y = cal.component(.year, from: d), m = cal.component(.month, from: d)
+        let p = monthPicture(year: y, month: m)
+        months.append(["key": y * 100 + m, "remaining": p.remaining, "net": p.net, "spending": p.spendingTotal,
+                       "periodic": p.periodic, "toSavings": p.toSavingsTotal, "card": p.cardTotal,
+                       "installments": p.installmentsTotal, "oneOffs": p.oneOffTotal])
+    }
+    let forecast = Forecaster.run(budget: c.budget, money: c.money, history: c.history, months: 12, now: now).map { f -> [String: Any] in
+        ["index": f.index, "checking": f.checking, "savings": f.savings, "pension": f.pension, "card": f.card,
+         "spending": f.spending, "toSavings": f.toSavings, "income": f.income]
+    }
+    out["combined"] = [
+        "net": c.budget.net, "totalExpenses": c.budget.totalExpenses, "periodicTotal": c.budget.periodicTotal,
+        "accounts": c.money.accounts.map { MoneyCalc.value(of: $0, on: now, transactions: c.money.transactions) },
+        "cards": c.money.cardTransactions.count, "owed": c.money.totalOwedToMe,
+        "history": c.history.sorted { $0.sortKey < $1.sortKey }.map { $0.actualNet ?? -1 },
+        "expectedNet": MoneyCalc.expectedNet(budget: c.budget, history: c.history, settings: c.money.forecast).amount,
+        "months": months, "forecast": forecast,
+    ]
+}
 print(String(data: try JSONSerialization.data(withJSONObject: out, options: [.sortedKeys]), encoding: .utf8)!)

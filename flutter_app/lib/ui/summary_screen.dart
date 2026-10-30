@@ -13,6 +13,7 @@ import '../data/money_calc.dart';
 import '../data/month_picture.dart';
 import 'app_prompts.dart';
 import 'common.dart';
+import 'family_screen.dart';
 import 'theme.dart';
 
 /// The current month: what's left, where the net goes, the money now — the same layout as SummaryView.swift.
@@ -22,17 +23,18 @@ class SummaryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StoreBuilder(builder: (context, store) {
-      final b = store.budget;
-      final money = store.money;
+      final d = store.dashboard;
+      final b = d.budget;
+      final money = d.money;
       final calc = MoneyCalc(money.primeRate);
       final now = DateTime.now();
       // The same number as "נשאר בסוף החודש" in the iPhone/Mac app.
-      final pic = MonthPicture.of(store.file, now.year, now.month);
+      final pic = MonthPicture.of(d, now.year, now.month);
       final members = store.members;
       final wide = isWide(context);
       final checking = calc.total(money, {AccountKind.checking});
       final savings = calc.total(money, {AccountKind.savings, AccountKind.deposit});
-      final forecast = Forecaster.run(store.file);
+      final forecast = Forecaster.run(d, months: ForecastSettings.of(store.file).months);
       final last = forecast.last;
 
       final hero = _Hero(pic: pic);
@@ -45,6 +47,7 @@ class SummaryScreen extends StatelessWidget {
 
       return PageList(children: [
         const AnnouncementCard(),
+        const FamilyContextLine(),
         Wrap(spacing: 8, runSpacing: 8, children: [
           FilledButton.icon(
             icon: const Icon(Icons.event_available, size: 18),
@@ -271,9 +274,16 @@ class _StatsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final file = context.store.file;
-    final owed = CardData(file.money).totalOwedToMe(file.money.transactions);
-    final maaser = MaaserSettings(JObj((file.money.raw['maaser'] as Json?) ?? {})).enabled ? MaaserCalc.status(file) : null;
+    final store = context.store;
+    final dash = store.dashboard;
+    final owed = CardData(dash.money).totalOwedToMe(dash.money.transactions);
+    // Everyone in view with their own maaser fund (familyMaaser in Swift).
+    final funds = [
+      for (final m in store.viewedMembers)
+        if (store.family.file(m.id) case final f? when MaaserSettings(JObj((f.money.raw['maaser'] as Json?) ?? {})).enabled)
+          MaaserCalc.status(f)
+    ];
+    final maaser = funds.isEmpty ? null : (MaaserStatus()..balance = funds.fold(0.0, (s, x) => s + x.balance));
     final now = DateTime.now();
     final daysLeft = DateTime(now.year, now.month + 1).difference(DateTime(now.year, now.month, now.day)).inDays.clamp(1, 31);
     String pct(double v) => Fmt.percent((v * 1000).roundToDouble() / 10);

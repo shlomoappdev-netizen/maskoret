@@ -21,6 +21,7 @@ import '../data/fmt.dart';
 import '../data/models.dart';
 import '../data/money_calc.dart';
 import '../data/month_picture.dart';
+import '../state/store.dart';
 import '../update/updater.dart';
 
 /// Every screen of the app, grouped like the Mac sidebar (SidebarItem in MaskoretApp.swift).
@@ -232,7 +233,7 @@ class _MemberPicker extends StatelessWidget {
       icon: const Icon(Icons.people_outline),
       onSelected: (id) => id == '' 
           ? Navigator.push(context, glassRoute((_) => Scaffold(appBar: AppBar(title: const Text('בני משפחה')), body: const FamilyScreen())))
-          : store.activeMemberId = id,
+          : store.setEditing(id),
       itemBuilder: (_) => [
         for (final m in store.members)
           CheckedPopupMenuItem(value: m.id, checked: m.id == store.activeMemberId, child: Text(m.title)),
@@ -282,13 +283,15 @@ class MonthNumbers extends StatelessWidget {
   const MonthNumbers({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final store = context.store;
+  Widget build(BuildContext context) => StoreBuilder(builder: _numbers);
+
+  Widget _numbers(BuildContext context, AppStore store) {
     final theme = Theme.of(context);
-    final money = store.money;
+    final d = store.dashboard;
+    final money = d.money;
     final checking = MoneyCalc(money.primeRate).total(money, {AccountKind.checking});
     final now = DateTime.now();
-    final remaining = MonthPicture.of(store.file, now.year, now.month).remaining;
+    final remaining = MonthPicture.of(d, now.year, now.month).remaining;
     Widget number(String label, double value, {Color? color}) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
