@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/tools/support-agent/open-tasks.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
