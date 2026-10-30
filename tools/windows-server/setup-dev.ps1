@@ -37,7 +37,10 @@ if (-not (Test-Path 'C:\maskoret\.git')) { git clone -q https://github.com/shlom
 Push-Location C:\maskoret\flutter_app
 flutter pub get
 Pop-Location
-if (-not (gh auth status 2>$null)) {
+# gh writes "not logged in" to stderr, which Windows PowerShell would treat as an error: check the exit code instead.
+$ErrorActionPreference = 'Continue'
+gh auth status *> $null
+if ($LASTEXITCODE -ne 0) {
     Write-Host 'התחברות ל-GitHub עם החשבון shlomoappdev-netizen (כדי ש-Claude יוכל לדחוף שינויים):' -ForegroundColor Yellow
     gh auth login --hostname github.com --git-protocol https --web
 }
