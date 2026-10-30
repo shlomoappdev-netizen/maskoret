@@ -82,7 +82,16 @@ for (id, file) in family.files {
          "spending": f.spending, "toSavings": f.toSavings, "income": f.income, "events": f.events.count]
     }
     let expected = MoneyCalc.expectedNet(budget: budget, history: history, settings: money.forecast)
+    let ms = MaaserCalc.status(settings: money.maaser, budget: budget, history: history, money: money, now: now)
+    let maaser: [String: Any] = [
+        "balance": ms.balance, "thisMonthOwed": ms.thisMonthOwed, "thisMonthPaid": ms.thisMonthPaid,
+        "paidThisYear": ms.paidThisYear, "missing": ms.missingMonths,
+        "months": ms.months.map { ["key": $0.key, "base": $0.base ?? -1, "salary": $0.salaryBase, "interest": $0.interest,
+                                   "oneOffs": $0.oneOffs, "deducted": $0.deducted, "owed": $0.owed, "paid": $0.paid,
+                                   "balance": $0.balance] },
+    ]
     files[id] = [
+        "maaser": maaser,
         "forecast": forecast,
         "expectedNet": expected.amount,
         "card": cardInfo,

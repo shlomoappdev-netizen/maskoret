@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../data/card.dart';
+import '../data/maaser.dart';
 import '../data/fmt.dart';
 import '../data/json.dart';
 import '../data/max_import.dart';
@@ -450,6 +451,7 @@ class CardTxRow extends StatelessWidget {
               Text(_details(context), style: theme.textTheme.bodySmall, maxLines: 2, overflow: TextOverflow.ellipsis),
               Wrap(children: [
                 if (tx.owedPortion > 0) tag('↩︎ יחזירו ${Fmt.money(tx.owedPortion)}', Colors.orange),
+                if (MaaserSettings(JObj((store.money.raw['maaser'] as Json?) ?? {})).isMaaser(tx)) tag('🤲 מעשרות', Colors.green),
                 for (final t in trends) tag('${t['emoji'] ?? ''} ${t['name'] ?? ''}', Colors.purple),
                 if (linked != null) tag('🔗 $linked', theme.colorScheme.primary),
               ]),
@@ -479,6 +481,7 @@ class _LinkMenu extends StatelessWidget {
     final tracked = JObj(store.file.json['budget'] as Json).objects('trackedItems');
     final trends = JObj(store.money.raw).objects('trends');
     final unlinked = tx.linkedExpenseID == null && tx.linkedTrackedID == null;
+    final maaser = MaaserSettings(JObj((store.money.raw['maaser'] as Json?) ?? {}));
     PopupMenuEntry<void Function()> header(String text) =>
         PopupMenuItem(enabled: false, height: 32, child: Text(text, style: Theme.of(context).textTheme.labelSmall));
     PopupMenuEntry<void Function()> item(String text, void Function(SaveFile f) action, {bool checked = false}) =>
@@ -504,6 +507,16 @@ class _LinkMenu extends StatelessWidget {
           for (final t in trends)
             item('${t['emoji'] ?? ''} ${t['name'] ?? ''}', (f) => CardActions(f).toggleInTrend(tx.id, t['id'] as String),
                 checked: (t['cardIDs'] as List?)?.contains(tx.id) == true),
+        ],
+        if (maaser.enabled) ...[
+          const PopupMenuDivider(),
+          header('מעשרות'),
+          if (maaser.isMaaser(tx))
+            item('בטל סימון מעשרות', (f) => MaaserCalc.setCardMaaser(f, tx, on: false, merchant: false))
+          else ...[
+            item('החיוב הזה הוא מעשרות', (f) => MaaserCalc.setCardMaaser(f, tx, on: true, merchant: false)),
+            item('כל החיובים מבית העסק הזה הם מעשרות', (f) => MaaserCalc.setCardMaaser(f, tx, on: true, merchant: true)),
+          ],
         ],
         const PopupMenuDivider(),
         if (tx.linkedExpenseID != null) item('בטל צימוד (הוצאה משתנה)', (f) => CardActions(f).linkToExpense(tx.id, null)),

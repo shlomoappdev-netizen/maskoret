@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../data/fmt.dart';
 import '../data/forecast.dart';
 import '../data/json.dart';
+import '../data/maaser.dart';
 import '../data/models.dart';
 import '../data/money_calc.dart';
 import '../data/month_picture.dart';
@@ -268,6 +269,8 @@ class _StatsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final file = context.store.file;
+    final maaser = MaaserSettings(JObj((file.money.raw['maaser'] as Json?) ?? {})).enabled ? MaaserCalc.status(file) : null;
     final now = DateTime.now();
     final daysLeft = DateTime(now.year, now.month + 1).difference(DateTime(now.year, now.month, now.day)).inDays.clamp(1, 31);
     String pct(double v) => Fmt.percent((v * 1000).roundToDouble() / 10);
@@ -279,6 +282,12 @@ class _StatsGrid extends StatelessWidget {
       StatTile(title: 'הוצאות מהנטו', value: pic.net > 0 ? pct(spent / pic.net) : '—', icon: Icons.bar_chart),
       if (pic.installmentsAfterThisMonth > 0.005)
         StatTile(title: 'תשלומים לחודשים הבאים', value: Fmt.money(pic.installmentsAfterThisMonth), icon: Icons.event_repeat),
+      if (maaser != null)
+        StatTile(
+          title: maaser.balance >= 0 ? 'חוב למעשרות' : 'זכות במעשרות',
+          value: Fmt.money(maaser.balance.abs()),
+          icon: Icons.volunteer_activism,
+        ),
       StatTile(title: 'נשאר בשנה (בקצב הזה)', value: Fmt.money(pic.remaining * 12), icon: Icons.calendar_today),
       if (pic.isActual)
         StatTile(title: 'בפועל מול הערכה', value: '${diff >= 0 ? '+' : '−'}${Fmt.money(diff.abs())}', icon: Icons.exposure),

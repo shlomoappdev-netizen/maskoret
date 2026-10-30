@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/data/card.dart';
 import 'package:maskoret/data/forecast.dart';
+import 'package:maskoret/data/maaser.dart';
 import 'package:maskoret/data/json.dart';
 import 'package:maskoret/data/max_import.dart';
 import 'package:maskoret/data/models.dart';
@@ -81,7 +82,19 @@ void main() {
         ],
         'manual': [for (final p in cards.manualCardPayments) {'amount': p.amount, 'key': p.billingKey}],
       };
+      final ms = MaaserCalc.status(f, now: now);
       files[m.id] = {
+        'maaser': {
+          'balance': ms.balance, 'thisMonthOwed': ms.thisMonthOwed, 'thisMonthPaid': ms.thisMonthPaid,
+          'paidThisYear': ms.paidThisYear, 'missing': ms.missingMonths,
+          'months': [
+            for (final x in ms.months)
+              {
+                'key': x.key, 'base': x.base ?? -1, 'salary': x.salaryBase, 'interest': x.interest, 'oneOffs': x.oneOffs,
+                'deducted': x.deducted, 'owed': x.owed, 'paid': x.paid, 'balance': x.balance,
+              },
+          ],
+        },
         'forecast': [
           for (final x in Forecaster.run(f, months: 24, now: now))
             {
@@ -135,7 +148,7 @@ void main() {
       for (final k in (d[id] as Map).keys) {
         final dv = d[id][k];
         final sv = s[id][k];
-        if (k == 'card' || k == 'forecast') {
+        if (k == 'card' || k == 'forecast' || k == 'maaser') {
           deepClose(dv, sv, 'card');
         } else if (k == 'months') {
           final sm = sv as List;
@@ -233,6 +246,58 @@ void main() {
     expect(s['history'], 2);
     compare(doc);
     expect(b.totalDeductions, greaterThan(1000));
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
+  test('maaser: Swift calculates the same fund, month by month, for every base', () {
+    for (final base in MaaserBase.values) {
+      final doc = loadFixture();
+      final family = FamilyBackup(doc);
+      final file = family.fileForEditing(family.state.activeID);
+      final now = DateTime.now();
+      final b = file.budget;
+      final charity = CostItem.create(name: 'צדקה', value: 150);
+      final travel = CostItem.create(name: 'נסיעות', value: 320.5);
+      b.upsertExpense(charity);
+      b.upsertExpense(travel);
+      for (var o = -4; o <= -1; o++) {
+        final d = addMonths(now, o);
+        if (o == -2) continue; // a month without the actual net
+        file.upsertRecord({
+          'id': newId(),
+          'year': d.year,
+          'month': d.month,
+          'note': '',
+          'budget': deepCopy(file.json['budget']),
+          'savedAt': dateTimeToSwift(d),
+          'actualNet': 11000.4 + o * 37,
+        });
+      }
+      final m = MaaserSettings.of(file)
+        ..enabled = true
+        ..percent = 10
+        ..base = base
+        ..startKey = MaaserCalc.key(addMonths(now, -5))
+        ..openingBalance = 250.75;
+      m.toggle('maaserExpenseIDs', charity['id'] as String, true);
+      m.toggle('deductedExpenseIDs', travel['id'] as String, true);
+      final cards = CardData(file.money).cardTransactions;
+      m.toggle('maaserMerchants', cards.first.merchantKey, true);
+      m.toggle('maaserCardIDs', cards.last.id, true);
+      MaaserCalc.addDonation(file, date: addMonths(now, -3), amount: 400, note: 'קופה', fromChecking: true);
+      MaaserCalc.addDonation(file, date: now, amount: 99.9, fromChecking: false);
+      final gift = MoneyTransaction.create(kind: TransactionKind.income, accountID: file.money.ensureChecking().id)
+        ..['amount'] = 1800
+        ..['date'] = dateTimeToSwift(DateTime(addMonths(now, -1).year, addMonths(now, -1).month, 3));
+      file.money.upsertTransaction(gift);
+      final status = MaaserCalc.status(file);
+      expect(status.months.length, 6);
+      expect(status.missingMonths, isNotEmpty);
+      expect(status.months.where((x) => x.base != null && x.owed > 0).length, greaterThanOrEqualTo(3));
+      expect(status.months.any((x) => x.oneOffs == 1800), isTrue);
+      expect(status.months.any((x) => x.deducted > 0), isTrue);
+      expect(status.months.fold(0.0, (s, x) => s + x.paid), greaterThan(400 + 99.9 + 150 * 6 - 0.01));
+      compare(doc);
+    }
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 
   test('a new household made by this app is read by Swift', () {
