@@ -89,7 +89,7 @@ String aiContext(AppStore store, {DateTime? at}) {
   // Accounts
   lines.add('\n## חשבונות');
   for (final a in money.accounts) {
-    var s = '- ${a.name} (${a.kind.title}): ${m(money.balance(a, now))}';
+    var s = '- ${a.name} (${a.kind.title}): ${m(money.balance(a, now, budget, history))}';
     if (a.kind.hasInterest) s += ' · ריבית: ${_rate(a, money.primeRate, now)}';
     if (a.monthlyContribution > 0) s += ' · הפקדה חודשית ${m(a.monthlyContribution)}';
     if (a.maturityDate != null) s += ' · סיום ${Fmt.date(a.maturityDate!)}';

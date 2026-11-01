@@ -32,8 +32,8 @@ class SummaryScreen extends StatelessWidget {
       final pic = MonthPicture.current(d);
       final members = store.members;
       final wide = isWide(context);
-      final checking = calc.total(money, {AccountKind.checking});
-      final savings = calc.total(money, {AccountKind.savings, AccountKind.deposit});
+      final checking = calc.total(money, {AccountKind.checking}, budget: b, history: d.history);
+      final savings = calc.total(money, {AccountKind.savings, AccountKind.deposit}, budget: b, history: d.history);
       final forecast = Forecaster.run(d, months: ForecastSettings.of(store.file).months);
       final last = forecast.last;
 
@@ -83,7 +83,7 @@ class SummaryScreen extends StatelessWidget {
           StatTile(title: 'עו״ש עכשיו (משוער)', value: Fmt.money(checking), icon: Icons.credit_card),
           StatTile(title: 'חיסכון ופיקדונות', value: Fmt.money(savings), icon: Icons.lock_outline),
           StatTile(title: 'בעוד ${last.index} חודשים (עו״ש + חיסכון)', value: Fmt.money(last.liquid), icon: Icons.trending_up),
-          StatTile(title: 'פנסיה', value: Fmt.money(calc.total(money, {AccountKind.pension})), icon: Icons.beach_access_outlined),
+          StatTile(title: 'פנסיה', value: Fmt.money(calc.total(money, {AccountKind.pension}, budget: b, history: d.history)), icon: Icons.beach_access_outlined),
         ]),
         const SizedBox(height: 14),
         if (wide)

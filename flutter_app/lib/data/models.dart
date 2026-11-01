@@ -181,6 +181,9 @@ class CostItem {
   AutoDeduction? get auto => AutoDeduction.parse(_o.sOpt('auto'));
   String? get targetAccountID => _o.sOpt('targetAccountID');
   set targetAccountID(String? v) => _o.set('targetAccountID', v);
+  /// Expenses only: the day of the month it leaves the bank (null = the pay day).
+  int? get chargeDay => _o.raw('chargeDay') is num ? (_o.raw('chargeDay') as num).toInt() : null;
+  set chargeDay(int? v) => _o.set('chargeDay', v);
 
   double rawAmount(double base) => switch (kind) {
         CostKind.fixed => value,
@@ -651,6 +654,10 @@ class MoneyData {
   /// The day of the month the salary comes in: "what's left" starts over on this day.
   int get payDay => _o.i('payDay', 1);
   set payDay(int v) => _o.set('payDay', v);
+  /// From when the checking estimate follows the salary, fixed expenses and card charges by themselves
+  /// (set once, so updating the app doesn't rewrite what happened before it).
+  DateTime? get autoBalanceSince => _o.date('autoBalanceSince');
+  set autoBalanceSince(DateTime? v) => _o.set('autoBalanceSince', v);
   bool get primeAuto => _o.b('primeAuto', true);
   int get cardTransactionCount => (_o.raw('cardTransactions') as List?)?.length ?? 0;
 

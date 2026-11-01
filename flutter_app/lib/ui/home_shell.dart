@@ -301,7 +301,7 @@ class MonthNumbers extends StatelessWidget {
     final theme = Theme.of(context);
     final d = store.dashboard;
     final money = d.money;
-    final checking = MoneyCalc(money.primeRate).total(money, {AccountKind.checking});
+    final checking = MoneyCalc(money.primeRate).total(money, {AccountKind.checking}, budget: d.budget, history: d.history);
     final remaining = MonthPicture.current(d).remaining;
     Widget number(String label, double value, {Color? color}) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
