@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -420,3 +422,13 @@ class EmptyHint extends StatelessWidget {
 /// Pushes a page with the app's glass background behind it.
 Route<T> glassRoute<T>(WidgetBuilder builder) =>
     MaterialPageRoute<T>(builder: (context) => GlassBackground(child: builder(context)));
+
+/// A chart's value axis on round numbers (1, 2 or 5 × 10ⁿ), so every label sits on a grid line and none crowd the top.
+({double min, double max, double step}) niceAxis(double low, double high, {int lines = 4}) {
+  if (high <= low) high = low + 1;
+  final raw = (high - low) / lines;
+  final magnitude = math.pow(10, (math.log(raw) / math.ln10).floor()).toDouble();
+  final f = raw / magnitude;
+  final step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * magnitude;
+  return (min: (low / step).floor() * step, max: (high / step).ceil() * step, step: step);
+}

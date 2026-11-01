@@ -765,7 +765,7 @@ class InsightChart extends StatelessWidget {
       minY = math.min(minY, p.value);
       maxY = math.max(maxY, p.value);
     }
-    if (maxY == minY) maxY = minY + 1;
+    final axis = niceAxis(minY, maxY * 1.05);
     final titles = FlTitlesData(
       topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
       rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -773,6 +773,7 @@ class InsightChart extends StatelessWidget {
         sideTitles: SideTitles(
           showTitles: true,
           reservedSize: 44,
+          interval: axis.step,
           getTitlesWidget: (v, _) => Text(Fmt.compact(v), style: theme.textTheme.labelSmall),
         ),
       ),
@@ -806,9 +807,9 @@ class InsightChart extends StatelessWidget {
         textDirection: TextDirection.ltr,
         child: line
             ? LineChart(LineChartData(
-                minY: minY,
-                maxY: maxY * 1.1,
-                gridData: const FlGridData(drawVerticalLine: false),
+                minY: axis.min,
+                maxY: axis.max,
+                gridData: FlGridData(drawVerticalLine: false, horizontalInterval: axis.step),
                 borderData: FlBorderData(show: false),
                 titlesData: titles,
                 lineBarsData: [
@@ -820,9 +821,9 @@ class InsightChart extends StatelessWidget {
                 ],
               ))
             : BarChart(BarChartData(
-                minY: minY,
-                maxY: maxY * 1.1,
-                gridData: const FlGridData(drawVerticalLine: false),
+                minY: axis.min,
+                maxY: axis.max,
+                gridData: FlGridData(drawVerticalLine: false, horizontalInterval: axis.step),
                 borderData: FlBorderData(show: false),
                 titlesData: titles,
                 barGroups: [

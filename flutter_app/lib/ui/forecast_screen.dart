@@ -172,6 +172,7 @@ class _Chart extends StatelessWidget {
       }
     }
     final step = (months.length / 6).ceil().clamp(1, 12);
+    final axis = niceAxis(minY, maxY * 1.05);
     return Column(children: [
       Wrap(spacing: 12, children: [
         for (final s in series)
@@ -188,9 +189,9 @@ class _Chart extends StatelessWidget {
         child: Directionality(
           textDirection: TextDirection.ltr,
           child: LineChart(LineChartData(
-            minY: minY,
-            maxY: maxY == minY ? minY + 1 : maxY * 1.05,
-            gridData: const FlGridData(drawVerticalLine: false),
+            minY: axis.min,
+            maxY: axis.max,
+            gridData: FlGridData(drawVerticalLine: false, horizontalInterval: axis.step),
             borderData: FlBorderData(show: false),
             titlesData: FlTitlesData(
               topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -199,7 +200,8 @@ class _Chart extends StatelessWidget {
                 sideTitles: SideTitles(
                   showTitles: true,
                   reservedSize: 52,
-                  getTitlesWidget: (v, meta) => Text(_compact(v), style: theme.textTheme.labelSmall),
+                  interval: axis.step,
+                  getTitlesWidget: (v, meta) => Text(Fmt.compact(v), style: theme.textTheme.labelSmall),
                 ),
               ),
               bottomTitles: AxisTitles(
@@ -239,13 +241,5 @@ class _Chart extends StatelessWidget {
         ),
       ),
     ]);
-  }
-
-  static String _compact(double v) {
-    final a = v.abs();
-    final sign = v < 0 ? '−' : '';
-    if (a >= 1000000) return '$sign${(a / 1000000).toStringAsFixed(1)}M';
-    if (a >= 1000) return '$sign${(a / 1000).toStringAsFixed(a >= 10000 ? 0 : 1)}K';
-    return '$sign${a.round()}';
   }
 }

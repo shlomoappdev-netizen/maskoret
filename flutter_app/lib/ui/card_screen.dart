@@ -94,13 +94,8 @@ class _CardScreenState extends State<CardScreen> {
       final wide = isWide(context);
       final cats = _categories(context, cards, monthTxs);
       final fixed = _fixed(context, store, cards, key);
+      // The import button sits in the header, not floating: a floating one covered the "צמד ל…" of a charge.
       return Scaffold(
-        floatingActionButton: FloatingActionButton.extended(
-          heroTag: 'card-import',
-          icon: const Icon(Icons.file_download_outlined),
-          label: const Text('ייבוא מ-Max'),
-          onPressed: _import,
-        ),
         body: PageList(children: [
           Row(children: [
             Expanded(
@@ -118,6 +113,15 @@ class _CardScreenState extends State<CardScreen> {
                 onChanged: (v) => setState(() => selectedKey = v),
               ),
           ]),
+          const SizedBox(height: 8),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FilledButton.tonalIcon(
+              icon: const Icon(Icons.file_download_outlined),
+              label: const Text('ייבוא מ-Max'),
+              onPressed: _import,
+            ),
+          ),
           const SizedBox(height: 8),
           if (message != null) _message(context),
           if (cards.importDue())

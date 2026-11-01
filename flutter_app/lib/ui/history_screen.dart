@@ -144,6 +144,7 @@ class _HistoryChart extends StatelessWidget {
       minY = math.min(minY, math.min(net(r), remaining(r)));
       maxY = math.max(maxY, math.max(net(r), remaining(r)));
     }
+    final axis = niceAxis(minY, maxY * 1.05);
     return Column(children: [
       Wrap(spacing: 12, children: [
         for (final (label, color) in [('נטו', Colors.blue), ('נשאר מההכנסה', Colors.green)])
@@ -159,9 +160,9 @@ class _HistoryChart extends StatelessWidget {
         child: Directionality(
           textDirection: TextDirection.ltr,
           child: BarChart(BarChartData(
-            minY: minY,
-            maxY: maxY == minY ? minY + 1 : maxY * 1.1,
-            gridData: const FlGridData(drawVerticalLine: false),
+            minY: axis.min,
+            maxY: axis.max,
+            gridData: FlGridData(drawVerticalLine: false, horizontalInterval: axis.step),
             borderData: FlBorderData(show: false),
             titlesData: FlTitlesData(
               topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -170,8 +171,8 @@ class _HistoryChart extends StatelessWidget {
                 sideTitles: SideTitles(
                   showTitles: true,
                   reservedSize: 48,
-                  getTitlesWidget: (v, _) => Text(v.abs() >= 1000 ? '${(v / 1000).toStringAsFixed(1)}K' : '${v.round()}',
-                      style: theme.textTheme.labelSmall),
+                  interval: axis.step,
+                  getTitlesWidget: (v, _) => Text(Fmt.compact(v), style: theme.textTheme.labelSmall),
                 ),
               ),
               bottomTitles: AxisTitles(
