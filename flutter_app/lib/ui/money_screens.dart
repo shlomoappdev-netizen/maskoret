@@ -25,6 +25,8 @@ class AccountsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return StoreBuilder(builder: (context, store) {
       final money = store.money;
+      final budget = store.file.budget;
+      final history = store.file.history;
       final calc = MoneyCalc(money.primeRate);
       final now = DateTime.now();
       final tx = money.transactions;
@@ -37,9 +39,9 @@ class AccountsScreen extends StatelessWidget {
         ),
         body: PageList(children: [
           SectionCard(title: 'סיכום', children: [
-            AmountRow('עו״ש', calc.total(money, {AccountKind.checking})),
-            AmountRow('חסכונות ופיקדונות', calc.total(money, {AccountKind.savings, AccountKind.deposit})),
-            AmountRow('פנסיה', calc.total(money, {AccountKind.pension})),
+            AmountRow('עו״ש', calc.total(money, {AccountKind.checking}, budget: budget, history: history)),
+            AmountRow('חסכונות ופיקדונות', calc.total(money, {AccountKind.savings, AccountKind.deposit}, budget: budget, history: history)),
+            AmountRow('פנסיה', calc.total(money, {AccountKind.pension}, budget: budget, history: history)),
           ]),
           for (final kind in AccountKind.values)
             if (money.accounts.any((a) => a.kind == kind))
@@ -51,7 +53,7 @@ class AccountsScreen extends StatelessWidget {
                       leading: Icon(accountIcon(a.kind)),
                       title: Text(a.name),
                       subtitle: Text(_subtitle(a, calc, now)),
-                      trailing: Text(Fmt.money(money.balance(a, now)), textDirection: TextDirection.rtl,
+                      trailing: Text(Fmt.money(money.balance(a, now, budget, history)), textDirection: TextDirection.rtl,
                           style: Theme.of(context).textTheme.titleMedium),
                       onTap: () => Navigator.push(context, glassRoute((_) => AccountDetail(accountId: a.id))),
                     ),
@@ -102,7 +104,7 @@ class AccountDetail extends StatelessWidget {
         ),
         body: PageList(children: [
           SectionCard(title: 'יתרה משוערת היום', children: [
-            AmountRow(a.kind.title, money.balance(a, now), bold: true),
+            AmountRow(a.kind.title, money.balance(a, now, store.file.budget, store.file.history), bold: true),
             if (a.kind.hasInterest || a.kind == AccountKind.pension)
               ListTile(
                 dense: true,

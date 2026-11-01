@@ -152,6 +152,7 @@ void main() {
         'deductions': b.deductions.map(b.deductionAmount).toList(),
         'accounts': money.accounts.map((a) => calc.value(a, now, money.transactions)).toList(),
         'balances': money.accounts.map((a) => money.balance(a, now)).toList(),
+        'autoBalances': money.accounts.map((a) => money.balance(a, now, b, f.history)).toList(),
         'periodNow': [money.period(now).$1, money.period(now).$2],
         'payDay': money.payDay,
       };
@@ -541,6 +542,46 @@ void main() {
       final bought = now.subtract(const Duration(days: 1));
       final (y, m) = file.money.period(bought);
       expect(MonthPicture.of(file, y, m).fixedInCardSuspects, contains('חברת החשמל'));
+      compare(doc);
+    }
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
+  test('checking balance by itself: salary, fixed expenses on their day and the card come out the same as Swift', () {
+    for (final (day, sinceMonths) in [(1, -4), (10, -2), (31, -6)]) {
+      final doc = loadFixture();
+      final family = FamilyBackup(doc);
+      final file = family.fileForEditing(family.state.activeID);
+      final now = DateTime.now();
+      final money = file.money;
+      money.payDay = day;
+      money.autoBalanceSince = addMonths(now, sinceMonths);
+      money.ensureChecking().upsertBalance(BalanceEntry.create(date: addMonths(now, -3), amount: 5000));
+      final b = file.budget;
+      b.upsertExpense(CostItem.create(name: 'ועד בית', value: 250)..['chargeDay'] = 5);
+      b.upsertExpense(CostItem.create(name: 'ביטוח', value: 180)..['chargeDay'] = 31);
+      b.upsertExpense(CostItem.create(name: 'חוג', kind: CostKind.percent, value: 2));
+      b.upsertExpense(CostItem.create(name: 'כבוי', value: 999)..['chargeDay'] = 3..['isActive'] = false);
+      // Last month's salary was recorded as a transaction: it isn't added again.
+      final last = addMonths(now, -1);
+      money.upsertTransaction(MoneyTransaction.create(kind: TransactionKind.income, accountID: money.checking!.id)
+        ..['title'] = 'משכורת'
+        ..['amount'] = 7000
+        ..['salaryKey'] = last.year * 100 + last.month
+        ..['date'] = dateTimeToSwift(money.periodStart(last.year, last.month)));
+      // Two months ago the actual net was saved: that's what came in.
+      final older = addMonths(now, -2);
+      file.upsertRecord({
+        'id': newId(),
+        'year': older.year,
+        'month': older.month,
+        'note': '',
+        'budget': deepCopy(file.json['budget']),
+        'savedAt': dateTimeToSwift(now),
+        'actualNet': 6543.21,
+      });
+      final checking = money.checking!;
+      final auto = money.balance(checking, now, b, file.history);
+      expect(auto, isNot(closeTo(money.balance(checking, now), 0.01)), reason: 'payDay $day: the estimate moved');
       compare(doc);
     }
   }, skip: canRun ? false : 'needs swiftc (macOS)');

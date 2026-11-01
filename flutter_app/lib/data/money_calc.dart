@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'card.dart';
+import 'forecast.dart';
 import 'models.dart';
 
 /// Calendar month arithmetic like Foundation's `Calendar.date(byAdding: .month…)`:
@@ -145,9 +147,11 @@ class MoneyCalc {
     return value;
   }
 
-  double total(MoneyData money, Set<AccountKind> kinds, [DateTime? on]) {
+  double total(MoneyData money, Set<AccountKind> kinds, {DateTime? on, Budget? budget, List<MonthRecord> history = const []}) {
     final date = on ?? DateTime.now();
-    return money.accounts.where((a) => kinds.contains(a.kind)).fold(0.0, (s, a) => s + money.balance(a, date));
+    return money.accounts
+        .where((a) => kinds.contains(a.kind))
+        .fold(0.0, (s, a) => s + money.balance(a, date, budget, history));
   }
 }
 
@@ -170,7 +174,8 @@ extension MoneyPeriods on MoneyData {
 
   /// Estimated balance of an account: `MoneyCalc.value`, and the main checking account also pays for the fixed
   /// deposits into savings plans (they raise the plan on their day, so the money has to leave here on that day).
-  double balance(Account account, [DateTime? on]) {
+  /// With a budget, it also follows the salary, fixed expenses and card charges (`expectedChecking`).
+  double balance(Account account, [DateTime? on, Budget? budget, List<MonthRecord> history = const []]) {
     final date = on ?? DateTime.now();
     var value = MoneyCalc(primeRate).value(account, date, transactions);
     final base = MoneyCalc.baseEntry(account, date);
@@ -178,13 +183,79 @@ extension MoneyPeriods on MoneyData {
     for (final plan in accounts.where((a) => a.kind == AccountKind.savings || a.kind == AccountKind.deposit)) {
       value -= MoneyCalc.contributionDates(plan, base.date, date).length * plan.monthlyContribution;
     }
+    final since = autoBalanceSince;
+    if (budget != null && since != null) {
+      value += expectedChecking(base.date.isAfter(since) ? base.date : since, date, budget, history);
+    }
     return value;
+  }
+
+  /// What should have moved in the checking account in (from, to] without being recorded: the salary on the pay day,
+  /// fixed expenses on their day, and the card on its charge day. Typing in a balance starts this count over.
+  double expectedChecking(DateTime from, DateTime to, Budget budget, List<MonthRecord> history) {
+    if (!from.isBefore(to)) return 0;
+    DateTime day(int wanted, int year, int month) {
+      final days = DateTime(year, month + 1, 0).day;
+      return DateTime(year, month, math.min(math.max(wanted, 1), days));
+    }
+
+    bool inRange(DateTime d) => d.isAfter(from) && !d.isAfter(to);
+    final cards = CardData(this);
+    var total = 0.0;
+
+    // Card: every imported charge once its day came — fixed expenses and tracked purchases on the card included.
+    for (final t in cards.cardTransactions.where((t) => !t.ignored)) {
+      final d = t.chargeDate;
+      if (d != null && inRange(d)) total -= t.amount;
+    }
+    for (final p in cards.manualCardPayments.where((p) => inRange(p.chargeDate))) {
+      total -= p.amount;
+    }
+
+    var y = from.year, m = from.month;
+    final endKey = to.year * 100 + to.month;
+    final cardDay = cards.usualChargeDay;
+    final average = cards.averageCardVariable();
+    final tx = transactions;
+    while (y * 100 + m <= endKey) {
+      final key = y * 100 + m;
+      // Salary, unless it was recorded as a transaction.
+      if (inRange(periodStart(y, m)) && !tx.any((t) => t.salaryKey == key)) {
+        total += history.where((r) => r.year == y && r.month == m).firstOrNull?.actualNet ?? budget.net;
+      }
+      final statement = cards.chargedIn(key);
+      // A statement that wasn't imported: the usual spending and the planned installments.
+      if (cardDay != null && statement.isEmpty) {
+        final d = day(cardDay, y, m);
+        if (inRange(d)) total -= average + Forecaster.projectedInstallments(cards, DateTime(d.year, d.month, d.day - 1), d);
+      }
+      // Fixed expenses. One paid by card leaves with the statement, so it never counts by itself as well.
+      for (final item in budget.expenses.where((e) => e.isActive)) {
+        final amount = item.amount(budget.expenseBase);
+        if (amount == 0) continue;
+        final onCard = cards.cardTransactions.any((t) => t.linkedExpenseID == item.id && !t.ignored);
+        if (onCard && statement.any((t) => t.linkedExpenseID == item.id && !t.ignored)) continue;
+        final d = day(onCard ? (cardDay ?? payDay) : (item.chargeDay ?? payDay), y, m);
+        if (inRange(d)) total -= amount;
+      }
+      if (m == 12) {
+        y += 1;
+        m = 1;
+      } else {
+        m += 1;
+      }
+    }
+    return total;
   }
 
   /// Savings deposits live in one place, the savings account. A fixed expense marked "transfer to savings" becomes a
   /// monthly deposit of that account, from now on. Returns whether anything moved. Transfers to a pension stay.
   bool adoptSavingsTransfers(Budget budget) {
     var changed = false;
+    if (autoBalanceSince == null) {
+      autoBalanceSince = DateTime.now();
+      changed = true;
+    }
     for (final item in budget.expenses) {
       final target = account(item.targetAccountID);
       if (target == null || (target.kind != AccountKind.savings && target.kind != AccountKind.deposit)) continue;

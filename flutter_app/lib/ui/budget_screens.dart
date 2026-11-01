@@ -328,6 +328,7 @@ class ExpensesScreen extends StatelessWidget {
                   subtitle: Text([
                     if (e.kind == CostKind.percent) '${Fmt.percent(e.value)} מהנטו' else 'סכום קבוע',
                     if (e.targetAccountID != null) 'עובר ל${money.account(e.targetAccountID)?.name ?? 'חשבון'}',
+                    if (e.chargeDay != null) 'יורד ב-${e.chargeDay} לחודש',
                   ].join(' · ')),
                   trailing: Text(Fmt.money(e.rawAmount(b.expenseBase)), textDirection: TextDirection.rtl,
                       style: Theme.of(context).textTheme.titleMedium),
@@ -375,6 +376,26 @@ Future<void> editCost(BuildContext context, CostItem? existing, {required bool d
         value: draft.value,
         onChanged: (v) => draft.value = v,
       ),
+      if (!deductions)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('יום החיוב בבנק'),
+          subtitle: Text(draft.chargeDay == null ? 'ביום המשכורת' : 'ב-${draft.chargeDay} לחודש'),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton.outlined(
+              tooltip: 'יום קודם',
+              icon: const Icon(Icons.remove, size: 18),
+              // 0 is "on the pay day", like the Mac stepper.
+              onPressed: draft.chargeDay == null ? null : () => setState(() => draft.chargeDay = draft.chargeDay! <= 1 ? null : draft.chargeDay! - 1),
+            ),
+            const SizedBox(width: 8),
+            IconButton.outlined(
+              tooltip: 'יום הבא',
+              icon: const Icon(Icons.add, size: 18),
+              onPressed: (draft.chargeDay ?? 0) >= 31 ? null : () => setState(() => draft.chargeDay = (draft.chargeDay ?? 0) + 1),
+            ),
+          ]),
+        ),
       if (!deductions && savings.isNotEmpty) ...[
         gap,
         DropdownButtonFormField<String?>(

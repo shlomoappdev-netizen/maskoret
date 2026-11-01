@@ -153,6 +153,7 @@ for (id, file) in family.files {
         "incomes": budget.incomes.count, "history": history.count,
         "accounts": money.accounts.map { MoneyCalc.value(of: $0, on: now, transactions: money.transactions) },
         "balances": money.accounts.map { money.balance(of: $0, on: now) },
+        "autoBalances": money.accounts.map { money.balance(of: $0, on: now, budget: budget, history: history) },
         "periodNow": [money.period(containing: now).year, money.period(containing: now).month],
         "payDay": money.payDay,
         "transactions": money.transactions.count, "cardTransactions": money.cardTransactions.count,
