@@ -221,20 +221,23 @@ async function notifyTasks() {
 // do a pass in case a ping was missed meanwhile.
 let channel = null;
 function listen() {
-  channel = supabase.channel('maskoret-support-agent')
+  const mine = supabase.channel('maskoret-support-agent')
     .on('broadcast', { event: 'work' }, () => work('ping'))
-    .on('broadcast', { event: 'dev_task' }, () => notifyTasks().catch(e => log('notify failed:', e.message)))
-    .subscribe(status => {
-      log('realtime:', status);
-      if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-        const dropped = channel;
-        channel = null;
-        setTimeout(async () => {
-          if (dropped) await supabase.removeChannel(dropped).catch(() => {});
-          if (!channel) { listen(); work('reconnect'); }
-        }, 30 * 1000);
-      }
-    });
+    .on('broadcast', { event: 'dev_task' }, () => notifyTasks().catch(e => log('notify failed:', e.message)));
+  channel = mine;
+  mine.subscribe(status => {
+    // Removing a dropped channel reports CLOSED on it too; only the current one may start a new channel,
+    // otherwise every drop doubles the channels.
+    if (channel !== mine) return;
+    log('realtime:', status);
+    if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+      channel = null;
+      setTimeout(async () => {
+        await supabase.removeChannel(mine).catch(() => {});
+        if (!channel) { listen(); work('reconnect'); }
+      }, 30 * 1000);
+    }
+  });
 }
 listen();
 
