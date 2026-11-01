@@ -656,7 +656,7 @@ extension Store {
         // Accounts
         lines.append("\n## חשבונות")
         for a in money.accounts {
-            var s = "- \(a.name) (\(a.kind.title)): \(m(money.balance(of: a, on: now)))"
+            var s = "- \(a.name) (\(a.kind.title)): \(m(money.balance(of: a, on: now, budget: budget, history: history)))"
             if a.kind.hasInterest { s += " · ריבית: " + a.rateDescription }
             if a.monthlyContribution > 0 { s += " · הפקדה חודשית \(m(a.monthlyContribution))" }
             if let maturity = a.maturityDate { s += " · סיום " + Fmt.date(maturity) }

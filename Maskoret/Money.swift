@@ -377,10 +377,13 @@ struct MoneyData: Codable, Equatable {
     var receivables: [Receivable] = []
     /// The day of the month the salary comes in: "what's left" starts over on this day.
     var payDay: Int = 1
+    /// From when the checking estimate follows the salary, fixed expenses and card charges by themselves
+    /// (set once, so updating the app doesn't rewrite what happened before it).
+    var autoBalanceSince: Date? = nil
 
     private enum CodingKeys: String, CodingKey {
         case accounts, transactions, forecast, primeRate, primeAuto, boiRate, primeCheckedAt, nextRateDecision, rateLastChanged
-        case cardTransactions, merchantRules, cardImports, trends, maaser, receivables, payDay
+        case cardTransactions, merchantRules, cardImports, trends, maaser, receivables, payDay, autoBalanceSince
     }
 
     var checking: Account? { accounts.first { $0.kind == .checking } }
@@ -410,6 +413,7 @@ extension MoneyData {
         maaser = (try? c.decodeIfPresent(MaaserSettings.self, forKey: .maaser)) ?? MaaserSettings()
         receivables = (try? c.decodeIfPresent([Receivable].self, forKey: .receivables)) ?? []
         payDay = (try? c.decodeIfPresent(Int.self, forKey: .payDay)) ?? 1
+        autoBalanceSince = try? c.decodeIfPresent(Date.self, forKey: .autoBalanceSince)
         if !accounts.contains(where: { $0.kind == .checking }) {
             accounts.insert(Account(name: "עו״ש", kind: .checking), at: 0)
         }
@@ -443,13 +447,69 @@ extension MoneyData {
 
     /// Estimated balance of an account: `MoneyCalc.value`, and the main checking account also pays for the fixed
     /// deposits into savings plans (they raise the plan on their day, so the money has to leave here on that day).
-    func balance(of account: Account, on date: Date = Date()) -> Double {
+    /// With a budget, it also follows the salary, fixed expenses and card charges (`expectedChecking`).
+    func balance(of account: Account, on date: Date = Date(), budget: Budget? = nil, history: [MonthRecord] = []) -> Double {
         var value = MoneyCalc.value(of: account, on: date, transactions: transactions)
         guard account.id == checking?.id, let base = MoneyCalc.baseEntry(account, on: date) else { return value }
         for plan in accounts where plan.kind == .savings || plan.kind == .deposit {
             value -= Double(plan.contributionDates(from: base.date, to: date).count) * plan.monthlyContribution
         }
+        if let budget, let since = autoBalanceSince {
+            value += expectedChecking(from: max(base.date, since), to: date, budget: budget, history: history)
+        }
         return value
+    }
+
+    /// What should have moved in the checking account in (from, to] without being recorded: the salary on the pay day,
+    /// fixed expenses on their day, and the card on its charge day. Typing in a balance starts this count over.
+    func expectedChecking(from: Date, to: Date, budget: Budget, history: [MonthRecord]) -> Double {
+        guard from < to else { return 0 }
+        let cal = Calendar.current
+        func day(_ wanted: Int, year: Int, month: Int) -> Date {
+            let first = cal.date(from: DateComponents(year: year, month: month, day: 1)) ?? from
+            let days = cal.range(of: .day, in: .month, for: first)?.count ?? 28
+            return cal.date(from: DateComponents(year: year, month: month, day: min(max(wanted, 1), days))) ?? first
+        }
+        func inRange(_ d: Date) -> Bool { d > from && d <= to }
+        var total = 0.0
+
+        // Card: every imported charge once its day came — fixed expenses and tracked purchases on the card included.
+        for t in cardTransactions where !t.ignored {
+            if let d = t.chargeDate, inRange(d) { total -= t.amount }
+        }
+        for p in manualCardPayments where inRange(p.chargeDate) { total -= p.amount }
+
+        var y = cal.component(.year, from: from), m = cal.component(.month, from: from)
+        let endKey = cal.component(.year, from: to) * 100 + cal.component(.month, from: to)
+        let cardDay = usualChargeDay
+        let average = averageCardVariable()
+        while y * 100 + m <= endKey {
+            let key = y * 100 + m
+            // Salary, unless it was recorded as a transaction.
+            if inRange(periodStart(year: y, month: m)), !transactions.contains(where: { $0.salaryKey == key }) {
+                total += history.first { $0.year == y && $0.month == m }?.actualNet ?? budget.net
+            }
+            let statement = cardTransactions(billingKey: key)
+            // A statement that wasn't imported: the usual spending and the planned installments.
+            if let cardDay, statement.isEmpty {
+                let d = day(cardDay, year: y, month: m)
+                if inRange(d) {
+                    let dayBefore = cal.date(byAdding: .day, value: -1, to: d) ?? d
+                    total -= average + projectedInstallments(from: dayBefore, to: d)
+                }
+            }
+            // Fixed expenses. One paid by card leaves with the statement, so it never counts by itself as well.
+            for item in budget.expenses where item.isActive {
+                let amount = item.amount(base: budget.expenseBase)
+                guard amount != 0 else { continue }
+                let onCard = cardTransactions.contains { $0.linkedExpenseID == item.id && !$0.ignored }
+                if onCard, statement.contains(where: { $0.linkedExpenseID == item.id && !$0.ignored }) { continue }
+                let d = day(onCard ? (cardDay ?? payDay) : (item.chargeDay ?? payDay), year: y, month: m)
+                if inRange(d) { total -= amount }
+            }
+            if m == 12 { y += 1; m = 1 } else { m += 1 }
+        }
+        return total
     }
 
     /// Savings deposits live in one place, the savings account. A fixed expense marked "transfer to savings" becomes a
@@ -457,6 +517,10 @@ extension MoneyData {
     /// anything moved. Transfers to a pension stay: those come out of the salary.
     mutating func adoptSavingsTransfers(from budget: inout Budget) -> Bool {
         var changed = false
+        if autoBalanceSince == nil {
+            autoBalanceSince = Date()
+            changed = true
+        }
         for item in budget.expenses {
             guard let target = item.targetAccountID,
                   let i = accounts.firstIndex(where: { $0.id == target && ($0.kind == .savings || $0.kind == .deposit) }) else { continue }
@@ -605,7 +669,7 @@ enum Forecaster {
 
         var balances: [UUID: Double] = [:]
         for account in money.accounts {
-            balances[account.id] = money.balance(of: account, on: now)
+            balances[account.id] = money.balance(of: account, on: now, budget: budget, history: history)
         }
         let checkingID = money.checking?.id
 
