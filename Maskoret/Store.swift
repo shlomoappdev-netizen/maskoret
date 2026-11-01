@@ -348,23 +348,32 @@ final class Store: ObservableObject {
     // MARK: Money
 
     func value(of account: Account, on date: Date = Date()) -> Double {
-        money.balance(of: account, on: date)
+        money.balance(of: account, on: date, budget: budget, history: history)
     }
 
     /// Totals of the members in view (one member, or the family together).
-    private func total(_ kinds: [AccountKind], in m: MoneyData) -> Double {
+    private func total(_ kinds: [AccountKind], in m: MoneyData, budget: Budget, history: [MonthRecord]) -> Double {
         m.accounts.filter { kinds.contains($0.kind) }
-            .reduce(0) { $0 + m.balance(of: $1) }
+            .reduce(0) { $0 + m.balance(of: $1, budget: budget, history: history) }
     }
 
-    var checkingNow: Double { total([.checking], in: dashboard.money) }
-    var savingsNow: Double { total([.savings, .deposit], in: dashboard.money) }
-    var pensionNow: Double { total([.pension], in: dashboard.money) }
+    private func dashboardTotal(_ kinds: [AccountKind]) -> Double {
+        let d = dashboard
+        return total(kinds, in: d.money, budget: d.budget, history: d.history)
+    }
+
+    private func ownTotal(_ kinds: [AccountKind]) -> Double {
+        total(kinds, in: money, budget: budget, history: history)
+    }
+
+    var checkingNow: Double { dashboardTotal([.checking]) }
+    var savingsNow: Double { dashboardTotal([.savings, .deposit]) }
+    var pensionNow: Double { dashboardTotal([.pension]) }
 
     /// Totals of the member being edited only.
-    var ownChecking: Double { total([.checking], in: money) }
-    var ownSavings: Double { total([.savings, .deposit], in: money) }
-    var ownPension: Double { total([.pension], in: money) }
+    var ownChecking: Double { ownTotal([.checking]) }
+    var ownSavings: Double { ownTotal([.savings, .deposit]) }
+    var ownPension: Double { ownTotal([.pension]) }
 
     func forecast(months: Int? = nil) -> [ForecastMonth] {
         let d = dashboard

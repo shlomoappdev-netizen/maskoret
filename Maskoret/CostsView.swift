@@ -347,6 +347,15 @@ struct CostEditor: View {
             }
 
             if section == .expenses {
+                Stepper(value: Binding(get: { item.chargeDay ?? 0 }, set: { item.chargeDay = $0 == 0 ? nil : $0 }), in: 0...31) {
+                    HStack {
+                        Text("יום החיוב בבנק")
+                        Spacer()
+                        Text(verbatim: item.chargeDay.map { "ב-\($0) לחודש" } ?? "ביום המשכורת")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 // Deposits into savings are set on the savings account itself; a pension comes out of the salary.
                 Picker("לאן הכסף הולך", selection: $item.targetAccountID) {
                     Text("הוצאה רגילה").tag(UUID?.none)

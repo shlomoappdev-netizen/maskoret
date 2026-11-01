@@ -130,8 +130,10 @@ struct CostItem: Identifiable, Codable, Equatable, Hashable {
     var auto: AutoDeduction? = nil
     /// Expenses only: when set, the money moves into this account (savings) instead of being spent.
     var targetAccountID: UUID? = nil
+    /// Expenses only: the day of the month it leaves the bank (nil = the pay day).
+    var chargeDay: Int? = nil
 
-    private enum CodingKeys: String, CodingKey { case id, name, kind, value, isActive, auto, targetAccountID }
+    private enum CodingKeys: String, CodingKey { case id, name, kind, value, isActive, auto, targetAccountID, chargeDay }
 
     static func automatic(_ type: AutoDeduction) -> CostItem {
         CostItem(name: type.title, kind: .automatic, value: type.defaultPercent, auto: type)
@@ -161,6 +163,7 @@ extension CostItem {
         isActive = try c.decodeIfPresent(Bool.self, forKey: .isActive) ?? true
         auto = try c.decodeIfPresent(AutoDeduction.self, forKey: .auto)
         targetAccountID = try c.decodeIfPresent(UUID.self, forKey: .targetAccountID)
+        chargeDay = try? c.decodeIfPresent(Int.self, forKey: .chargeDay)
     }
 }
 

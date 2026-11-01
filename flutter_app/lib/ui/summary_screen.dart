@@ -48,6 +48,10 @@ class SummaryScreen extends StatelessWidget {
       return PageList(children: [
         const AnnouncementCard(),
         const FamilyContextLine(),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text('סיכום — ${pic.periodTitle}', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+        ),
         Wrap(spacing: 8, runSpacing: 8, children: [
           FilledButton.icon(
             icon: const Icon(Icons.event_available, size: 18),
