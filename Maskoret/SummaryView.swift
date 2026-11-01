@@ -14,7 +14,7 @@ struct SummaryView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     AnnouncementBanner()
-                    PageBar(title: "סיכום — " + picture.title,
+                    PageBar(title: "סיכום — " + picture.periodTitle,
                             subtitle: picture.isActual ? "לפי הנטו שנכנס בפועל החודש" : "לפי הערכת הנטו — רשום את הנטו בפועל כשמגיע התלוש") {
                         Button {
                             showSaveMonth = true
@@ -103,7 +103,7 @@ struct SummaryView: View {
 
     private func heroCard(_ p: MonthPicture) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("נשאר לך בסוף החודש")
+            Text("נשאר לך מההכנסה האחרונה")
                 .font(.headline)
                 .foregroundStyle(Color.white.opacity(0.85))
             Text(verbatim: Fmt.moneyRounded(p.remaining))
@@ -301,7 +301,7 @@ struct SummaryView: View {
         for line in p.toSavings { lines.append("  → \(line.title): " + Fmt.money(line.amount)) }
         for line in p.oneOffs { lines.append("  ± \(line.title): " + Fmt.money(line.amount)) }
         lines.append("")
-        lines.append("נשאר בסוף החודש: " + Fmt.money((p.remaining * 100).rounded() / 100))
+        lines.append("נשאר מההכנסה האחרונה: " + Fmt.money((p.remaining * 100).rounded() / 100))
         lines.append("עו״ש עכשיו (משוער): " + Fmt.moneyRounded(store.checkingNow))
         lines.append("חיסכון ופיקדונות: " + Fmt.moneyRounded(store.savingsNow))
         return lines.joined(separator: "\n")
@@ -328,7 +328,7 @@ struct MonthBreakdown: View {
             }
             if !picture.card.isEmpty {
                 BreakdownLine(
-                    title: picture.cardEstimated ? "כרטיס אשראי — משתנות (הערכה)" : "כרטיס אשראי — משתנות",
+                    title: picture.cardEstimated ? "כרטיס אשראי — משתנות (כולל הערכה)" : "כרטיס אשראי — משתנות",
                     value: picture.cardTotal, symbol: "− ", color: .teal
                 )
                 ForEach(picture.card) { line in SubLine(title: line.title, value: line.amount) }
@@ -376,9 +376,21 @@ struct MonthBreakdown: View {
                 ForEach(picture.oneOffs) { line in SubLine(title: line.title, value: line.amount) }
             }
 
+            if !picture.fixedInCardSuspects.isEmpty {
+                Label {
+                    Text(verbatim: "ייתכן שנספר פעמיים: " + picture.fixedInCardSuspects.joined(separator: ", ")
+                         + " — הסכום דומה להוצאה קבועה. כדי שלא ייספר שוב, קשר את החיוב להוצאה במסך כרטיס אשראי.")
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
             Divider()
             BreakdownLine(
-                title: "נשאר בסוף החודש",
+                title: "נשאר מההכנסה האחרונה",
                 value: picture.remaining,
                 color: picture.remaining >= 0 ? .green : .red,
                 emphasized: true
@@ -445,7 +457,7 @@ struct SaveMonthSheet: View {
                 BreakdownLine(title: "נטו", value: store.budget.net)
                 let remaining = store.monthPicture.remaining
                 BreakdownLine(
-                    title: "נשאר בסוף החודש",
+                    title: "נשאר מההכנסה האחרונה",
                     value: remaining,
                     color: remaining >= 0 ? .green : .red
                 )
@@ -458,6 +470,11 @@ struct SaveMonthSheet: View {
             }
         }
         .onAppear {
+            if !loaded {
+                let current = store.money.period(containing: Date())
+                year = current.year
+                month = current.month
+            }
             if let existing = store.record(year: year, month: month) {
                 note = existing.note
                 actualNet = existing.actualNet ?? 0

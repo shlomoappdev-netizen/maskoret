@@ -19,7 +19,7 @@ struct HistoryView: View {
         return store.history.reduce(0) { $0 + $1.budget.net } / Double(store.history.count)
     }
 
-    /// What was left at the end of each saved month — the same number as "נשאר בסוף החודש" in the summary.
+    /// What was left of each saved month's income — the same number as "נשאר מההכנסה האחרונה" in the summary.
     private var results: [UUID: MonthPicture] {
         Dictionary(uniqueKeysWithValues: store.history.map { ($0.id, store.monthResult($0)) })
     }
@@ -86,7 +86,7 @@ struct HistoryView: View {
                                         Divider()
                                     }
                                 }
-                                Text("״נשאר״ = מה שנשאר בעו״ש בסוף החודש — אותו חישוב כמו ״נשאר בסוף החודש״ בסיכום: הנטו (בפועל אם נרשם, אחרת משוער), פחות הוצאות קבועות, רכישות תקופתיות, חיובי אשראי משתנים והעברות לחיסכון, ועם תנועות חד-פעמיות. לחיצה על חודש מציגה את הפירוט.")
+                                Text("״נשאר״ = מה שנשאר מהמשכורת של אותו חודש עד המשכורת הבאה — אותו חישוב כמו ״נשאר מההכנסה האחרונה״ בסיכום: הנטו (בפועל אם נרשם, אחרת משוער), פחות הוצאות קבועות, רכישות תקופתיות, חיובי אשראי משתנים והעברות לחיסכון, ועם תנועות חד-פעמיות. לחיצה על חודש מציגה את הפירוט.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -131,11 +131,11 @@ struct HistoryChart: View {
                     x: .value("חודש", record.shortTitle),
                     y: .value("סכום", remaining(record))
                 )
-                .foregroundStyle(by: .value("סוג", "נשאר בסוף החודש"))
-                .position(by: .value("סוג", "נשאר בסוף החודש"))
+                .foregroundStyle(by: .value("סוג", "נשאר מההכנסה"))
+                .position(by: .value("סוג", "נשאר מההכנסה"))
             }
         }
-        .chartForegroundStyleScale(["נטו": Color.blue, "נשאר בסוף החודש": Color.green])
+        .chartForegroundStyleScale(["נטו": Color.blue, "נשאר מההכנסה": Color.green])
         .chartYAxis {
             AxisMarks { value in
                 AxisGridLine()
@@ -243,7 +243,7 @@ struct RecordDetailView: View {
                 MonthBreakdown(picture: store.monthResult(record))
                     .padding(.vertical, 4)
             } header: {
-                Text("מה נשאר בסוף החודש")
+                Text("מה נשאר מההכנסה")
             } footer: {
                 Text("אותו חישוב כמו בסיכום, עם ההכנסות, הניכויים וההוצאות הקבועות של החודש הזה, וחיובי האשראי והתנועות שלו.")
             }

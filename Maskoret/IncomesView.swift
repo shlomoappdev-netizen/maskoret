@@ -22,6 +22,19 @@ struct IncomesView: View {
             }
             Divider()
             List {
+                Section {
+                    Stepper(value: $store.money.payDay, in: 1...31) {
+                        HStack {
+                            Text("יום המשכורת")
+                            Spacer()
+                            Text(verbatim: "ב-\(store.money.payDay) לחודש")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } footer: {
+                    Text("ביום הזה ״נשאר מההכנסה האחרונה״ מתחיל מחדש. אם המשכורת נכנסת בימים שונים, בחר את היום הרגיל.")
+                }
                 if !incomes.isEmpty {
                     Section {
                         ForEach(incomes) { item in

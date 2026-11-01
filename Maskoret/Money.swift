@@ -375,10 +375,12 @@ struct MoneyData: Codable, Equatable {
     var maaser = MaaserSettings()
     /// Money others owe you ("חייבים לי").
     var receivables: [Receivable] = []
+    /// The day of the month the salary comes in: "what's left" starts over on this day.
+    var payDay: Int = 1
 
     private enum CodingKeys: String, CodingKey {
         case accounts, transactions, forecast, primeRate, primeAuto, boiRate, primeCheckedAt, nextRateDecision, rateLastChanged
-        case cardTransactions, merchantRules, cardImports, trends, maaser, receivables
+        case cardTransactions, merchantRules, cardImports, trends, maaser, receivables, payDay
     }
 
     var checking: Account? { accounts.first { $0.kind == .checking } }
@@ -407,9 +409,69 @@ extension MoneyData {
         trends = (try? c.decodeIfPresent([Trend].self, forKey: .trends)) ?? []
         maaser = (try? c.decodeIfPresent(MaaserSettings.self, forKey: .maaser)) ?? MaaserSettings()
         receivables = (try? c.decodeIfPresent([Receivable].self, forKey: .receivables)) ?? []
+        payDay = (try? c.decodeIfPresent(Int.self, forKey: .payDay)) ?? 1
         if !accounts.contains(where: { $0.kind == .checking }) {
             accounts.insert(Account(name: "עו״ש", kind: .checking), at: 0)
         }
+    }
+}
+
+// MARK: - Pay periods
+
+extension MoneyData {
+    /// Where the money period of (year, month) begins: that month's pay day. The period runs until the next month's
+    /// pay day and is named after the month the salary came in. A pay day of 1 makes it the calendar month.
+    func periodStart(year: Int, month: Int) -> Date {
+        let cal = Calendar.current
+        let first = cal.date(from: DateComponents(year: year, month: month, day: 1)) ?? Date()
+        let days = cal.range(of: .day, in: .month, for: first)?.count ?? 28
+        return cal.date(from: DateComponents(year: year, month: month, day: min(max(payDay, 1), days))) ?? first
+    }
+
+    func periodEnd(year: Int, month: Int) -> Date {
+        let next = month == 12 ? (year + 1, 1) : (year, month + 1)
+        return periodStart(year: next.0, month: next.1)
+    }
+
+    /// The money period a date falls in.
+    func period(containing date: Date) -> (year: Int, month: Int) {
+        let cal = Calendar.current
+        let y = cal.component(.year, from: date), m = cal.component(.month, from: date)
+        if date >= periodStart(year: y, month: m) { return (y, m) }
+        return m == 1 ? (y - 1, 12) : (y, m - 1)
+    }
+
+    /// Estimated balance of an account: `MoneyCalc.value`, and the main checking account also pays for the fixed
+    /// deposits into savings plans (they raise the plan on their day, so the money has to leave here on that day).
+    func balance(of account: Account, on date: Date = Date()) -> Double {
+        var value = MoneyCalc.value(of: account, on: date, transactions: transactions)
+        guard account.id == checking?.id, let base = MoneyCalc.baseEntry(account, on: date) else { return value }
+        for plan in accounts where plan.kind == .savings || plan.kind == .deposit {
+            value -= Double(plan.contributionDates(from: base.date, to: date).count) * plan.monthlyContribution
+        }
+        return value
+    }
+
+    /// Savings deposits live in one place, the savings account. A fixed expense marked "transfer to savings" becomes a
+    /// monthly deposit of that account, from now on (what happened before stays as the balances say). Returns whether
+    /// anything moved. Transfers to a pension stay: those come out of the salary.
+    mutating func adoptSavingsTransfers(from budget: inout Budget) -> Bool {
+        var changed = false
+        for item in budget.expenses {
+            guard let target = item.targetAccountID,
+                  let i = accounts.firstIndex(where: { $0.id == target && ($0.kind == .savings || $0.kind == .deposit) }) else { continue }
+            if item.isActive {
+                let amount = (item.amount(base: budget.expenseBase) * 100).rounded() / 100
+                if accounts[i].monthlyContribution <= 0 {
+                    accounts[i].contributionDay = min(max(payDay, 1), 28)
+                    if accounts[i].startDate == nil { accounts[i].startDate = Date() }
+                }
+                accounts[i].monthlyContribution += amount
+            }
+            budget.expenses.removeAll { $0.id == item.id }
+            changed = true
+        }
+        return changed
     }
 }
 
@@ -543,7 +605,7 @@ enum Forecaster {
 
         var balances: [UUID: Double] = [:]
         for account in money.accounts {
-            balances[account.id] = MoneyCalc.value(of: account, on: now, transactions: money.transactions)
+            balances[account.id] = money.balance(of: account, on: now)
         }
         let checkingID = money.checking?.id
 

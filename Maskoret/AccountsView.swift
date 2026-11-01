@@ -164,7 +164,7 @@ struct AccountCard: View {
             )
         }
         if account.kind == .deposit, let maturity = account.maturityDate {
-            let atMaturity = MoneyCalc.value(of: account, on: maturity, transactions: store.money.transactions)
+            let atMaturity = store.money.balance(of: account, on: maturity)
             let interestAtMaturity = MoneyCalc.interestEarned(account, on: maturity, transactions: store.money.transactions)
             RateLine(title: "סיום / פירעון", value: Fmt.date(maturity))
             RateLine(
@@ -589,7 +589,7 @@ struct ExitScheduleTable: View {
             ForEach(points, id: \.self) { date in
                 let months = account.monthsFromStart(to: date)
                 let minus = account.primeMinus(forMonths: months)
-                let value = MoneyCalc.value(of: account, on: date, transactions: store.money.transactions)
+                let value = store.money.balance(of: account, on: date)
                 let interest = MoneyCalc.interestEarned(account, on: date, transactions: store.money.transactions)
                 let afterTax = value - max(0, interest) * account.interestTax / 100
                 let isNext = account.nextExitPoint().map { Calendar.current.isDate($0, inSameDayAs: date) } ?? false
@@ -632,7 +632,7 @@ struct ExitScheduleTable: View {
             ForEach(points, id: \.self) { date in
                 let months = account.monthsFromStart(to: date)
                 let minus = account.primeMinus(forMonths: months)
-                let value = MoneyCalc.value(of: account, on: date, transactions: store.money.transactions)
+                let value = store.money.balance(of: account, on: date)
                 let interest = MoneyCalc.interestEarned(account, on: date, transactions: store.money.transactions)
                 let afterTax = value - max(0, interest) * account.interestTax / 100
                 let isNext = account.nextExitPoint().map { Calendar.current.isDate($0, inSameDayAs: date) } ?? false

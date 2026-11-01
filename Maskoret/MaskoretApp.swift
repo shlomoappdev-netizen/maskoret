@@ -74,7 +74,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .owed: return "חייבים לי"
         case .insights: return "תובנות AI"
         case .card: return "כרטיס אשראי"
-        case .accounts: return "חשבונות וחיסכון"
+        case .accounts: return "חיסכון וחשבונות"
         case .transactions: return "תנועות"
         case .forecast: return "תחזית"
         case .history: return "חודשים"
@@ -165,20 +165,24 @@ struct ContentView: View {
                 FamilySwitcher()
             }
             List(selection: $selection) {
-                Section("החודש") {
-                    ForEach([SidebarItem.summary, .incomes, .deductions, .expenses]) { item in
+                Label(SidebarItem.summary.title, systemImage: SidebarItem.summary.icon).tag(SidebarItem.summary)
+                Section("הכנסות") {
+                    ForEach([SidebarItem.incomes, .deductions]) { item in
                         Label(item.title, systemImage: item.icon).tag(item)
                     }
                 }
-                Section("הכסף שלי") {
-                    ForEach([SidebarItem.accounts, .card, .transactions, .forecast, .history, .maaser, .owed]) { item in
+                Section("הוצאות") {
+                    ForEach([SidebarItem.expenses, .card, .transactions, .tracked]) { item in
                         Label(item.title, systemImage: item.icon)
                             .badge(item == .card && store.cardImportDue ? Text(verbatim: "ייבוא") : nil)
                             .tag(item)
                     }
                 }
-                Section("מעקב") {
-                    ForEach([SidebarItem.tracked, .trends, .insights]) { item in
+                Section("חיסכון") {
+                    Label(SidebarItem.accounts.title, systemImage: SidebarItem.accounts.icon).tag(SidebarItem.accounts)
+                }
+                Section("תכנון") {
+                    ForEach([SidebarItem.forecast, .history, .maaser, .owed, .trends, .insights]) { item in
                         Label(item.title, systemImage: item.icon).tag(item)
                     }
                 }
@@ -219,7 +223,7 @@ struct ContentView: View {
                         .font(.title3.weight(.bold))
                         .monospacedDigit()
                         .padding(.bottom, 6)
-                    Text("נשאר בסוף החודש")
+                    Text("נשאר מההכנסה האחרונה")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     let remaining = store.monthPicture.remaining

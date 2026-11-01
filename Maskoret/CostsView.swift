@@ -347,9 +347,10 @@ struct CostEditor: View {
             }
 
             if section == .expenses {
+                // Deposits into savings are set on the savings account itself; a pension comes out of the salary.
                 Picker("לאן הכסף הולך", selection: $item.targetAccountID) {
                     Text("הוצאה רגילה").tag(UUID?.none)
-                    ForEach(accounts.filter { $0.kind != .checking }) { account in
+                    ForEach(accounts.filter { $0.kind == .pension }) { account in
                         Text(verbatim: "העברה ל" + account.name).tag(Optional(account.id))
                     }
                 }

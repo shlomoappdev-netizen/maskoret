@@ -630,7 +630,7 @@ extension Store {
         let p = monthPicture
         lines.append("\n## החודש (\(p.title))")
         lines.append("נטו: \(m(p.net))" + (p.isActual ? " (בפועל)" : " (הערכה)"))
-        lines.append("נשאר בסוף החודש (לפי האפליקציה): \(m(p.remaining)) · ימים שנשארו: \(p.daysLeft)")
+        lines.append("נשאר מההכנסה האחרונה (לפי האפליקציה): \(m(p.remaining)) · ימים עד המשכורת הבאה: \(p.daysLeft)")
         for l in p.spending { lines.append("- הוצאה קבועה: \(l.title) \(m(l.amount))") }
         if p.periodic > 0 { lines.append("- רכישות תקופתיות (ממוצע): \(m(p.periodic))") }
         for l in p.toSavings { lines.append("- לחיסכון: \(l.title) \(m(l.amount))") }
@@ -656,7 +656,7 @@ extension Store {
         // Accounts
         lines.append("\n## חשבונות")
         for a in money.accounts {
-            var s = "- \(a.name) (\(a.kind.title)): \(m(MoneyCalc.value(of: a, on: now, transactions: money.transactions)))"
+            var s = "- \(a.name) (\(a.kind.title)): \(m(money.balance(of: a, on: now)))"
             if a.kind.hasInterest { s += " · ריבית: " + a.rateDescription }
             if a.monthlyContribution > 0 { s += " · הפקדה חודשית \(m(a.monthlyContribution))" }
             if let maturity = a.maturityDate { s += " · סיום " + Fmt.date(maturity) }

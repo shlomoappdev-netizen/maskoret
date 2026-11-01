@@ -62,9 +62,9 @@ struct MoreView: View {
     @State private var selection: SidebarItem?
 
     private let sections: [(String, [SidebarItem])] = [
-        ("החודש", [.incomes, .deductions, .expenses]),
-        ("הכסף שלי", [.forecast, .history, .maaser, .owed]),
-        ("מעקב", [.tracked, .trends, .insights]),
+        ("הכנסות", [.incomes, .deductions]),
+        ("הוצאות", [.expenses, .tracked]),
+        ("תכנון", [.forecast, .history, .maaser, .owed, .trends, .insights]),
         ("הגדרות", [.account, .support, .tax, .backup])
     ]
 
@@ -84,7 +84,7 @@ struct MoreView: View {
                         Spacer()
                         let remaining = store.monthPicture.remaining
                         VStack(alignment: .trailing, spacing: 2) {
-                            Text("נשאר בסוף החודש").font(.caption).foregroundStyle(.secondary)
+                            Text("נשאר מההכנסה האחרונה").font(.caption).foregroundStyle(.secondary)
                             Text(verbatim: Fmt.moneyRounded(remaining))
                                 .font(.title3.weight(.bold))
                                 .monospacedDigit()

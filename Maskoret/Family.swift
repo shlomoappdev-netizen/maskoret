@@ -83,6 +83,7 @@ struct DataSnapshot {
         var money = MoneyData()
         money.accounts = []
         money.forecast = baseMoney.forecast
+        money.payDay = baseMoney.payDay
         money.primeRate = baseMoney.primeRate
         money.primeAuto = baseMoney.primeAuto
         money.boiRate = baseMoney.boiRate

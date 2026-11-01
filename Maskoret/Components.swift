@@ -342,7 +342,7 @@ struct BudgetBreakdown: View {
 
             Divider()
             BreakdownLine(
-                title: "יתרה בסוף החודש",
+                title: "יתרה מההכנסה",
                 value: budget.remaining,
                 color: budget.remaining >= 0 ? .green : .red,
                 emphasized: true

@@ -2,9 +2,9 @@ import Foundation
 
 // MARK: - This month, from every source
 
-/// One consistent picture of the current month, used by the summary, the sidebar and the stats:
-/// actual net (if recorded) or the estimate, fixed expenses, periodic purchases,
-/// money moved into savings (fixed transfers + savings-plan deposits) and this month's one-off transactions.
+/// One consistent picture of a money period (pay day to pay day), used by the summary, the sidebar and the stats:
+/// actual net (if recorded) or the estimate, fixed expenses, periodic purchases, money moved into savings and one-offs.
+/// Everything already committed comes off as soon as the income is in, so `remaining` is what is really free to spend.
 struct MonthPicture {
     struct Line: Identifiable {
         let id = UUID()
@@ -20,10 +20,16 @@ struct MonthPicture {
     let periodic: Double
     let toSavings: [Line]
     let oneOffs: [Line]
-    /// Variable credit-card spending charged this month (not linked to a fixed expense), by category.
+    /// Variable credit-card spending bought in this period (not linked to a fixed expense), by category —
+    /// whenever the card happens to charge it.
     var card: [Line] = []
-    /// True when `card` is an average because this month's statement wasn't imported yet.
+    /// True when `card` includes an estimate of what's still to come, by the average of the last statements.
     var cardEstimated: Bool = false
+    /// Card purchases priced like a fixed expense but not linked to it: they may be counted twice.
+    var fixedInCardSuspects: [String] = []
+    /// When this period began and ends.
+    var periodStart: Date? = nil
+    var periodEnd: Date? = nil
 
     /// One payment of a purchase split into installments — only this payment comes off this month.
     struct InstallmentLine: Identifiable {
@@ -80,21 +86,27 @@ struct MonthPicture {
     var remaining: Double { net - spendingTotal - periodic - toSavingsTotal - cardWithInstallments + oneOffTotal }
     var outTotal: Double { spendingTotal + periodic + toSavingsTotal + cardWithInstallments - min(oneOffTotal, 0) }
     var title: String { Fmt.monthTitle(year: year, month: month) }
+    /// "10 באוק׳ – 9 בנוב׳", or the month's name when the period is a calendar month.
+    var periodTitle: String {
+        let cal = Calendar.current
+        guard let periodStart, let periodEnd, cal.component(.day, from: periodStart) != 1,
+              let last = cal.date(byAdding: .day, value: -1, to: periodEnd) else { return title }
+        let style = Date.FormatStyle().day().month(.abbreviated).locale(Fmt.locale)
+        return periodStart.formatted(style) + " – " + last.formatted(style)
+    }
 }
 
 extension Store {
     var monthPicture: MonthPicture {
-        let now = Date()
-        let cal = Calendar.current
-        return monthPicture(year: cal.component(.year, from: now), month: cal.component(.month, from: now))
+        let current = dashboard.money.period(containing: Date())
+        return monthPicture(year: current.year, month: current.month)
     }
 
-    /// What was left at the end of a saved month — the same calculation as "נשאר בסוף החודש" in the summary,
-    /// with that month's own incomes, deductions and fixed expenses (the current month uses today's).
+    /// What was left of a saved month's income — the same calculation as "נשאר מההכנסה האחרונה" in the summary,
+    /// with that month's own incomes, deductions and fixed expenses (the current period uses today's).
     func monthResult(_ record: MonthRecord) -> MonthPicture {
-        let cal = Calendar.current
-        let now = Date()
-        if record.year == cal.component(.year, from: now) && record.month == cal.component(.month, from: now) {
+        let current = dashboard.money.period(containing: Date())
+        if record.year == current.year && record.month == current.month {
             return monthPicture
         }
         return monthPicture(year: record.year, month: record.month, budget: record.budget)
@@ -105,12 +117,12 @@ extension Store {
     func monthPicture(year: Int, month: Int, budget override: Budget? = nil) -> MonthPicture {
         let cal = Calendar.current
         let now = Date()
-        let monthStart = cal.date(from: DateComponents(year: year, month: month, day: 1)) ?? now
-        let monthEnd = cal.date(byAdding: .month, value: 1, to: monthStart) ?? now
-        let daysLeft = max(1, (cal.dateComponents([.day], from: cal.startOfDay(for: now), to: monthEnd).day ?? 1))
         let d = dashboard
         let budget = override ?? d.budget
         let money = d.money
+        let monthStart = money.periodStart(year: year, month: month)
+        let monthEnd = money.periodEnd(year: year, month: month)
+        let daysLeft = max(1, (cal.dateComponents([.day], from: cal.startOfDay(for: now), to: monthEnd).day ?? 1))
 
         var spending: [MonthPicture.Line] = []
         var toSavings: [MonthPicture.Line] = []
@@ -159,35 +171,30 @@ extension Store {
             }
         }
 
-        // Credit card: what is charged this month and isn't already a fixed expense / tracked purchase.
-        // Installments get their own lines, so a big purchase shows as the part charged this month.
+        // Credit card: purchases count in the period they were bought in, whenever the card charges them. Fixed expenses
+        // and tracked purchases already came off above, so a charge linked to one isn't counted again.
+        // Installments get their own lines below, so a big purchase shows as one payment a period.
         let key = year * 100 + month
-        var card: [MonthPicture.Line] = []
-        var cardEstimated = false
         let charged = money.cardTransactions(billingKey: key)
-        let summary = CardMonthSummary.of(charged)
-        let hasStatement = money.cardStatementKeys.contains(key) || (money.cardStatementKeys.isEmpty && !charged.isEmpty)
+        let bought = money.cardTransactions.filter { $0.installment == nil && $0.date >= monthStart && $0.date < monthEnd }
+        let summary = CardMonthSummary.of(bought)
         // Purchases you recorded as "paid by card" that the statements don't show yet.
         let manualCard = money.manualCardPayments
-        let manualRegular = manualCard.filter { $0.of == 1 && $0.billingKey == key }
-        let manualRegularTotal = manualRegular.reduce(0) { $0 + $1.amount }
-        if hasStatement {
-            card = summary.byCategory.map { .init(title: $0.name, amount: $0.amount) }
-            card += manualRegular.map { .init(title: "💳 " + $0.title + " (צפוי בכרטיס)", amount: $0.amount) }
-        } else {
-            let average = money.averageCardVariable()
-            let soFar = summary.variable - summary.installments + manualRegularTotal
-            if average > 0 {
-                card = [.init(title: "הערכה לפי ממוצע (בלי תשלומים)", amount: max(average, soFar))]
-                if manualRegularTotal > average {
-                    card[0] = .init(title: "הערכה — כולל קניות שרשמת באשראי", amount: soFar)
-                }
-                cardEstimated = true
-            } else {
-                card = summary.byCategory.map { .init(title: $0.name, amount: $0.amount) }
-                card += manualRegular.map { .init(title: "💳 " + $0.title + " (צפוי בכרטיס)", amount: $0.amount) }
-            }
+        let manualRegular = manualCard.filter { $0.of == 1 && $0.transaction.date >= monthStart && $0.transaction.date < monthEnd }
+        var card: [MonthPicture.Line] = summary.byCategory.map { .init(title: $0.name, amount: $0.amount) }
+        card += manualRegular.map { .init(title: "💳 " + $0.title, amount: $0.amount) }
+        // What wasn't imported yet: the rest of the usual spending, by the average of the last statements.
+        var cardEstimated = false
+        let known = card.reduce(0) { $0 + $1.amount }
+        let average = money.averageCardVariable()
+        if average > known, monthEnd > now || card.isEmpty {
+            card.append(.init(title: "עוד צפוי לפי ממוצע החודשים הקודמים", amount: average - known))
+            cardEstimated = true
         }
+        // A fixed expense paid by card that isn't linked to its charge would count twice — point it out.
+        let fixedAmounts = spending.map(\.amount).filter { $0 >= 20 }
+        let suspects = bought.filter { t in t.isVariable && fixedAmounts.contains { abs($0 - t.myAmount) < 1 } }
+        let fixedInCardSuspects = Array(Set(suspects.map(\.merchant))).sorted()
         // Installments: only this month's payment counts, never the whole purchase.
         let allPlans = money.installmentPlans
         let plans = Dictionary(allPlans.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -248,6 +255,9 @@ extension Store {
             oneOffs: oneOffs,
             card: card,
             cardEstimated: cardEstimated,
+            fixedInCardSuspects: fixedInCardSuspects,
+            periodStart: monthStart,
+            periodEnd: monthEnd,
             installments: installments,
             laterInstallmentPurchases: laterPurchases,
             installmentsAfterThisMonth: installmentsAfter,

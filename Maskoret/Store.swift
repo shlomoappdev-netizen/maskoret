@@ -87,6 +87,7 @@ final class Store: ObservableObject {
     init() {
         let family = Store.loadFamily()
         let primary = family.primaryID
+        var migrated = false
         func url(_ id: UUID) -> URL {
             id == primary ? Store.fileURL : Store.membersFolder.appendingPathComponent(id.uuidString + ".json")
         }
@@ -106,6 +107,7 @@ final class Store: ObservableObject {
             ratesURL = (file.ratesURL == Store.legacyRatesURL ? nil : file.ratesURL) ?? Store.defaultRatesURL
             lastRatesCheck = file.lastRatesCheck
             money = file.money ?? MoneyData()
+            migrated = money.adoptSavingsTransfers(from: &budget)
             MoneyCalc.prime = money.primeRate
         } else {
             budget = .starter
@@ -122,6 +124,7 @@ final class Store: ObservableObject {
         viewMemberIDs = view.isEmpty ? [activeID] : view
         viewMemberIDs.insert(activeID)
         if !FileManager.default.fileExists(atPath: Store.familyURL.path) { saveFamily() }
+        if migrated { save() }
     }
 
     func save() {
@@ -145,6 +148,7 @@ final class Store: ObservableObject {
         ratesURL = file.ratesURL ?? Store.defaultRatesURL
         lastRatesCheck = file.lastRatesCheck
         money = file.money ?? MoneyData()
+        _ = money.adoptSavingsTransfers(from: &budget)
     }
 
     var currentFile: SaveFile {
@@ -328,13 +332,8 @@ final class Store: ObservableObject {
         let key = year * 100 + month
         money.transactions.removeAll { $0.salaryKey == key }
         if addToChecking, let net = actualNet, net > 0, let checking = money.checking {
-            var parts = DateComponents()
-            parts.year = year
-            parts.month = month
-            parts.day = 1
-            let monthStart = Calendar.current.date(from: parts) ?? Date()
-            let monthEnd = Calendar.current.date(byAdding: DateComponents(month: 1, day: -1), to: monthStart) ?? Date()
-            let date = min(Date(), monthEnd)
+            // It came in on that month's pay day (or today, if that's still ahead).
+            let date = min(Date(), money.periodStart(year: year, month: month))
             money.transactions.append(MoneyTransaction(
                 date: date,
                 title: "משכורת " + Fmt.monthNames[month - 1],
@@ -349,13 +348,13 @@ final class Store: ObservableObject {
     // MARK: Money
 
     func value(of account: Account, on date: Date = Date()) -> Double {
-        MoneyCalc.value(of: account, on: date, transactions: money.transactions)
+        money.balance(of: account, on: date)
     }
 
     /// Totals of the members in view (one member, or the family together).
     private func total(_ kinds: [AccountKind], in m: MoneyData) -> Double {
         m.accounts.filter { kinds.contains($0.kind) }
-            .reduce(0) { $0 + MoneyCalc.value(of: $1, on: Date(), transactions: m.transactions) }
+            .reduce(0) { $0 + m.balance(of: $1) }
     }
 
     var checkingNow: Double { total([.checking], in: dashboard.money) }
