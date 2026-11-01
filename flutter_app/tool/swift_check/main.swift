@@ -92,6 +92,18 @@ for (id, file) in family.files {
     ]
     files[id] = [
         "maaser": maaser,
+        "tracked": budget.trackedItems.map { t -> [String: Any] in
+            ["monthly": t.monthlyCost, "life": t.averageLifespan ?? -1, "price": t.averagePrice, "total": t.totalSpent,
+             "measured": t.isLifespanMeasured, "age": t.ageMonths ?? -1, "wear": t.wear ?? -1,
+             "nextDays": (t.nextReplacement?.timeIntervalSinceReferenceDate ?? 0) / 86400,
+             "lasted": t.sortedPurchases.map { t.lasted($0) ?? -1 }]
+        },
+        "trends": money.trends.map { t -> [String: Any] in
+            let s = money.stats(of: t, now: now)
+            return ["total": s.total, "count": s.count, "this": s.thisMonth, "last": s.lastMonth, "avg": s.monthlyAverage,
+                    "keys": s.months.map { $0.key }, "amounts": s.months.map { $0.amount },
+                    "items": money.items(of: t).map { $0.amount }.sorted()]
+        },
         "owed": ["total": money.totalOwedToMe, "each": money.receivables.map { money.outstanding($0) },
                  "returned": money.receivables.map { money.returned($0) }, "expected": money.receivables.map { $0.expected },
                  "debtors": money.debtors.map { $0.amount },
@@ -106,7 +118,7 @@ for (id, file) in family.files {
         "incomes": budget.incomes.count, "history": history.count,
         "accounts": money.accounts.map { MoneyCalc.value(of: $0, on: now, transactions: money.transactions) },
         "transactions": money.transactions.count, "cardTransactions": money.cardTransactions.count,
-        "trends": money.trends.count, "receivables": money.receivables.count,
+        "trendCount": money.trends.count, "receivables": money.receivables.count,
     ]
 }
 out["files"] = files

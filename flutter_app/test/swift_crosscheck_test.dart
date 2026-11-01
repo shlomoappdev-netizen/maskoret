@@ -11,6 +11,7 @@ import 'package:maskoret/data/family.dart';
 import 'package:maskoret/data/forecast.dart';
 import 'package:maskoret/data/maaser.dart';
 import 'package:maskoret/data/receivables.dart';
+import 'package:maskoret/data/trends.dart';
 import 'package:maskoret/data/json.dart';
 import 'package:maskoret/data/max_import.dart';
 import 'package:maskoret/data/models.dart';
@@ -87,6 +88,26 @@ void main() {
       };
       final ms = MaaserCalc.status(f, now: now);
       files[m.id] = {
+        'tracked': [
+          for (final t in b.trackedItems)
+            {
+              'monthly': t.monthlyCost, 'life': t.averageLifespan ?? -1, 'price': t.averagePrice, 'total': t.totalSpent,
+              'measured': t.isLifespanMeasured, 'age': t.ageMonths() ?? -1, 'wear': t.wear() ?? -1,
+              'nextDays': t.nextReplacement == null ? 0 : dateTimeToSwift(t.nextReplacement!) / 86400,
+              'lasted': [for (final p in t.sortedPurchases) t.lasted(p) ?? -1],
+            },
+        ],
+        'trends': [
+          for (final t in JObj(money.raw).objects('trends').map(Trend.new))
+            () {
+              final st = TrendCalc.stats(money, t, now: now);
+              return {
+                'total': st.total, 'count': st.count, 'this': st.thisMonth, 'last': st.lastMonth, 'avg': st.monthlyAverage,
+                'keys': [for (final x in st.months) x.key], 'amounts': [for (final x in st.months) x.amount],
+                'items': [for (final x in TrendCalc.items(money, t)) x.amount]..sort(),
+              };
+            }(),
+        ],
         'owed': {
           'total': cards.totalOwedToMe(money.transactions),
           'each': [for (final r in cards.receivables) cards.outstanding(r, money.transactions)],
@@ -159,7 +180,7 @@ void main() {
       for (final k in (d[id] as Map).keys) {
         final dv = d[id][k];
         final sv = s[id][k];
-        if (k == 'card' || k == 'forecast' || k == 'maaser' || k == 'owed') {
+        if (const {'card', 'forecast', 'maaser', 'owed', 'tracked', 'trends'}.contains(k)) {
           deepClose(dv, sv, 'card');
         } else if (k == 'months') {
           final sm = sv as List;
@@ -252,7 +273,7 @@ void main() {
     final s = swift(doc, now)['files'][family.state.activeID] as Map;
     expect(s['transactions'], m.transactions.length);
     expect(s['cardTransactions'], 38, reason: 'card data must survive');
-    expect(s['trends'], 3);
+    expect(s['trendCount'], 3);
     expect(s['receivables'], 1);
     expect(s['history'], 2);
     compare(doc);
@@ -429,6 +450,55 @@ void main() {
     expect(mine['cards'], CardData(primary.money).cardTransactions.length, reason: 'the shared charge counts once');
     expect((mine['history'] as List).contains(-1), isTrue, reason: 'a month only one member recorded is not actual');
     deepClose(mine, s, 'combined');
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
+  test('tracked items and trends: Swift calculates the same (lifespan, wear, shares, months, average)', () {
+    final doc = loadFixture();
+    final family = FamilyBackup(doc);
+    final file = family.fileForEditing(family.state.activeID);
+    final now = DateTime.now();
+    final b = file.budget;
+    final none = TrackedItem.create(name: 'בלי קניות', emoji: '👟', expectedMonths: 12);
+    final one = TrackedItem.create(name: 'קנייה אחת', expectedMonths: 6.5);
+    final many = TrackedItem.create(name: '', emoji: '📱');
+    final off = TrackedItem.create(name: 'מחוץ ליתרה', expectedMonths: 3)..['includeInBudget'] = false;
+    for (final t in [none, one, many, off]) {
+      b.upsertTracked(t);
+    }
+    expect(TrackedItem(many).name, 'פריט');
+    b.addPurchase(one['id'] as String, Purchase.create(date: addMonths(now, -2), price: 349.9, note: 'חנות'));
+    b.addPurchase(off['id'] as String, Purchase.create(date: addMonths(now, -9), price: 120));
+    for (final (back, price) in [(30, 2000.0), (3, 4150.5), (17, 2600.0)]) {
+      b.addPurchase(many['id'] as String, Purchase.create(date: addMonths(now, -back), price: price));
+    }
+    final extra = Purchase.create(date: now, price: 1);
+    b.addPurchase(one['id'] as String, extra);
+    b.deletePurchase(one['id'] as String, extra['id'] as String);
+
+    final actions = TrendActions(file);
+    final trend = Trend.create(name: 'דייטים', emoji: '💕', monthlyLimit: 500);
+    actions.upsert(trend);
+    final id = trend['id'] as String;
+    final cards = CardData(file.money).cardTransactions;
+    actions.toggleCard(cards[0].id, id);
+    actions.toggleCard(cards[1].id, id);
+    actions.toggleCard(cards[2].id, id);
+    actions.toggleCard(cards[2].id, id); // on and off again
+    actions.setShare(cards[1].amount / 3, cards[1].id, id);
+    final checking = file.money.ensureChecking();
+    final spent = MoneyTransaction.create(accountID: checking.id)..['title'] = 'מסעדה'..['amount'] = 240.5..['date'] = dateTimeToSwift(addMonths(now, -1));
+    final back = MoneyTransaction.create(kind: TransactionKind.income, accountID: checking.id)..['title'] = 'החזר'..['amount'] = 40..['date'] = dateTimeToSwift(now);
+    file.money.upsertTransaction(spent);
+    file.money.upsertTransaction(back);
+    actions.toggleTransaction(spent['id'] as String, id);
+    actions.toggleTransaction(back['id'] as String, id);
+    actions.addEntry(id, date: addMonths(now, -8), amount: 75, note: 'מזומן');
+    actions.addEntry(id, date: now, amount: 33.3);
+    final st = TrendCalc.stats(file.money, Trend(trend));
+    expect(st.count, 6);
+    expect(st.months.length, 6);
+    expect(TrendCalc.items(file.money, Trend(trend)).where((i) => i.fullAmount != null).length, 1);
+    compare(doc);
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 
   test('a new household made by this app is read by Swift', () {

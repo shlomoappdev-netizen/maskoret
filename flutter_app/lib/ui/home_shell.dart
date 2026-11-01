@@ -16,6 +16,8 @@ import 'summary_screen.dart';
 import 'support_screen.dart';
 import 'tax_settings_screen.dart';
 import 'theme.dart';
+import 'tracked_screen.dart';
+import 'trends_screen.dart';
 import 'updates_screen.dart';
 import '../data/fmt.dart';
 import '../data/models.dart';
@@ -37,6 +39,8 @@ enum Dest {
   history('חודשים', Icons.calendar_month),
   maaser('מעשרות', Icons.volunteer_activism_outlined),
   owed('חייבים לי', Icons.assignment_return_outlined),
+  tracked('מעקב רכישות', Icons.shopping_bag_outlined),
+  trends('מגמות', Icons.sell_outlined),
   family('בני משפחה', Icons.groups_outlined),
   tax('נתוני מס', Icons.percent),
   account('חשבון ומשק בית', Icons.account_circle_outlined, ownScaffold: true),
@@ -66,6 +70,8 @@ enum Dest {
         history => const HistoryScreen(),
         maaser => const MaaserScreen(),
         owed => const ReceivablesScreen(),
+        tracked => const TrackedScreen(),
+        trends => const TrendsScreen(),
         family => const FamilyScreen(),
         tax => const TaxSettingsScreen(),
         account => const HouseholdsScreen(),
@@ -78,6 +84,7 @@ enum Dest {
   static List<(String, List<Dest>)> sections() => [
         ('החודש', [summary, incomes, deductions, expenses]),
         ('הכסף שלי', [accounts, card, transactions, forecast, history, maaser, owed]),
+        ('מעקב', [tracked, trends]),
         ('הגדרות', [family, tax, account, support, versions, if (Updater.supported) updates]),
       ];
 

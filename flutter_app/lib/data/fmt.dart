@@ -22,6 +22,21 @@ class Fmt {
 
   static String percent(double value) => '${number(value)}%';
 
+  /// A length of time in Hebrew, like `Fmt.duration` in Swift.
+  static String duration(double months) {
+    if (months < 1) {
+      final days = (months * 30.4375).round();
+      return days == 1 ? 'יום אחד' : '$days ימים';
+    }
+    if (months < 24) {
+      final m = (months * 10).round() / 10;
+      return m == 1 ? 'חודש אחד' : '${number(m)} חודשים';
+    }
+    return '${number((months / 12 * 10).round() / 10)} שנים';
+  }
+
+  static String compact(double value) => NumberFormat.compact(locale: 'he').format(value);
+
   static String date(DateTime d) => DateFormat('d בMMM y', 'he').format(d);
 
   static String monthTitle(int year, int month) => '${monthNames[(month.clamp(1, 12)) - 1]} $year';

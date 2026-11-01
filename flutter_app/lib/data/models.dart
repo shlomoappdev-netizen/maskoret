@@ -225,30 +225,72 @@ class TaxSettings {
 class Purchase {
   Purchase(this.json);
   final Json json;
-  DateTime get date => JObj(json).date('date') ?? DateTime.now();
-  double get price => JObj(json).d('price');
+  JObj get _o => JObj(json);
+  String get id => _o.s('id');
+  DateTime get date => _o.date('date') ?? DateTime.now();
+  double get price => _o.d('price');
+  String get note => _o.s('note');
+
+  static Json create({DateTime? date, double price = 0, String note = ''}) =>
+      {'id': newId(), 'date': dateTimeToSwift(date ?? DateTime.now()), 'price': jsonNumber(price), 'note': note};
 }
 
-/// Something bought again every so often (shoes, a phone…). Only read here, for the monthly total.
+/// Something bought again every so often (shoes, a phone…) — port of `TrackedItem` in Models.swift.
 class TrackedItem {
   TrackedItem(this.json);
   final Json json;
   JObj get _o => JObj(json);
 
+  String get id => _o.s('id');
+  String get name => _o.s('name');
+  String get emoji => _o.s('emoji', '📦');
   bool get includeInBudget => _o.b('includeInBudget', true);
   double get expectedMonths => _o.d('expectedMonths');
   List<Purchase> get purchases => _o.objects('purchases').map(Purchase.new).toList();
 
+  static Json create({String name = '', String emoji = '📦', double expectedMonths = 0}) => {
+        'id': newId(),
+        'name': name,
+        'emoji': emoji,
+        'expectedMonths': jsonNumber(expectedMonths),
+        'includeInBudget': true,
+        'purchases': <dynamic>[],
+      };
+
+  static const presets = [
+    ('👟', 'נעליים', 12.0),
+    ('👕', 'בגדים', 6.0),
+    ('📱', 'טלפון', 30.0),
+    ('💻', 'מחשב', 48.0),
+    ('👓', 'משקפיים / עדשות', 24.0),
+    ('💈', 'תספורת', 1.0),
+    ('🔧', 'טיפול לרכב', 12.0),
+    ('🛞', 'צמיגים', 36.0),
+    ('🦷', 'רופא שיניים', 6.0),
+    ('🛏️', 'מזרן', 84.0),
+    ('🎧', 'אוזניות', 24.0),
+    ('📄', 'ביטוח שנתי', 12.0),
+  ];
+
   static double monthsBetween(DateTime a, DateTime b) =>
       b.difference(a).inMicroseconds / 1e6 / 86400 / 30.4375;
 
+  List<Purchase> get sortedPurchases => purchases..sort((a, b) => a.date.compareTo(b.date));
+
+  /// Months between each purchase and the next one.
+  List<double> get measuredIntervals {
+    final s = sortedPurchases;
+    return [
+      for (var i = 1; i < s.length; i++)
+        if (monthsBetween(s[i - 1].date, s[i].date) > 0) monthsBetween(s[i - 1].date, s[i].date)
+    ];
+  }
+
+  bool get isLifespanMeasured => measuredIntervals.isNotEmpty;
+
+  /// Average months an item lasts (measured, or the estimate entered).
   double? get averageLifespan {
-    final s = purchases..sort((a, b) => a.date.compareTo(b.date));
-    final intervals = <double>[];
-    for (var i = 1; i < s.length; i++) {
-      final m = monthsBetween(s[i - 1].date, s[i].date);
-      if (m > 0) intervals.add(m);
-    }
+    final intervals = measuredIntervals;
     if (intervals.isNotEmpty) return intervals.reduce((a, b) => a + b) / intervals.length;
     return expectedMonths > 0 ? expectedMonths : null;
   }
@@ -259,10 +301,42 @@ class TrackedItem {
     return p.fold(0.0, (a, b) => a + b.price) / p.length;
   }
 
+  double get totalSpent => purchases.fold(0.0, (a, b) => a + b.price);
+  Purchase? get lastPurchase => sortedPurchases.lastOrNull;
+
+  /// What this item really costs per month.
   double get monthlyCost {
     final life = averageLifespan;
     if (life == null || life <= 0) return 0;
     return averagePrice / life;
+  }
+
+  double? ageMonths([DateTime? now]) {
+    final last = lastPurchase;
+    if (last == null) return null;
+    final m = monthsBetween(last.date, now ?? DateTime.now());
+    return m > 0 ? m : 0;
+  }
+
+  /// 0 = brand new, 1 = reached the average lifespan.
+  double? wear([DateTime? now]) {
+    final age = ageMonths(now), life = averageLifespan;
+    if (age == null || life == null || life <= 0) return null;
+    return age / life;
+  }
+
+  DateTime? get nextReplacement {
+    final last = lastPurchase, life = averageLifespan;
+    if (last == null || life == null) return null;
+    return last.date.add(Duration(microseconds: (life * 30.4375 * 86400 * 1e6).round()));
+  }
+
+  /// How long a purchase lasted (until the next one), null for the current one.
+  double? lasted(Purchase p) {
+    final s = sortedPurchases;
+    final i = s.indexWhere((x) => x.id == p.id);
+    if (i < 0 || i + 1 >= s.length) return null;
+    return monthsBetween(s[i].date, s[i + 1].date);
   }
 }
 
@@ -283,6 +357,32 @@ class Budget {
   void upsertDeduction(Json item) => _o.upsertById('deductions', item);
   void removeDeduction(String id) => _o.removeWhere('deductions', (e) => e['id'] == id);
   void upsertExpense(Json item) => _o.upsertById('expenses', item);
+
+  /// Store.upsertTracked / addPurchase / deletePurchase.
+  void upsertTracked(Json item) {
+    if ((item['name'] as String? ?? '').trim().isEmpty) item['name'] = 'פריט';
+    _o.upsertById('trackedItems', item);
+  }
+
+  void removeTracked(String id) => _o.removeWhere('trackedItems', (t) => t['id'] == id);
+
+  void moveTracked(String id, int by) {
+    final list = _o.writeList('trackedItems');
+    final i = list.indexWhere((t) => t is Map && t['id'] == id);
+    final to = i + by;
+    if (i < 0 || to < 0 || to >= list.length) return;
+    list.insert(to, list.removeAt(i));
+  }
+
+  void addPurchase(String itemID, Json purchase) {
+    final item = _o.objects('trackedItems').where((t) => t['id'] == itemID).firstOrNull;
+    if (item != null) JObj(item).upsertById('purchases', purchase);
+  }
+
+  void deletePurchase(String itemID, String purchaseID) {
+    final item = _o.objects('trackedItems').where((t) => t['id'] == itemID).firstOrNull;
+    if (item != null) JObj(item).removeWhere('purchases', (p) => p['id'] == purchaseID);
+  }
   void removeExpense(String id) => _o.removeWhere('expenses', (e) => e['id'] == id);
 
   bool hasAuto(AutoDeduction type) => deductions.any((d) => d.auto == type);

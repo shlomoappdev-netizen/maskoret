@@ -565,6 +565,7 @@ class CardActions {
     final ids = JObj(trend).writeList('cardIDs');
     if (ids.contains(txID)) {
       ids.remove(txID);
+      (trend['shares'] as Map?)?.remove(txID);
     } else {
       ids.add(txID);
     }
