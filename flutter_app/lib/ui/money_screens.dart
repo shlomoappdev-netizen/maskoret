@@ -88,7 +88,8 @@ class AccountDetail extends StatelessWidget {
       final calc = MoneyCalc(money.primeRate);
       final now = DateTime.now();
       final balances = a.balances..sort((x, y) => y.date.compareTo(x.date));
-      final related = money.transactions.where((t) => t.accountID == a.id || t.toAccountID == a.id).toList()
+      // Only what moves this account's balance: not a card purchase, nor an older income that still carries a stale target.
+      final related = money.transactions.where((t) => t.effectOn(a.id) != 0).toList()
         ..sort((x, y) => y.date.compareTo(x.date));
       return Scaffold(
         appBar: AppBar(title: Text(a.name), actions: [
