@@ -65,3 +65,24 @@ Filename: "{app}\maskoret.exe"; Description: "פתח את מחשבון שכר"; 
 [UninstallRun]
 ; CloseApplications covers Setup only. Asks the app to close, gives it time to save, then ends it if it's still open.
 Filename: "{cmd}"; Parameters: "/c taskkill /IM maskoret.exe & ping -n 3 127.0.0.1 > nul & taskkill /F /IM maskoret.exe"; Flags: runhidden; RunOnceId: "CloseApp"
+
+[Code]
+// The app's own folder (getApplicationSupportDirectory): the sign-in, the encrypted copy of the data and the log.
+// Uninstalling asks whether to remove it too (yes by default); a silent uninstall removes it. Updates never get here.
+var
+  DeleteUserData: Boolean;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+    DeleteUserData := UninstallSilent or
+      (SuppressibleMsgBox('למחוק גם את הנתונים וההתחברות מהמחשב הזה?' + #13#10#13#10 +
+        'הנתונים שלך שמורים בשרת, ואחרי התקנה מחדש הם יחזרו כשתתחבר.',
+        mbConfirmation, MB_YESNO or MB_DEFBUTTON1, IDYES) = IDYES);
+  // After [UninstallRun] has closed the app, so no file is still open.
+  if (CurUninstallStep = usPostUninstall) and DeleteUserData then
+  begin
+    DelTree(ExpandConstant('{userappdata}\com.shlomodavid\maskoret'), True, True, True);
+    RemoveDir(ExpandConstant('{userappdata}\com.shlomodavid'));
+  end;
+end;
