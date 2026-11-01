@@ -595,5 +595,5 @@ void main() {
     CardActions(file).linkToExpense(CardData(file.money).cardTransactions.firstWhere((t) => t.merchant == 'חברת החשמל').id,
         file.budget.expenses.first.id);
     compare(doc);
-  }, skip: canRun ? false : 'needs swiftc (macOS)');
+  }, skip: !canRun ? 'needs swiftc (macOS)' : !File('test/fixtures/max_sample.xlsx').existsSync() ? 'needs test/fixtures/max_sample.xlsx (not in git)' : false);
 }

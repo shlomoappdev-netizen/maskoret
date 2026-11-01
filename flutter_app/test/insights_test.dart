@@ -126,6 +126,8 @@ void main() {
 
     tearDown(() async {
       await server.close(force: true);
+      // Windows can't delete a file that is still being written.
+      await ai.flush();
       dir.deleteSync(recursive: true);
     });
 
