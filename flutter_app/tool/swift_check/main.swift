@@ -24,6 +24,38 @@ if CommandLine.arguments[1] == "max" {
     exit(0)
 }
 
+// "adopt <household.json>": what moving "transfer to savings" expenses does (the first member).
+if CommandLine.arguments[1] == "adopt" {
+    let family = try JSONDecoder().decode(FamilyBackup.self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2])))
+    var out: [String: Any] = [:]
+    for (id, f) in family.files {
+        var money = f.money ?? MoneyData()
+        var budget = f.budget
+        MoneyCalc.prime = money.primeRate
+        let changed = money.adoptSavingsTransfers(from: &budget)
+        out[id] = ["changed": changed, "expenses": budget.expenses.map { $0.id.uuidString },
+                   "contributions": money.accounts.map { $0.monthlyContribution }, "days": money.accounts.map { $0.contributionDay }]
+    }
+    print(String(data: try JSONSerialization.data(withJSONObject: out, options: [.sortedKeys]), encoding: .utf8)!)
+    exit(0)
+}
+
+// "parse <file.json>": InsightSegment.parse on a list of answers.
+if CommandLine.arguments[1] == "parse" {
+    let samples = try JSONDecoder().decode([String].self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2])))
+    let parsed: [[[String: Any]]] = samples.map { s in
+        InsightSegment.parse(s).map { seg -> [String: Any] in
+            switch seg {
+            case .text(let t): return ["k": "text", "v": t]
+            case .broken(let t): return ["k": "broken", "v": t]
+            case .chart(let c): return ["k": "chart", "type": c.type, "title": c.title ?? "", "labels": c.data.map(\.label), "values": c.data.map(\.value)]
+            }
+        }
+    }
+    print(String(data: try JSONSerialization.data(withJSONObject: parsed, options: [.sortedKeys]), encoding: .utf8)!)
+    exit(0)
+}
+
 let path = CommandLine.arguments[1]
 let data = try Data(contentsOf: URL(fileURLWithPath: path))
 let family = try JSONDecoder().decode(FamilyBackup.self, from: data)
@@ -53,7 +85,10 @@ for (id, file) in family.files {
         months.append(["key": y * 100 + m, "remaining": p.remaining, "net": p.net, "spending": p.spendingTotal,
                        "periodic": p.periodic, "toSavings": p.toSavingsTotal, "card": p.cardTotal,
                        "installments": p.installmentsTotal, "oneOffs": p.oneOffTotal,
-                       "installmentsAfter": p.installmentsAfterThisMonth, "cardEstimated": p.cardEstimated])
+                       "installmentsAfter": p.installmentsAfterThisMonth, "cardEstimated": p.cardEstimated,
+                       "suspects": p.fixedInCardSuspects, "cardLines": p.card.map { $0.amount },
+                       "startDays": (p.periodStart?.timeIntervalSinceReferenceDate ?? 0) / 86400,
+                       "endDays": (p.periodEnd?.timeIntervalSinceReferenceDate ?? 0) / 86400])
     }
     for r in history {
         let p = monthPicture(year: r.year, month: r.month, budget: r.budget)
@@ -117,6 +152,9 @@ for (id, file) in family.files {
         "deductions": budget.deductions.map { budget.deductionAmount($0) },
         "incomes": budget.incomes.count, "history": history.count,
         "accounts": money.accounts.map { MoneyCalc.value(of: $0, on: now, transactions: money.transactions) },
+        "balances": money.accounts.map { money.balance(of: $0, on: now) },
+        "periodNow": [money.period(containing: now).year, money.period(containing: now).month],
+        "payDay": money.payDay,
         "transactions": money.transactions.count, "cardTransactions": money.cardTransactions.count,
         "trendCount": money.trends.count, "receivables": money.receivables.count,
     ]
@@ -146,7 +184,7 @@ if family.state.members.count > 1, let base = family.files[family.state.activeID
     }
     out["combined"] = [
         "net": c.budget.net, "totalExpenses": c.budget.totalExpenses, "periodicTotal": c.budget.periodicTotal,
-        "accounts": c.money.accounts.map { MoneyCalc.value(of: $0, on: now, transactions: c.money.transactions) },
+        "accounts": c.money.accounts.map { c.money.balance(of: $0, on: now) },
         "cards": c.money.cardTransactions.count, "owed": c.money.totalOwedToMe,
         "history": c.history.sorted { $0.sortKey < $1.sortKey }.map { $0.actualNet ?? -1 },
         "expectedNet": MoneyCalc.expectedNet(budget: c.budget, history: c.history, settings: c.money.forecast).amount,

@@ -51,7 +51,7 @@ class AccountsScreen extends StatelessWidget {
                       leading: Icon(accountIcon(a.kind)),
                       title: Text(a.name),
                       subtitle: Text(_subtitle(a, calc, now)),
-                      trailing: Text(Fmt.money(calc.value(a, now, tx)), textDirection: TextDirection.rtl,
+                      trailing: Text(Fmt.money(money.balance(a, now)), textDirection: TextDirection.rtl,
                           style: Theme.of(context).textTheme.titleMedium),
                       onTap: () => Navigator.push(context, glassRoute((_) => AccountDetail(accountId: a.id))),
                     ),
@@ -101,7 +101,7 @@ class AccountDetail extends StatelessWidget {
         ),
         body: PageList(children: [
           SectionCard(title: 'יתרה משוערת היום', children: [
-            AmountRow(a.kind.title, calc.value(a, now, money.transactions), bold: true),
+            AmountRow(a.kind.title, money.balance(a, now), bold: true),
             if (a.kind.hasInterest || a.kind == AccountKind.pension)
               ListTile(
                 dense: true,

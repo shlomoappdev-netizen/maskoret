@@ -11,6 +11,7 @@ import 'maaser_screen.dart';
 import 'receivables_screen.dart';
 import 'common.dart';
 import 'households_screen.dart';
+import 'insights_screen.dart';
 import 'money_screens.dart';
 import 'summary_screen.dart';
 import 'support_screen.dart';
@@ -32,7 +33,7 @@ enum Dest {
   incomes('הכנסות', Icons.payments_outlined),
   deductions('ניכויים', Icons.account_balance_outlined),
   expenses('הוצאות קבועות', Icons.shopping_cart_outlined),
-  accounts('חשבונות וחיסכון', Icons.savings_outlined),
+  accounts('חיסכון וחשבונות', Icons.savings_outlined),
   card('כרטיס אשראי', Icons.credit_card),
   transactions('תנועות', Icons.swap_horiz),
   forecast('תחזית', Icons.show_chart),
@@ -41,6 +42,7 @@ enum Dest {
   owed('חייבים לי', Icons.assignment_return_outlined),
   tracked('מעקב רכישות', Icons.shopping_bag_outlined),
   trends('מגמות', Icons.sell_outlined),
+  insights('תובנות AI', Icons.auto_awesome_outlined),
   family('בני משפחה', Icons.groups_outlined),
   tax('נתוני מס', Icons.percent),
   account('חשבון ומשק בית', Icons.account_circle_outlined, ownScaffold: true),
@@ -72,6 +74,7 @@ enum Dest {
         owed => const ReceivablesScreen(),
         tracked => const TrackedScreen(),
         trends => const TrendsScreen(),
+        insights => const InsightsScreen(),
         family => const FamilyScreen(),
         tax => const TaxSettingsScreen(),
         account => const HouseholdsScreen(),
@@ -80,11 +83,13 @@ enum Dest {
         updates => const UpdatesScreen(),
       };
 
-  /// The sidebar sections (החודש / הכסף שלי / מעקב / הגדרות).
+  /// The sidebar sections, like the Mac (הכנסות / הוצאות / חיסכון / תכנון / הגדרות).
   static List<(String, List<Dest>)> sections() => [
-        ('החודש', [summary, incomes, deductions, expenses]),
-        ('הכסף שלי', [accounts, card, transactions, forecast, history, maaser, owed]),
-        ('מעקב', [tracked, trends]),
+        ('', [summary]),
+        ('הכנסות', [incomes, deductions]),
+        ('הוצאות', [expenses, card, transactions, tracked]),
+        ('חיסכון', [accounts]),
+        ('תכנון', [forecast, history, maaser, owed, trends, insights]),
         ('הגדרות', [family, tax, account, support, versions, if (Updater.supported) updates]),
       ];
 
@@ -285,7 +290,7 @@ class _SyncIcon extends StatelessWidget {
   }
 }
 
-/// "עו״ש עכשיו" and "נשאר בסוף החודש" — the numbers at the bottom of the Mac sidebar.
+/// "עו״ש עכשיו" and "נשאר מההכנסה האחרונה" — the numbers at the bottom of the Mac sidebar.
 class MonthNumbers extends StatelessWidget {
   const MonthNumbers({super.key});
 
@@ -297,8 +302,7 @@ class MonthNumbers extends StatelessWidget {
     final d = store.dashboard;
     final money = d.money;
     final checking = MoneyCalc(money.primeRate).total(money, {AccountKind.checking});
-    final now = DateTime.now();
-    final remaining = MonthPicture.of(d, now.year, now.month).remaining;
+    final remaining = MonthPicture.current(d).remaining;
     Widget number(String label, double value, {Color? color}) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -313,7 +317,7 @@ class MonthNumbers extends StatelessWidget {
       child: Row(children: [
         Expanded(child: number('עו״ש עכשיו', checking)),
         Expanded(
-          child: number('נשאר בסוף החודש', remaining,
+          child: number('נשאר מההכנסה האחרונה', remaining,
               color: remaining >= 0 ? AppColors.positive(context) : AppColors.negative(context)),
         ),
       ]),
@@ -343,10 +347,11 @@ class Sidebar extends StatelessWidget {
       Expanded(
         child: ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
           for (final (title, items) in Dest.sections()) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-              child: Text(title, style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.primary)),
-            ),
+            if (title.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                child: Text(title, style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.primary)),
+              ),
             for (final d in items)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),

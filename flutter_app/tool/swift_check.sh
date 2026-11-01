@@ -26,7 +26,9 @@ done
   awk '/^struct MonthPicture \{/,/^\}/' $src/Sync.swift
   awk '/^    func monthPicture\(year: Int, month: Int, budget override: Budget\? = nil\) -> MonthPicture \{/,/^    \}$/' $src/Sync.swift
 } > $build/MonthPicture.swift
-sources=($here/swift_check/main.swift $build/Fmt.swift $build/SaveFile.swift $build/FamilyTypes.swift $build/MonthPicture.swift $models)
+# How an AI answer is split into text and charts (Insights.swift).
+{ echo 'import Foundation'; awk '/^struct ChartSpec: Codable/,/^\}/' $src/Insights.swift; awk '/^enum InsightSegment: Identifiable/,/^\}/' $src/Insights.swift; } > $build/InsightParts.swift
+sources=($here/swift_check/main.swift $build/InsightParts.swift $build/Fmt.swift $build/SaveFile.swift $build/FamilyTypes.swift $build/MonthPicture.swift $models)
 # Compiled once per version of the sources (tests run in parallel and share it).
 hash=$(cat $sources | shasum | cut -c1-16)
 bin=$cache/check-$hash

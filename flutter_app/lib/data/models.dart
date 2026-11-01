@@ -647,6 +647,10 @@ class MoneyData {
   List<Account> get accounts => _o.objects('accounts').map(Account.new).toList();
   List<MoneyTransaction> get transactions => _o.objects('transactions').map(MoneyTransaction.new).toList();
   double get primeRate => _o.d('primeRate', 4.75);
+
+  /// The day of the month the salary comes in: "what's left" starts over on this day.
+  int get payDay => _o.i('payDay', 1);
+  set payDay(int v) => _o.set('payDay', v);
   bool get primeAuto => _o.b('primeAuto', true);
   int get cardTransactionCount => (_o.raw('cardTransactions') as List?)?.length ?? 0;
 

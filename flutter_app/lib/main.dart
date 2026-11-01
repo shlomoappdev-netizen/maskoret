@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/rates_update.dart';
+import 'insights/engine.dart';
 import 'state/secure_file.dart';
 import 'state/store.dart';
 import 'sync/account.dart';
@@ -74,6 +75,9 @@ Future<void> main() async {
   } else {
     announcements.start();
   }
+  final insights = InsightsEngine(prefs, store.secure, SystemApiKeyStore());
+  await insights.load();
+  store.onWiped = insights.forgetConversation;
   runApp(MaskoretApp(
       store: store,
       account: account,
@@ -81,7 +85,8 @@ Future<void> main() async {
       prefs: prefs,
       updater: updater,
       support: supportCenter,
-      announcements: announcements));
+      announcements: announcements,
+      insights: insights));
 }
 
 Future<void> _checkRates(AppStore store) async {
@@ -112,7 +117,8 @@ class MaskoretApp extends StatefulWidget {
       required this.prefs,
       required this.updater,
       required this.support,
-      required this.announcements});
+      required this.announcements,
+      required this.insights});
   final AppStore store;
   final UserAccount account;
   final ServerSync sync;
@@ -120,6 +126,7 @@ class MaskoretApp extends StatefulWidget {
   final Updater updater;
   final SupportCenter support;
   final Announcements announcements;
+  final InsightsEngine insights;
 
   @override
   State<MaskoretApp> createState() => _MaskoretAppState();
@@ -194,6 +201,7 @@ class _MaskoretAppState extends State<MaskoretApp> {
       updater: widget.updater,
       support: widget.support,
       announcements: widget.announcements,
+      insights: widget.insights,
       child: MaterialApp(
         navigatorKey: _navigator,
         title: 'מחשבון שכר',

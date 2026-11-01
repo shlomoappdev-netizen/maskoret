@@ -11,7 +11,7 @@ import 'common.dart';
 import 'theme.dart';
 import 'summary_screen.dart';
 
-/// The saved months: the actual net against the estimate, and what was left at the end of each month —
+/// The saved months: the actual net against the estimate, and what was left of each month's income —
 /// port of HistoryView.swift.
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
@@ -104,7 +104,7 @@ class HistoryScreen extends StatelessWidget {
                   onTap: () => Navigator.push(context, glassRoute((_) => RecordDetailScreen(recordId: r.id))),
                 );
               }(),
-            const EmptyHint('״נשאר״ = מה שנשאר בעו״ש בסוף החודש — אותו חישוב כמו ״נשאר בסוף החודש״ בסיכום: הנטו (בפועל אם '
+            const EmptyHint('״נשאר״ = מה שנשאר מהמשכורת של אותו חודש עד המשכורת הבאה — אותו חישוב כמו ״נשאר מההכנסה האחרונה״ בסיכום: הנטו (בפועל אם '
                 'נרשם, אחרת משוער), פחות הוצאות קבועות, רכישות תקופתיות, חיובי אשראי משתנים והעברות לחיסכון, ועם תנועות '
                 'חד-פעמיות. לחיצה על חודש מציגה את הפירוט.'),
           ]),
@@ -146,7 +146,7 @@ class _HistoryChart extends StatelessWidget {
     }
     return Column(children: [
       Wrap(spacing: 12, children: [
-        for (final (label, color) in [('נטו', Colors.blue), ('נשאר בסוף החודש', Colors.green)])
+        for (final (label, color) in [('נטו', Colors.blue), ('נשאר מההכנסה', Colors.green)])
           Row(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 10, height: 10, color: color),
             const SizedBox(width: 4),
@@ -226,7 +226,7 @@ class RecordDetailScreen extends StatelessWidget {
         body: PageList(children: [
           if (record.note.isNotEmpty) SectionCard(title: 'הערה', children: [EmptyHint(record.note)]),
           SectionCard(
-            title: 'מה נשאר בסוף החודש',
+            title: 'מה נשאר מההכנסה',
             subtitle: 'אותו חישוב כמו בסיכום, עם ההכנסות, הניכויים וההוצאות הקבועות של החודש הזה, וחיובי האשראי והתנועות שלו.',
             children: monthBreakdown(context, pic),
           ),

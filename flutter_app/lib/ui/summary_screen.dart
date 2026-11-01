@@ -28,8 +28,8 @@ class SummaryScreen extends StatelessWidget {
       final money = d.money;
       final calc = MoneyCalc(money.primeRate);
       final now = DateTime.now();
-      // The same number as "נשאר בסוף החודש" in the iPhone/Mac app.
-      final pic = MonthPicture.of(d, now.year, now.month);
+      // The same number as "נשאר מההכנסה האחרונה" in the iPhone/Mac app.
+      final pic = MonthPicture.current(d);
       final members = store.members;
       final wide = isWide(context);
       final checking = calc.total(money, {AccountKind.checking});
@@ -123,14 +123,14 @@ class SummaryScreen extends StatelessWidget {
     }
     lines
       ..add('')
-      ..add('נשאר בסוף החודש: ${m(p.remaining)}')
+      ..add('נשאר מההכנסה האחרונה: ${m(p.remaining)}')
       ..add('עו״ש עכשיו (משוער): ${Fmt.money(checking)}')
       ..add('חיסכון ופיקדונות: ${Fmt.money(savings)}');
     return lines.join('\n');
   }
 }
 
-/// "נשאר לך בסוף החודש" on the teal → blue gradient (red when negative), with three small numbers under it.
+/// "נשאר לך מההכנסה האחרונה" on the teal → blue gradient (red when negative), with three small numbers under it.
 class _Hero extends StatelessWidget {
   const _Hero({required this.pic});
   final MonthPicture pic;
@@ -171,7 +171,7 @@ class _Hero extends StatelessWidget {
         ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('נשאר לך בסוף החודש',
+        Text('נשאר לך מההכנסה האחרונה',
             style: theme.textTheme.titleMedium?.copyWith(color: Colors.white.withValues(alpha: 0.85), fontWeight: FontWeight.w600)),
         const SizedBox(height: 10),
         FittedBox(
@@ -285,7 +285,7 @@ class _StatsGrid extends StatelessWidget {
     ];
     final maaser = funds.isEmpty ? null : (MaaserStatus()..balance = funds.fold(0.0, (s, x) => s + x.balance));
     final now = DateTime.now();
-    final daysLeft = DateTime(now.year, now.month + 1).difference(DateTime(now.year, now.month, now.day)).inDays.clamp(1, 31);
+    final daysLeft = pic.daysLeft;
     String pct(double v) => Fmt.percent((v * 1000).roundToDouble() / 10);
     final spent = pic.spendingTotal + pic.periodic + pic.cardWithInstallments;
     final diff = pic.net - pic.estimatedNet;
@@ -314,7 +314,7 @@ class _StatsGrid extends StatelessWidget {
   }
 }
 
-/// The lines of "מה נשאר בסוף החודש" (MonthBreakdown in SummaryView.swift) — the summary and the months screen.
+/// The lines of "מה נשאר מההכנסה" (MonthBreakdown in SummaryView.swift) — the summary and the months screen.
 List<Widget> monthBreakdown(BuildContext context, MonthPicture pic) {
   final error = Theme.of(context).colorScheme.error;
   return [
@@ -329,7 +329,7 @@ List<Widget> monthBreakdown(BuildContext context, MonthPicture pic) {
       for (final l in pic.toSavings) AmountRow(l.title, l.amount, negative: true),
     ],
     if (pic.card.isNotEmpty) ...[
-      _Header(pic.cardEstimated ? 'אשראי (הערכה — הפירוט של החודש עוד לא יובא)' : 'אשראי', pic.cardTotal),
+      _Header(pic.cardEstimated ? 'כרטיס אשראי — משתנות (כולל הערכה)' : 'כרטיס אשראי — משתנות', pic.cardTotal),
       for (final l in pic.card) AmountRow(l.title, l.amount, negative: true),
     ],
     if (pic.installments.isNotEmpty) ...[
@@ -340,8 +340,22 @@ List<Widget> monthBreakdown(BuildContext context, MonthPicture pic) {
       _Header('תנועות החודש', pic.oneOffTotal),
       for (final l in pic.oneOffs) AmountRow(l.title, l.amount.abs(), negative: l.amount < 0),
     ],
+    if (pic.fixedInCardSuspects.isNotEmpty)
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.warning_amber, size: 16, color: Colors.orange.shade700),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'ייתכן שנספר פעמיים: ${pic.fixedInCardSuspects.join(', ')} — הסכום דומה להוצאה קבועה. כדי שלא ייספר שוב, קשר את החיוב להוצאה במסך כרטיס אשראי.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orange.shade800),
+            ),
+          ),
+        ]),
+      ),
     const Divider(indent: 16, endIndent: 16),
-    AmountRow('נשאר', pic.remaining, bold: true, color: pic.remaining >= 0 ? null : error),
+    AmountRow('נשאר מההכנסה האחרונה', pic.remaining, bold: true, color: pic.remaining >= 0 ? null : error),
     if (pic.installmentsAfterThisMonth > 0)
       AmountRow('תשלומים שנשארו לחודשים הבאים', pic.installmentsAfterThisMonth, detail: 'לא יורד החודש — מוצג לידיעה'),
   ];
@@ -357,10 +371,10 @@ List<Widget> payslipBreakdown(BuildContext context, Budget b) => [
       AmountRow('נטו', b.net, bold: true),
     ];
 
-/// What was left at the end of a saved month — like Store.monthResult (the current month uses today's budget).
+/// What was left of a saved month's income — like Store.monthResult (the current period uses today's budget).
 MonthPicture monthResult(SaveFile file, MonthRecord r) {
-  final now = DateTime.now();
-  if (r.year == now.year && r.month == now.month) return MonthPicture.of(file, r.year, r.month);
+  final (y, m) = file.money.period(DateTime.now());
+  if (r.year == y && r.month == m) return MonthPicture.of(file, r.year, r.month);
   final budget = r.json['budget'];
   return MonthPicture.of(file, r.year, r.month, budgetOverride: budget is Json ? Budget(JObj(budget)) : null);
 }
@@ -370,7 +384,7 @@ MonthPicture monthResult(SaveFile file, MonthRecord r) {
 Future<void> showSaveMonth(BuildContext context) async {
   final store = context.store;
   final now = DateTime.now();
-  var year = now.year, month = now.month;
+  var (year, month) = store.money.period(now);
   MonthRecord? existing() => store.file.history.where((r) => r.year == year && r.month == month).firstOrNull;
   var note = existing()?.note ?? '';
   double actual = existing()?.actualNet ?? 0;
@@ -445,8 +459,9 @@ Future<void> showSaveMonth(BuildContext context) async {
       f.money.removeTransactionsWhere((t) => t['salaryKey'] == key);
       final checking = f.money.checking;
       if (addToChecking && actual > 0 && checking != null) {
-        final monthEnd = DateTime(year, month + 1, 0);
-        final date = DateTime.now().isBefore(monthEnd) ? DateTime.now() : monthEnd;
+        // It came in on that month's pay day (or today, if that's still ahead).
+        final payDay = f.money.periodStart(year, month);
+        final date = DateTime.now().isBefore(payDay) ? DateTime.now() : payDay;
         f.money.upsertTransaction({
           ...MoneyTransaction.create(kind: TransactionKind.income, accountID: checking.id),
           'date': dateTimeToSwift(date),

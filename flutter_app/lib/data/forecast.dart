@@ -109,7 +109,7 @@ class Forecaster {
     final accounts = money.accounts;
     final tx = money.transactions;
 
-    final balances = <String, double>{for (final a in accounts) a.id: calc.value(a, today, tx)};
+    final balances = <String, double>{for (final a in accounts) a.id: money.balance(a, today)};
     final checkingID = money.checking?.id;
 
     (double, double, double) totals() {

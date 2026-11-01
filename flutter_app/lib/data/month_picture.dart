@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 import 'card.dart';
 import 'fmt.dart';
 import 'models.dart';
@@ -33,9 +35,9 @@ class InstallmentLine {
   String get detail => paymentsLeft == 0 ? 'תשלום אחרון' : 'נשארו עוד $paymentsLeft תשלומים · ${Fmt.money(leftAfter)}';
 }
 
-/// One consistent picture of a month: actual net (if recorded) or the estimate, fixed expenses, periodic
-/// purchases, money moved into savings, credit-card charges and one-off transactions. "נשאר בסוף החודש" is
-/// `remaining` — the same number as in the iPhone/Mac app. Port of `MonthPicture` / `Store.monthPicture` (Sync.swift).
+/// One consistent picture of a money period (pay day to pay day): actual net (if recorded) or the estimate, fixed
+/// expenses, periodic purchases, money moved into savings, credit-card purchases and one-offs. "נשאר מההכנסה האחרונה"
+/// is `remaining` — the same number as in the iPhone/Mac app. Port of `MonthPicture` / `Store.monthPicture` (Sync.swift).
 class MonthPicture {
   MonthPicture({
     required this.year,
@@ -48,6 +50,9 @@ class MonthPicture {
     required this.oneOffs,
     required this.card,
     required this.cardEstimated,
+    this.fixedInCardSuspects = const [],
+    this.periodStart,
+    this.periodEnd,
     required this.installments,
     required this.installmentsAfterThisMonth,
   });
@@ -61,11 +66,18 @@ class MonthPicture {
   final List<MonthLine> toSavings;
   final List<MonthLine> oneOffs;
 
-  /// Variable credit-card spending charged this month (not linked to a fixed expense), by category.
+  /// Variable credit-card spending bought in this period (not linked to a fixed expense), by category.
   final List<MonthLine> card;
 
-  /// True when `card` is an average because this month's statement wasn't imported yet.
+  /// True when `card` includes an estimate of what's still to come, by the average of the last statements.
   final bool cardEstimated;
+
+  /// Card purchases priced like a fixed expense but not linked to it: they may be counted twice.
+  final List<String> fixedInCardSuspects;
+
+  /// When this money period began and ends.
+  final DateTime? periodStart;
+  final DateTime? periodEnd;
   final List<InstallmentLine> installments;
 
   /// Every installment still to be charged after this month.
@@ -85,12 +97,34 @@ class MonthPicture {
   double get remaining => net - spendingTotal - periodic - toSavingsTotal - cardWithInstallments + oneOffTotal;
   String get title => Fmt.monthTitle(year, month);
 
+  /// "10 באוק׳ – 9 בנוב׳", or the month's name when the period is a calendar month.
+  String get periodTitle {
+    final s = periodStart, e = periodEnd;
+    if (s == null || e == null || s.day == 1) return title;
+    final f = DateFormat('d בMMM', 'he');
+    return '${f.format(s)} – ${f.format(DateTime(e.year, e.month, e.day - 1))}';
+  }
+
+  /// Days until the next pay day (at least 1).
+  int get daysLeft {
+    final e = periodEnd ?? DateTime(year, month + 1);
+    final n = DateTime.now();
+    final d = DateTime.utc(e.year, e.month, e.day).difference(DateTime.utc(n.year, n.month, n.day)).inDays;
+    return d < 1 ? 1 : d;
+  }
+
+  /// The money period today is in (Store.monthPicture).
+  static MonthPicture current(SaveFile file) {
+    final (y, m) = file.money.period(DateTime.now());
+    return of(file, y, m);
+  }
+
   /// The month of one member's data (the member being viewed on this device).
   static MonthPicture of(SaveFile file, int year, int month, {Budget? budgetOverride, DateTime? now}) {
-    final monthStart = DateTime(year, month);
-    final monthEnd = addMonths(monthStart, 1);
     final budget = budgetOverride ?? file.budget;
     final money = file.money;
+    final monthStart = money.periodStart(year, month);
+    final monthEnd = money.periodEnd(year, month);
     final cards = CardData(money);
 
     final spending = <MonthLine>[];
@@ -144,34 +178,35 @@ class MonthPicture {
       }
     }
 
-    // Credit card: what is charged this month and isn't already a fixed expense / tracked purchase.
+    // Credit card: purchases count in the period they were bought in, whenever the card charges them. Fixed expenses
+    // and tracked purchases already came off above, so a charge linked to one isn't counted again.
     final key = year * 100 + month;
-    var card = <MonthLine>[];
-    var cardEstimated = false;
     final charged = cards.chargedIn(key);
-    final summary = CardMonthSummary.of(charged);
-    final hasStatement = cards.cardStatementKeys.contains(key) || (cards.cardStatementKeys.isEmpty && charged.isNotEmpty);
+    final bought = cards.cardTransactions.where((t) => t.installment == null && !t.date.isBefore(monthStart) && t.date.isBefore(monthEnd)).toList();
+    final summary = CardMonthSummary.of(bought);
     // Purchases recorded as "paid by card" that the statements don't show yet.
     final manualCard = cards.manualCardPayments;
-    final manualRegular = manualCard.where((p) => p.of == 1 && p.billingKey == key).toList();
-    final manualRegularTotal = manualRegular.fold(0.0, (s, p) => s + p.amount);
-    List<MonthLine> byCategory() => [
-          for (final c in summary.byCategory) MonthLine(c.name, c.amount),
-          for (final p in manualRegular) MonthLine('💳 ${p.transaction.title} (צפוי בכרטיס)', p.amount),
-        ];
-    if (hasStatement) {
-      card = byCategory();
-    } else {
-      final average = cards.averageCardVariable();
-      final soFar = summary.variable - summary.installments + manualRegularTotal;
-      if (average > 0) {
-        card = [MonthLine('הערכה לפי ממוצע (בלי תשלומים)', average > soFar ? average : soFar)];
-        if (manualRegularTotal > average) card[0] = MonthLine('הערכה — כולל קניות שרשמת באשראי', soFar);
-        cardEstimated = true;
-      } else {
-        card = byCategory();
-      }
+    final card = <MonthLine>[
+      for (final c in summary.byCategory) MonthLine(c.name, c.amount),
+      for (final p in manualCard)
+        if (p.of == 1 && !p.transaction.date.isBefore(monthStart) && p.transaction.date.isBefore(monthEnd))
+          MonthLine('💳 ${p.transaction.title}', p.amount),
+    ];
+    // What wasn't imported yet: the rest of the usual spending, by the average of the last statements.
+    var cardEstimated = false;
+    final known = card.fold(0.0, (s, l) => s + l.amount);
+    final average = cards.averageCardVariable();
+    if (average > known && (monthEnd.isAfter(DateTime.now()) || card.isEmpty)) {
+      card.add(MonthLine('עוד צפוי לפי ממוצע החודשים הקודמים', average - known));
+      cardEstimated = true;
     }
+    // A fixed expense paid by card that isn't linked to its charge would count twice — point it out.
+    final fixedAmounts = spending.map((l) => l.amount).where((a) => a >= 20).toList();
+    final suspects = {
+      for (final t in bought)
+        if (t.isVariable && fixedAmounts.any((a) => (a - t.myAmount).abs() < 1)) t.merchant
+    }.toList()
+      ..sort();
 
     // Installments: only this month's payment counts, never the whole purchase.
     final allPlans = cards.installmentPlans;
@@ -234,6 +269,9 @@ class MonthPicture {
       oneOffs: oneOffs,
       card: card,
       cardEstimated: cardEstimated,
+      fixedInCardSuspects: suspects,
+      periodStart: monthStart,
+      periodEnd: monthEnd,
       installments: installments,
       installmentsAfterThisMonth: installmentsAfter,
     );

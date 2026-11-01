@@ -243,7 +243,10 @@ class CardData {
 
   /// Average variable card spending per month, from the last (up to) 3 full statements.
   double averageCardVariable() {
-    final keys = cardStatementKeys.take(3).toList();
+    // A statement that wasn't charged yet may still be open and pull the average down: it counts only when there's no other.
+    final now = DateTime.now();
+    final charged = cardStatementKeys.where((k) => chargedIn(k).any((t) => !t.chargeEstimated && t.chargeDate != null && !t.chargeDate!.isAfter(now))).toList();
+    final keys = (charged.isEmpty ? cardStatementKeys : charged).take(3).toList();
     if (keys.isEmpty) return 0;
     var total = 0.0;
     for (final k in keys) {

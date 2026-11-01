@@ -147,7 +147,58 @@ class MoneyCalc {
 
   double total(MoneyData money, Set<AccountKind> kinds, [DateTime? on]) {
     final date = on ?? DateTime.now();
-    final tx = money.transactions;
-    return money.accounts.where((a) => kinds.contains(a.kind)).fold(0.0, (s, a) => s + value(a, date, tx));
+    return money.accounts.where((a) => kinds.contains(a.kind)).fold(0.0, (s, a) => s + money.balance(a, date));
+  }
+}
+
+/// Pay periods and balances — port of the MoneyData extensions in Money.swift.
+extension MoneyPeriods on MoneyData {
+  /// Where the money period of (year, month) begins: that month's pay day. The period runs until the next month's
+  /// pay day and is named after the month the salary came in. A pay day of 1 makes it the calendar month.
+  DateTime periodStart(int year, int month) {
+    final days = DateTime(year, month + 1, 0).day;
+    return DateTime(year, month, math.min(math.max(payDay, 1), days));
+  }
+
+  DateTime periodEnd(int year, int month) => month == 12 ? periodStart(year + 1, 1) : periodStart(year, month + 1);
+
+  /// The money period a date falls in.
+  (int, int) period(DateTime date) {
+    if (!date.isBefore(periodStart(date.year, date.month))) return (date.year, date.month);
+    return date.month == 1 ? (date.year - 1, 12) : (date.year, date.month - 1);
+  }
+
+  /// Estimated balance of an account: `MoneyCalc.value`, and the main checking account also pays for the fixed
+  /// deposits into savings plans (they raise the plan on their day, so the money has to leave here on that day).
+  double balance(Account account, [DateTime? on]) {
+    final date = on ?? DateTime.now();
+    var value = MoneyCalc(primeRate).value(account, date, transactions);
+    final base = MoneyCalc.baseEntry(account, date);
+    if (account.id != checking?.id || base == null) return value;
+    for (final plan in accounts.where((a) => a.kind == AccountKind.savings || a.kind == AccountKind.deposit)) {
+      value -= MoneyCalc.contributionDates(plan, base.date, date).length * plan.monthlyContribution;
+    }
+    return value;
+  }
+
+  /// Savings deposits live in one place, the savings account. A fixed expense marked "transfer to savings" becomes a
+  /// monthly deposit of that account, from now on. Returns whether anything moved. Transfers to a pension stay.
+  bool adoptSavingsTransfers(Budget budget) {
+    var changed = false;
+    for (final item in budget.expenses) {
+      final target = account(item.targetAccountID);
+      if (target == null || (target.kind != AccountKind.savings && target.kind != AccountKind.deposit)) continue;
+      if (item.isActive) {
+        final amount = (item.amount(budget.expenseBase) * 100).round() / 100;
+        if (target.monthlyContribution <= 0) {
+          target.contributionDay = math.min(math.max(payDay, 1), 28);
+          target.startDate ??= DateTime.now();
+        }
+        target.monthlyContribution += amount;
+      }
+      budget.removeExpense(item.id);
+      changed = true;
+    }
+    return changed;
   }
 }

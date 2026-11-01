@@ -23,6 +23,28 @@ class IncomesScreen extends StatelessWidget {
         ),
         body: PageList(children: [
           SectionCard(
+            title: 'יום המשכורת',
+            subtitle: 'ביום הזה ״נשאר מההכנסה האחרונה״ מתחיל מחדש. אם המשכורת נכנסת בימים שונים, בחר את היום הרגיל.',
+            children: [
+              ListTile(
+                title: Text('ב-${store.money.payDay} לחודש'),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton.outlined(
+                    tooltip: 'יום קודם',
+                    icon: const Icon(Icons.remove, size: 18),
+                    onPressed: store.money.payDay <= 1 ? null : () => store.edit((f) => f.money.payDay -= 1),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.outlined(
+                    tooltip: 'יום הבא',
+                    icon: const Icon(Icons.add, size: 18),
+                    onPressed: store.money.payDay >= 31 ? null : () => store.edit((f) => f.money.payDay += 1),
+                  ),
+                ]),
+              ),
+            ],
+          ),
+          SectionCard(
             title: 'הכנסות',
             subtitle: 'ברוטו ${Fmt.money(b.gross)}${b.netIncomes > 0 ? ' · נטו נוסף ${Fmt.money(b.netIncomes)}' : ''}',
             children: [
@@ -329,7 +351,8 @@ class ExpensesScreen extends StatelessWidget {
 Future<void> editCost(BuildContext context, CostItem? existing, {required bool deductions}) async {
   final store = context.store;
   final draft = CostItem(existing != null ? deepCopy(existing.json) as Json : CostItem.create());
-  final savings = store.money.accounts.where((a) => a.kind != AccountKind.checking).toList();
+  // Deposits into savings are set on the savings account itself; a pension comes out of the salary.
+  final savings = store.money.accounts.where((a) => a.kind == AccountKind.pension).toList();
   await showEditor(
     context,
     title: existing == null ? (deductions ? 'ניכוי חדש' : 'הוצאה חדשה') : existing.name,
@@ -358,7 +381,7 @@ Future<void> editCost(BuildContext context, CostItem? existing, {required bool d
           initialValue: savings.any((a) => a.id == draft.targetAccountID) ? draft.targetAccountID : null,
           decoration: const InputDecoration(
             labelText: 'הכסף עובר לחשבון',
-            helperText: 'למשל חיסכון חודשי — הכסף לא נעלם, הוא עובר לחשבון',
+            helperText: 'הפקדות לחיסכון מגדירים בחשבון החיסכון עצמו',
             border: OutlineInputBorder(),
           ),
           items: [

@@ -54,6 +54,12 @@ void main() {
             'oneOffs': p.oneOffTotal,
             'installmentsAfter': p.installmentsAfterThisMonth,
             'cardEstimated': p.cardEstimated,
+            if (!record) ...{
+              'suspects': p.fixedInCardSuspects,
+              'cardLines': [for (final l in p.card) l.amount],
+              'startDays': dateTimeToSwift(p.periodStart!) / 86400,
+              'endDays': dateTimeToSwift(p.periodEnd!) / 86400,
+            },
           };
       final months = <Map<String, dynamic>>[
         for (var o = -3; o <= 2; o++)
@@ -145,6 +151,9 @@ void main() {
         'remaining': b.remaining,
         'deductions': b.deductions.map(b.deductionAmount).toList(),
         'accounts': money.accounts.map((a) => calc.value(a, now, money.transactions)).toList(),
+        'balances': money.accounts.map((a) => money.balance(a, now)).toList(),
+        'periodNow': [money.period(now).$1, money.period(now).$2],
+        'payDay': money.payDay,
       };
     }
     return files;
@@ -189,7 +198,9 @@ void main() {
             for (final mk in (dv[i] as Map).keys) {
               final a = dv[i][mk], b = sm[i][mk];
               final reason = 'month ${dv[i]['key']}${dv[i]['record'] == true ? ' (saved)' : ''} $mk';
-              if (a is bool) {
+              if (a is List) {
+                deepClose(a, b, reason);
+              } else if (a is bool) {
                 expect(b, a, reason: reason);
               } else {
                 expect((b as num).toDouble(), closeTo((a as num).toDouble(), 0.01), reason: reason);
@@ -417,13 +428,12 @@ void main() {
     final parts = [for (final m in family.state.members) (m, family.file(m.id)!)];
     final c = Dashboard.combine(parts, family.file(family.state.activeID)!);
     final s = swift(doc, now)['combined'] as Map<String, dynamic>;
-    final calc = MoneyCalc(c.money.primeRate);
     expect(c.budget.net, closeTo(primary.budget.net + noa.budget.net, 0.01));
     final mine = {
       'net': c.budget.net,
       'totalExpenses': c.budget.totalExpenses,
       'periodicTotal': c.budget.periodicTotal,
-      'accounts': [for (final a in c.money.accounts) calc.value(a, now, c.money.transactions)],
+      'accounts': [for (final a in c.money.accounts) c.money.balance(a, now)],
       'cards': CardData(c.money).cardTransactions.length,
       'owed': CardData(c.money).totalOwedToMe(c.money.transactions),
       'history': [for (final r in c.history..sort((a, b) => a.sortKey.compareTo(b.sortKey))) r.actualNet ?? -1],
@@ -499,6 +509,75 @@ void main() {
     expect(st.months.length, 6);
     expect(TrendCalc.items(file.money, Trend(trend)).where((i) => i.fullAmount != null).length, 1);
     compare(doc);
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
+  test('pay day: periods, purchases by date, the estimate and the deposits come out the same as Swift', () {
+    for (final day in [10, 15, 31]) {
+      final doc = loadFixture();
+      final family = FamilyBackup(doc);
+      final file = family.fileForEditing(family.state.activeID);
+      final now = DateTime.now();
+      file.money.payDay = day;
+      final saving = Account.create(name: 'תוכנית', kind: AccountKind.savings)
+        ..['monthlyContribution'] = 450
+        ..['contributionDay'] = 12;
+      (saving['balances'] as List).add(BalanceEntry.create(date: addMonths(now, -4), amount: 1000));
+      file.money.upsertAccount(saving);
+      file.money.ensureChecking().upsertBalance(BalanceEntry.create(date: addMonths(now, -3), amount: 9000));
+      // A charge priced like a fixed expense, not linked: it may be counted twice.
+      final expense = CostItem.create(name: 'חשמל', value: 300);
+      file.budget.upsertExpense(expense);
+      JObj.lazy(file.json, 'money').writeList('cardTransactions').add({
+        ...deepCopy(JObj(file.money.raw).objects('cardTransactions').first) as Json,
+        'id': 'test-suspect',
+        'merchant': 'חברת החשמל',
+        'amount': 300.4,
+        'originalAmount': 300.4,
+        'note': '',
+        'date': dateTimeToSwift(now.subtract(const Duration(days: 1))),
+        'ignored': false,
+      }..remove('linkedExpenseID')..remove('linkedTrackedID'));
+      expect(file.money.periodStart(2026, 2).day, day > 28 ? 28 : day);
+      final bought = now.subtract(const Duration(days: 1));
+      final (y, m) = file.money.period(bought);
+      expect(MonthPicture.of(file, y, m).fixedInCardSuspects, contains('חברת החשמל'));
+      compare(doc);
+    }
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
+  test('old "transfer to savings" expenses become deposits on the account, exactly like Swift', () {
+    final doc = loadFixture();
+    final family = FamilyBackup(doc);
+    final file = family.fileForEditing(family.state.activeID);
+    file.money.payDay = 31;
+    final save = Account.create(name: 'חיסכון', kind: AccountKind.savings);
+    final dep = Account.create(name: 'פיקדון', kind: AccountKind.deposit)..['monthlyContribution'] = 100..['contributionDay'] = 5;
+    final pension = Account.create(name: 'פנסיה', kind: AccountKind.pension);
+    for (final a in [save, dep, pension]) {
+      file.money.upsertAccount(a);
+    }
+    final b = file.budget;
+    b.upsertExpense(CostItem.create(name: 'לחיסכון', value: 250.555)..['targetAccountID'] = save['id']);
+    b.upsertExpense(CostItem.create(name: 'לפיקדון אחוז', kind: CostKind.percent, value: 5)..['targetAccountID'] = dep['id']);
+    b.upsertExpense(CostItem.create(name: 'כבוי', value: 999)..['targetAccountID'] = save['id']..['isActive'] = false);
+    final keep = CostItem.create(name: 'לפנסיה', value: 70)..['targetAccountID'] = pension['id'];
+    b.upsertExpense(keep);
+
+    final dir = Directory.systemTemp.createTempSync('adopt');
+    final path = '${dir.path}/h.json';
+    File(path).writeAsStringSync(jsonEncode(doc));
+    final out = Process.runSync('zsh', ['tool/swift_check.sh', 'adopt', path], stdoutEncoding: utf8);
+    dir.deleteSync(recursive: true);
+    expect(out.exitCode, 0, reason: '${out.stderr}');
+    final s = (jsonDecode(out.stdout as String) as Map)[family.state.activeID] as Map;
+
+    expect(file.money.adoptSavingsTransfers(b), isTrue);
+    expect(s['changed'], isTrue);
+    expect(b.expenses.map((e) => e.id).toList(), s['expenses']);
+    expect(b.expenses.any((e) => e.id == keep['id']), isTrue, reason: 'a pension transfer stays');
+    expect([for (final a in file.money.accounts) a.contributionDay], s['days']);
+    deepClose([for (final a in file.money.accounts) a.monthlyContribution], s['contributions'], 'contributions');
+    expect(file.money.adoptSavingsTransfers(b), isFalse, reason: 'runs once');
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 
   test('a new household made by this app is read by Swift', () {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/json.dart';
 import '../data/dashboard.dart';
 import '../data/models.dart';
+import '../data/money_calc.dart';
 import 'secure_file.dart';
 
 /// The household on this device: the whole `FamilyBackup` document. It's a temporary working copy
@@ -30,7 +32,8 @@ class AppStore extends ChangeNotifier {
     }
     final store = AppStore._(secure, prefs, loaded ?? Starter.family());
     store._fixActiveMember();
-    if (loaded == null || wasPlain) await store._write();
+    final migrated = store._adoptSavingsTransfers();
+    if (loaded == null || wasPlain || migrated) await store._write();
     return store;
   }
 
@@ -44,6 +47,9 @@ class AppStore extends ChangeNotifier {
   /// Called after every change made on this device (not for data that came from the server).
   VoidCallback? onDataChange;
 
+  /// Called after signing out wiped this device (the AI conversation goes with the account).
+  VoidCallback? onWiped;
+
   File get _file => File('${folder.path}/household.json');
 
   FamilyBackup get family => FamilyBackup(doc);
@@ -53,7 +59,17 @@ class AppStore extends ChangeNotifier {
   String get activeMemberId => prefs.getString('activeMemberID') ?? family.state.activeID;
   set activeMemberId(String id) {
     prefs.setString('activeMemberID', id);
+    if (_adoptSavingsTransfers()) {
+      _write();
+      onDataChange?.call();
+    }
     notifyListeners();
+  }
+
+  /// Savings deposits live on the savings account; old "transfer to savings" expenses move there (like Store.apply).
+  bool _adoptSavingsTransfers() {
+    final f = file;
+    return f.money.adoptSavingsTransfers(f.budget);
   }
 
   FamilyMember? get activeMember {
@@ -143,8 +159,10 @@ class AppStore extends ChangeNotifier {
   void replace(Json newDoc) {
     doc = newDoc;
     _fixActiveMember();
+    final migrated = _adoptSavingsTransfers();
     _write();
     notifyListeners();
+    if (migrated) scheduleMicrotask(() => onDataChange?.call());
   }
 
   Future<void> _pending = Future.value();
@@ -167,6 +185,7 @@ class AppStore extends ChangeNotifier {
     prefs.remove('activeMemberID');
     doc = Starter.family();
     _fixActiveMember();
+    onWiped?.call();
     notifyListeners();
   }
 
