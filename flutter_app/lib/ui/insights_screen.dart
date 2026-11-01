@@ -783,8 +783,11 @@ class InsightChart extends StatelessWidget {
           reservedSize: 30,
           interval: 1,
           getTitlesWidget: (v, _) {
-            final i = v.round();
-            if (i < 0 || i >= points.length || (v - i).abs() > 0.01) return const SizedBox.shrink();
+            final x = v.round();
+            if ((v - x).abs() > 0.01) return const SizedBox.shrink();
+            // Time runs right to left, like the Mac: the first point at the right.
+            final i = line ? points.length - 1 - x : x;
+            if (i < 0 || i >= points.length) return const SizedBox.shrink();
             return Padding(
               padding: const EdgeInsets.only(top: 4),
               child: SizedBox(
@@ -814,7 +817,7 @@ class InsightChart extends StatelessWidget {
                 titlesData: titles,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: [for (final (i, p) in points.indexed) FlSpot(i.toDouble(), p.value)],
+                    spots: [for (final (i, p) in points.indexed.toList().reversed) FlSpot((points.length - 1 - i).toDouble(), p.value)],
                     color: AppColors.teal,
                     barWidth: 3,
                   ),
@@ -827,7 +830,7 @@ class InsightChart extends StatelessWidget {
                 borderData: FlBorderData(show: false),
                 titlesData: titles,
                 barGroups: [
-                  for (final (i, p) in points.indexed)
+                  for (final (i, p) in points.indexed.toList().reversed)
                     BarChartGroupData(x: i, barRods: [
                       BarChartRodData(
                         toY: p.value,

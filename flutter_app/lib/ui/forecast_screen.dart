@@ -185,7 +185,7 @@ class _Chart extends StatelessWidget {
       const SizedBox(height: 8),
       SizedBox(
         height: 260,
-        // The chart's x axis reads left to right (time), also in Hebrew.
+        // Time runs right to left, like the Mac (Swift Charts flips in RTL): today at the right edge.
         child: Directionality(
           textDirection: TextDirection.ltr,
           child: LineChart(LineChartData(
@@ -209,7 +209,7 @@ class _Chart extends StatelessWidget {
                   showTitles: true,
                   interval: step.toDouble(),
                   getTitlesWidget: (v, meta) {
-                    final i = v.round();
+                    final i = months.length - 1 - v.round();
                     if (i < 0 || i >= months.length || i % step != 0) return const SizedBox.shrink();
                     return Text(i == 0 ? 'היום' : months[i].shortLabel, style: theme.textTheme.labelSmall);
                   },
@@ -228,7 +228,7 @@ class _Chart extends StatelessWidget {
             lineBarsData: [
               for (final s in series)
                 LineChartBarData(
-                  spots: [for (final m in months) FlSpot(m.index.toDouble(), s.$3(m))],
+                  spots: [for (final m in months.reversed) FlSpot((months.length - 1 - m.index).toDouble(), s.$3(m))],
                   color: s.$2,
                   barWidth: s.$1 == 'סה״כ' ? 3 : 2,
                   isCurved: true,

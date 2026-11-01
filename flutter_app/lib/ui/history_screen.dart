@@ -197,7 +197,8 @@ class _HistoryChart extends StatelessWidget {
               ),
             ),
             barGroups: [
-              for (var i = 0; i < records.length; i++)
+              // Time runs right to left, like the Mac: the oldest month at the right.
+              for (var i = records.length - 1; i >= 0; i--)
                 BarChartGroupData(x: i, barsSpace: 3, barRods: [
                   BarChartRodData(toY: net(records[i]), color: Colors.blue, width: 9),
                   BarChartRodData(toY: remaining(records[i]), color: Colors.green, width: 9),
