@@ -479,7 +479,11 @@ class _Statement extends StatelessWidget {
       case LedgerSource.fixed:
         openDest(context, Dest.expenses);
       case LedgerSource.card:
-        openDest(context, Dest.card);
+        if (l.cardKey != null) {
+          showActualCharge(context, l);
+        } else {
+          openDest(context, Dest.card);
+        }
       case LedgerSource.savings || LedgerSource.balance:
         openDest(context, Dest.accounts);
     }
@@ -615,6 +619,51 @@ class _Statement extends StatelessWidget {
       ],
     );
   }
+}
+
+/// "ירד בפועל" for a card charge (ActualChargeSheet in TransactionsView.swift): the bank changed the amount at the last
+/// minute — what it really took replaces the statement's (or the estimate) in the checking.
+Future<void> showActualCharge(BuildContext context, LedgerLine line) async {
+  final key = line.cardKey!;
+  final store = context.store;
+  final current = CardData(store.money).setting(key.card)?.actualCharge(key.month);
+  var amount = -line.amount;
+  await showEditor(
+    context,
+    title: line.title,
+    builder: (ctx, setState) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      AmountRow(current == null ? 'לפי האפליקציה' : 'רשמת שירד', -line.amount),
+      gap,
+      NumberField(label: 'ירד בפועל', value: amount, suffix: '₪', onChanged: (v) => amount = v),
+      gap,
+      Text('הבנק עדכן את הסכום ברגע האחרון? רשום כמה ירד, ודף העו״ש והיתרה יתעדכנו. כשהקובץ של החודש ייובא, הסכום '
+          'שרשמת עדיין קובע — אפשר למחוק אותו כאן.',
+          style: Theme.of(ctx).textTheme.bodySmall),
+      if (current != null)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton(
+            style: TextButton.styleFrom(foregroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () {
+              store.edit((f) => f.money.setActualCharge(key.card, key.month, null));
+              Navigator.pop(ctx, false);
+            },
+            child: const Text('חזור לסכום של האפליקציה'),
+          ),
+        ),
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton(
+          onPressed: () {
+            Navigator.pop(ctx, false);
+            openDest(context, Dest.card);
+          },
+          child: const Text('פתח את מסך כרטיס האשראי'),
+        ),
+      ),
+    ]),
+    onSave: () => store.edit((f) => f.money.setActualCharge(key.card, key.month, amount > 0 ? amount : null)),
+  );
 }
 
 /// Without a checking account: the recorded transactions only.

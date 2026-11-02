@@ -683,6 +683,29 @@ class MoneyData {
     }
   }
 
+  /// Saves one card's settings (upsertCardSetting in Store.swift). A null `chargeDay` isn't written, like Swift.
+  void upsertCardSetting(Json setting) {
+    if (setting['chargeDay'] == null) setting.remove('chargeDay');
+    _o.upsertById('cardSettings', setting);
+  }
+
+  void deleteCardSetting(String id) => _o.removeWhere('cardSettings', (s) => s['id'] == id);
+
+  /// The amount the bank actually took for a card in a month (null goes back to the statement / estimate) —
+  /// setActualCharge in Store.swift. A card without settings gets them.
+  void setActualCharge(String card, int month, double? amount) {
+    final existing = _o.objects('cardSettings').where((s) => CardSetting(s).key == card).firstOrNull;
+    final s = existing != null ? deepCopy(existing) as Json : CardSetting.create(last4: card.startsWith('m:') ? '' : card);
+    final actual = (s['actualCharges'] is Map ? (s['actualCharges'] as Map).cast<String, dynamic>() : <String, dynamic>{});
+    if (amount == null) {
+      actual.remove('$month');
+    } else {
+      actual['$month'] = jsonNumber(amount);
+    }
+    s['actualCharges'] = actual;
+    upsertCardSetting(s);
+  }
+
   /// A pending purchase that already shows up as a charge (same card and amount, a few days apart, the same merchant
   /// even if named a little differently) is that charge counted twice: it goes, and its links move to the charge.
   /// Returns how many went (dropConfirmedPending in Card.swift).

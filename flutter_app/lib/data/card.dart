@@ -203,6 +203,16 @@ class CardSetting {
   final Json json;
   JObj get _o => JObj(json);
 
+  static Json create({String last4 = '', String name = '', int? chargeDay, double monthlyEstimate = 0}) => {
+        'id': newId(),
+        'last4': last4,
+        'name': name,
+        if (chargeDay != null) 'chargeDay': chargeDay,
+        'delayDays': 0,
+        'monthlyEstimate': jsonNumber(monthlyEstimate),
+        'actualCharges': <String, dynamic>{},
+      };
+
   String get id => _o.s('id');
 
   /// The last 4 digits of an imported card; empty for a card whose statements aren't imported.
@@ -258,6 +268,15 @@ class CardData {
     }
     return best ?? '';
   }();
+
+  /// Imported cards, most charges first.
+  List<String> get importedCards {
+    final counts = <String, int>{};
+    for (final t in cardTransactions) {
+      counts[t.cardLast4] = (counts[t.cardLast4] ?? 0) + 1;
+    }
+    return counts.keys.where((k) => k.isNotEmpty).toList()..sort((a, b) => counts[b]!.compareTo(counts[a]!));
+  }
 
   /// The day a charge leaves the checking: the card's own day if set (same month), plus its delay.
   DateTime bankDate(String card, DateTime charge) {

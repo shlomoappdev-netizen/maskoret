@@ -600,11 +600,14 @@ void main() {
         final primary = CardData(money).primaryCard;
         final thisMonth = '${now.year * 100 + now.month}', lastMonth = '${last.year * 100 + last.month}';
         JObj.lazy(file.json, 'money').writeList('cardSettings').addAll([
-          {'id': newId(), 'last4': primary, 'name': 'ויזה', 'chargeDay': 12, 'delayDays': 1, 'monthlyEstimate': 0,
-            'actualCharges': {thisMonth: 333.33}},
+          {'id': newId(), 'last4': primary, 'name': 'ויזה', 'chargeDay': 12, 'delayDays': 1, 'monthlyEstimate': 0},
           {'id': newId(), 'last4': '', 'name': 'כרטיס בלי קובץ', 'chargeDay': 20, 'delayDays': 0, 'monthlyEstimate': 450,
             'actualCharges': {lastMonth: 400}},
         ]);
+        // Typed in through the app's own action, so Swift reads what this app writes.
+        money.setActualCharge(primary, int.parse(thisMonth), 333.33);
+        money.setActualCharge(primary, int.parse(lastMonth), 1.0);
+        money.setActualCharge(primary, int.parse(lastMonth), null);
       }
       final checking = money.checking!;
       final auto = money.balance(checking, now, b, file.history);

@@ -153,6 +153,7 @@ class _CardScreenState extends State<CardScreen> {
             fixed,
           ],
           if (cards.installmentPlans.isNotEmpty) _installments(context, cards),
+          CardDaysCard(cards: cards),
           SectionCard(
             title: 'חיובים',
             children: [
@@ -545,6 +546,136 @@ class _LinkMenu extends StatelessWidget {
           Text(unlinked ? 'צמד ל…' : 'שנה', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 13)),
         ]),
       ),
+    );
+  }
+}
+
+/// "כרטיסים וימי חיוב" (CardDaysCard in CardView.swift): for each imported card and each card without statements,
+/// its name, the day the bank takes it and how many days later it leaves the checking — so the checking statement
+/// takes every card on its real day.
+class CardDaysCard extends StatelessWidget {
+  const CardDaysCard({super.key, required this.cards});
+  final CardData cards;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = [
+      for (final last4 in cards.importedCards) (key: last4, saved: cards.setting(last4)?.json, last4: last4),
+      for (final s in cards.cardSettings.where((s) => s.last4.isEmpty)) (key: s.key, saved: s.json, last4: ''),
+    ];
+    return SectionCard(
+      title: 'כרטיסים וימי חיוב',
+      subtitle: 'כדי שדף העו״ש יוריד כל כרטיס ביום שהבנק באמת מוריד אותו. כרטיס שלא מייבאים לו קובץ (למשל כרטיס של '
+          'הבנק) — מוסיפים עם סכום משוער לחודש.',
+      children: [
+        for (final r in rows) ...[
+          _CardDayRow(key: ValueKey(r.key), saved: r.saved, last4: r.last4, usualDay: cards.usualChargeDay),
+          const Divider(height: 1),
+        ],
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            icon: const Icon(Icons.add_circle_outline),
+            label: const Text('הוסף כרטיס בלי קובץ'),
+            onPressed: () => context.store.edit((f) => f.money.upsertCardSetting(
+                CardSetting.create(name: 'כרטיס הבנק', chargeDay: cards.usualChargeDay ?? 2, monthlyEstimate: 500))),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CardDayRow extends StatelessWidget {
+  const _CardDayRow({super.key, required this.saved, required this.last4, required this.usualDay});
+
+  /// The saved settings, or null for an imported card nobody set yet (saved on the first change).
+  final Json? saved;
+  final String last4;
+  final int? usualDay;
+
+  void update(BuildContext context, void Function(Json s) change) {
+    context.store.edit((f) {
+      final current = saved == null
+          ? null
+          : JObj(f.money.raw).objects('cardSettings').where((s) => s['id'] == saved!['id']).firstOrNull;
+      final s = current != null ? deepCopy(current) as Json : CardSetting.create(last4: last4);
+      change(s);
+      f.money.upsertCardSetting(s);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final s = CardSetting(saved ?? CardSetting.create(last4: last4));
+    final manual = last4.isEmpty;
+    final day = s.chargeDay;
+    final delay = s.delayDays;
+    Widget stepper({required String text, required VoidCallback? minus, required VoidCallback? plus}) => Row(children: [
+          Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
+          IconButton.outlined(icon: const Icon(Icons.remove, size: 18), onPressed: minus),
+          const SizedBox(width: 8),
+          IconButton.outlined(icon: const Icon(Icons.add, size: 18), onPressed: plus),
+        ]);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(
+            child: TextFormField(
+              initialValue: s.name,
+              decoration: InputDecoration(
+                isDense: true,
+                border: const OutlineInputBorder(),
+                labelText: 'שם',
+                hintText: manual ? 'שם הכרטיס' : 'כרטיס $last4',
+              ),
+              onChanged: (v) => update(context, (j) => j['name'] = v),
+            ),
+          ),
+          if (!manual) ...[
+            const SizedBox(width: 12),
+            Text('•••• $last4', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          ],
+          if (manual)
+            IconButton(
+              tooltip: 'מחיקה',
+              icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
+              onPressed: () async {
+                if (await confirm(context, 'למחוק את הכרטיס?', 'החיוב המשוער שלו לא ייכנס יותר לדף העו״ש.', ok: 'מחיקה') &&
+                    context.mounted) {
+                  context.store.edit((f) => f.money.deleteCardSetting(s.id));
+                }
+              },
+            ),
+        ]),
+        const SizedBox(height: 8),
+        // 0 is "as the statements say" (or "on the pay day" for a card without statements), like the Mac stepper.
+        stepper(
+          text: day != null
+              ? 'יום החיוב בבנק: ב-$day לחודש'
+              : manual
+                  ? 'יום החיוב בבנק: ביום המשכורת'
+                  : 'יום החיוב בבנק: כמו בקובץ${usualDay != null ? ' (בדרך כלל ב-$usualDay)' : ''}',
+          minus: day == null ? null : () => update(context, (j) => day <= 1 ? j.remove('chargeDay') : j['chargeDay'] = day - 1),
+          plus: (day ?? 0) >= 31 ? null : () => update(context, (j) => j['chargeDay'] = (day ?? 0) + 1),
+        ),
+        stepper(
+          text: delay == 0 ? 'יורד מהעו״ש באותו יום' : 'יורד מהעו״ש ${delay == 1 ? 'יום' : '$delay ימים'} אחרי',
+          minus: delay <= 0 ? null : () => update(context, (j) => j['delayDays'] = delay - 1),
+          plus: delay >= 7 ? null : () => update(context, (j) => j['delayDays'] = delay + 1),
+        ),
+        if (manual) ...[
+          const SizedBox(height: 8),
+          NumberField(
+            label: 'בדרך כלל בחודש',
+            value: s.monthlyEstimate,
+            suffix: '₪',
+            onChanged: (v) => update(context, (j) => j['monthlyEstimate'] = jsonNumber(v)),
+          ),
+        ],
+      ]),
     );
   }
 }
