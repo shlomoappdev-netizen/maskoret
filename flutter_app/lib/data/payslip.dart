@@ -30,7 +30,7 @@ enum PayslipError implements Exception {
   unreadable('לא ניתן לפתוח את הקובץ כ-PDF.'),
   needsPassword('התלוש נעול בסיסמה.'),
   wrongPassword('הסיסמה לא נכונה.'),
-  noText('בקובץ אין טקסט (כנראה סריקה כתמונה), אז אי אפשר לקרוא ממנו את הסכומים.'),
+  noText('לא הצלחתי לקרוא טקסט מהקובץ.'),
   notFound('לא הצלחתי למצוא בתלוש את הנטו. אפשר להקליד אותו ידנית.');
 
   const PayslipError(this.message);
@@ -46,6 +46,7 @@ enum PayslipError implements Exception {
 class PayslipParser {
   static final _newlines = RegExp('[\n\r\u000B\u000C\u0085  ]');
   static final _amount = RegExp(r'^-?\d{1,3}(,\d{3})*\.\d{2}$');
+  static final _plainAmount = RegExp(r'^-?\d+\.\d{2}(?=\d?$)');
   static final _monthYear = RegExp(r'^(\d{1,2})/(\d{2}|\d{4})$');
   static final _integer = RegExp(r'^[+-]?\d+$');
   static final _digits = RegExp(r'^\d+$');
@@ -87,8 +88,16 @@ class PayslipParser {
       if (rest.length == 2 && rest[0] > 0 && rest[1] > 0 && (net - rest[0] - rest[1]).abs() < 0.02) {
         r.netToPay = rest[1];
       }
+    } else if (sumOfPrevious(amounts) case (final i, final total)) {
+      // No deductions: the payments, their total, and later the same amount as the net.
+      r.gross = total;
+      final after = amounts.skip(i + 1).where((a) => a > 0 && a <= total + 0.02);
+      final pay = after.lastOrNull ?? total;
+      r.netToPay = pay;
+      r.net = pay;
+      if (total - pay > 0.005) r.deductions = total - pay;
     } else {
-      // No chain: the amount right after the "net to pay" label.
+      // No arithmetic to go by: the amount right after the "net to pay" label.
       r.netToPay = _amountAfter('טו לתשלום', lines);
       r.gross = _amountAfter('תשלומים', lines);
     }
@@ -112,11 +121,28 @@ class PayslipParser {
 
   static double? amount(String line) {
     final s = line.replaceAll('₪', '').trim();
-    if (!_amount.hasMatch(s)) return null;
-    return double.parse(s.replaceAll(',', ''));
+    if (_amount.hasMatch(s)) return double.parse(s.replaceAll(',', ''));
+    // From recognized images: no thousands separator, and the ₪ sign sometimes read as a trailing digit.
+    final m = _plainAmount.firstMatch(s);
+    return m == null ? null : double.parse(m.group(0)!);
   }
 
-  static (int, int)? monthYear(String s) {
+  /// An amount that equals the sum of the 2–6 amounts right before it (the payments and their total).
+  static (int, double)? sumOfPrevious(List<double> amounts) {
+    (int, double)? best;
+    for (var i = 0; i < amounts.length; i++) {
+      if (amounts[i] <= 0) continue;
+      for (var k = 2; k <= 6 && i - k >= 0; k++) {
+        final parts = amounts.sublist(i - k, i);
+        if (!parts.every((p) => p > 0) || (parts.fold(0.0, (s, p) => s + p) - amounts[i]).abs() >= 0.02) continue;
+        if (best == null || amounts[i] > best.$2) best = (i, amounts[i]);
+      }
+    }
+    return best;
+  }
+
+  static (int, int)? monthYear(String raw) {
+    final s = raw.replaceAll(' ', '');
     final m = _monthYear.firstMatch(s);
     if (m == null) return null;
     final month = int.parse(m.group(1)!);

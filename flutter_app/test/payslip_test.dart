@@ -55,6 +55,16 @@ const payslipC = '''
 4,321.00
 ''';
 
+// No deductions: the payments, their total, the net; amounts without a thousands separator, as from a scan
+// (one with the ₪ read as a trailing digit), and a month with spaces.
+const payslipD = '''
+9 / 26
+1500.00
+250.00
+1750.001
+1,750.00
+''';
+
 const payslipNone = '''
 תלוש
 אין כאן סכומים
@@ -89,8 +99,16 @@ void main() {
     expect(PayslipParser.parse(payslipNone).isUseful, isFalse);
   });
 
+  test('no deductions: the total of the payments is the gross and the net', () {
+    final r = PayslipParser.parse(payslipD);
+    expect((r.month, r.year), (9, 2026));
+    expect(r.gross, 1750);
+    expect(r.netToPay, 1750);
+    expect(r.deductions, isNull);
+  });
+
   test('the Swift app reads every payslip the same way', () {
-    final texts = [payslipA, payslipB, payslipC, payslipNone, payslipA.replaceAll('\n', '\r\n')];
+    final texts = [payslipA, payslipB, payslipC, payslipD, payslipNone, payslipA.replaceAll('\n', '\r\n')];
     final p = Process.start('tool/swift_payslip.sh', []);
     return p.then((proc) async {
       proc.stdin.write(jsonEncode(texts));
