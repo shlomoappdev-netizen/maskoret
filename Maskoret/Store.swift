@@ -108,6 +108,7 @@ final class Store: ObservableObject {
             lastRatesCheck = file.lastRatesCheck
             money = file.money ?? MoneyData()
             migrated = money.adoptSavingsTransfers(from: &budget)
+            if money.dropConfirmedPending() > 0 { migrated = true }
             MoneyCalc.prime = money.primeRate
         } else {
             budget = .starter
@@ -149,6 +150,7 @@ final class Store: ObservableObject {
         lastRatesCheck = file.lastRatesCheck
         money = file.money ?? MoneyData()
         _ = money.adoptSavingsTransfers(from: &budget)
+        money.dropConfirmedPending()
     }
 
     var currentFile: SaveFile {

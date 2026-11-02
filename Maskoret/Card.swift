@@ -73,6 +73,73 @@ struct CardTransaction: Identifiable, Codable, Equatable, Hashable {
             .split(whereSeparator: { $0.isWhitespace })
             .joined(separator: " ")
     }
+
+    /// The merchant without company suffixes and punctuation: Max names the same merchant a little differently while a
+    /// purchase is pending ("… בע\"מ") and once it's charged.
+    static func looseKey(for merchant: String) -> String {
+        var s = merchant.lowercased()
+        for suffix in ["בע\"מ", "בע״מ", "בעמ", "ltd", "בע'מ"] { s = s.replacingOccurrences(of: suffix, with: " ") }
+        s = String(s.map { ".,-'\"״׳()".contains($0) ? " " : $0 })
+        return s.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
+    static func sameMerchant(_ a: String, _ b: String) -> Bool {
+        let x = looseKey(for: a), y = looseKey(for: b)
+        if x == y { return true }
+        return min(x.count, y.count) >= 6 && (x.hasPrefix(y) || y.hasPrefix(x))
+    }
+}
+
+extension MoneyData {
+    /// Points every link to a charge at its new id (a pending item that became a charge).
+    mutating func renameCardIDs(_ renamed: [String: String]) {
+        guard !renamed.isEmpty else { return }
+        for i in receivables.indices {
+            for (old, new) in renamed {
+                if let share = receivables[i].cardShares.removeValue(forKey: old) { receivables[i].cardShares[new] = share }
+                receivables[i].cardCreditIDs = receivables[i].cardCreditIDs.map { $0 == old ? new : $0 }
+            }
+        }
+        for i in trends.indices {
+            var seen = Set<String>()
+            trends[i].cardIDs = trends[i].cardIDs.map { renamed[$0] ?? $0 }.filter { seen.insert($0).inserted }
+            for (old, new) in renamed {
+                if let share = trends[i].shares.removeValue(forKey: old) { trends[i].shares[new] = share }
+            }
+        }
+    }
+
+    /// A pending purchase that already shows up as a charge (same card and amount, a few days apart, the same merchant
+    /// even if named a little differently) is that charge counted twice: it goes, and its links move to the charge.
+    @discardableResult
+    mutating func dropConfirmedPending() -> Int {
+        let cal = Calendar.current
+        func days(_ a: Date, _ b: Date) -> Int {
+            abs(cal.dateComponents([.day], from: cal.startOfDay(for: a), to: cal.startOfDay(for: b)).day ?? 99)
+        }
+        var renamed: [String: String] = [:]
+        var used = Set<String>()
+        for p in cardTransactions where p.status == .pending {
+            guard let c = cardTransactions.first(where: { c in
+                c.status != .pending && !used.contains(c.id) && c.cardLast4 == p.cardLast4
+                    && abs(c.originalAmount - p.originalAmount) < 0.005 && days(c.date, p.date) <= 3
+                    && CardTransaction.sameMerchant(c.merchant, p.merchant)
+            }) else { continue }
+            used.insert(c.id)
+            renamed[p.id] = c.id
+            if let i = cardTransactions.firstIndex(where: { $0.id == c.id }) {
+                if cardTransactions[i].linkedExpenseID == nil, cardTransactions[i].linkedTrackedID == nil {
+                    cardTransactions[i].linkedExpenseID = p.linkedExpenseID
+                    cardTransactions[i].linkedTrackedID = p.linkedTrackedID
+                }
+                if cardTransactions[i].owedPortion == 0 { cardTransactions[i].owedPortion = p.owedPortion }
+            }
+        }
+        guard !renamed.isEmpty else { return 0 }
+        cardTransactions.removeAll { renamed[$0.id] != nil }
+        renameCardIDs(renamed)
+        return renamed.count
+    }
 }
 
 extension CardTransaction {
@@ -621,7 +688,7 @@ extension Store {
         /// The existing pending item that is this purchase: same merchant, card and amount — same day first, else up to 2 days apart.
         func pendingMatch(_ tx: CardTransaction, in list: [CardTransaction]) -> Int? {
             let candidates = list.indices.filter {
-                list[$0].merchantKey == tx.merchantKey && list[$0].cardLast4 == tx.cardLast4
+                CardTransaction.sameMerchant(list[$0].merchant, tx.merchant) && list[$0].cardLast4 == tx.cardLast4
                     && abs(list[$0].originalAmount - tx.originalAmount) < 0.005 && days(list[$0].date, tx.date) <= 2
             }
             return candidates.min { days(list[$0].date, tx.date) < days(list[$1].date, tx.date) }
@@ -674,20 +741,9 @@ extension Store {
         let staleBefore = cal.date(byAdding: .day, value: -35, to: Date()) ?? Date()
         let kept = pending.filter { ($0.chargeDate ?? $0.date) >= staleBefore }
         m.cardTransactions += freshPending + kept
-        if !renamed.isEmpty {
-            for i in m.receivables.indices {
-                for (old, new) in renamed {
-                    if let share = m.receivables[i].cardShares.removeValue(forKey: old) { m.receivables[i].cardShares[new] = share }
-                    m.receivables[i].cardCreditIDs = m.receivables[i].cardCreditIDs.map { $0 == old ? new : $0 }
-                }
-            }
-            for i in m.trends.indices {
-                m.trends[i].cardIDs = m.trends[i].cardIDs.map { renamed[$0] ?? $0 }
-                for (old, new) in renamed {
-                    if let share = m.trends[i].shares.removeValue(forKey: old) { m.trends[i].shares[new] = share }
-                }
-            }
-        }
+        m.renameCardIDs(renamed)
+        // Pending items kept from before that this file shows as charged under a slightly different name.
+        m.dropConfirmedPending()
 
         let repeats = result.transactions.filter { $0.occurrence > 1 }.count
         let record = CardImport(

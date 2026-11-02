@@ -463,7 +463,12 @@ extension MoneyData {
     /// What should have moved in the checking account in (from, to] without being recorded: the salary on the pay day,
     /// fixed expenses on their day, and the card on its charge day. Typing in a balance starts this count over.
     func expectedChecking(from: Date, to: Date, budget: Budget, history: [MonthRecord]) -> Double {
-        guard from < to else { return 0 }
+        expectedCheckingLines(from: from, to: to, budget: budget, history: history).reduce(0) { $0 + $1.amount }
+    }
+
+    /// The same as `expectedChecking`, one line per movement (for the statement in "תנועות").
+    func expectedCheckingLines(from: Date, to: Date, budget: Budget, history: [MonthRecord]) -> [LedgerLine] {
+        guard from < to else { return [] }
         let cal = Calendar.current
         func day(_ wanted: Int, year: Int, month: Int) -> Date {
             let first = cal.date(from: DateComponents(year: year, month: month, day: 1)) ?? from
@@ -471,13 +476,19 @@ extension MoneyData {
             return cal.date(from: DateComponents(year: year, month: month, day: min(max(wanted, 1), days))) ?? first
         }
         func inRange(_ d: Date) -> Bool { d > from && d <= to }
-        var total = 0.0
+        var lines: [LedgerLine] = []
 
         // Card: every imported charge once its day came — fixed expenses and tracked purchases on the card included.
+        // One line per charge day, like the bank shows it.
+        var charges: [Date: Double] = [:]
         for t in cardTransactions where !t.ignored {
-            if let d = t.chargeDate, inRange(d) { total -= t.amount }
+            if let d = t.chargeDate, inRange(d) { charges[d, default: 0] += t.amount }
         }
-        for p in manualCardPayments where inRange(p.chargeDate) { total -= p.amount }
+        for p in manualCardPayments where inRange(p.chargeDate) { charges[p.chargeDate, default: 0] += p.amount }
+        for (d, amount) in charges where amount != 0 {
+            lines.append(LedgerLine(id: "card:\(d.timeIntervalSinceReferenceDate)", date: d, title: "חיוב כרטיס אשראי",
+                                    amount: -amount, source: .card))
+        }
 
         var y = cal.component(.year, from: from), m = cal.component(.month, from: from)
         let endKey = cal.component(.year, from: to) * 100 + cal.component(.month, from: to)
@@ -486,8 +497,12 @@ extension MoneyData {
         while y * 100 + m <= endKey {
             let key = y * 100 + m
             // Salary, unless it was recorded as a transaction.
-            if inRange(periodStart(year: y, month: m)), !transactions.contains(where: { $0.salaryKey == key }) {
-                total += history.first { $0.year == y && $0.month == m }?.actualNet ?? budget.net
+            let payDate = periodStart(year: y, month: m)
+            if inRange(payDate), !transactions.contains(where: { $0.salaryKey == key }) {
+                let actual = history.first { $0.year == y && $0.month == m }?.actualNet
+                lines.append(LedgerLine(id: "salary:\(key)", date: payDate,
+                                        title: "משכורת " + Fmt.monthNames[m - 1] + (actual == nil ? " (הערכה)" : ""),
+                                        amount: actual ?? budget.net, source: .salary))
             }
             let statement = cardTransactions(billingKey: key)
             // A statement that wasn't imported: the usual spending and the planned installments.
@@ -495,7 +510,8 @@ extension MoneyData {
                 let d = day(cardDay, year: y, month: m)
                 if inRange(d) {
                     let dayBefore = cal.date(byAdding: .day, value: -1, to: d) ?? d
-                    total -= average + projectedInstallments(from: dayBefore, to: d)
+                    lines.append(LedgerLine(id: "cardEstimate:\(key)", date: d, title: "חיוב כרטיס אשראי (לפי ממוצע)",
+                                            amount: -(average + projectedInstallments(from: dayBefore, to: d)), source: .card))
                 }
             }
             // Fixed expenses. One paid by card leaves with the statement, so it never counts by itself as well.
@@ -505,11 +521,57 @@ extension MoneyData {
                 let onCard = cardTransactions.contains { $0.linkedExpenseID == item.id && !$0.ignored }
                 if onCard, statement.contains(where: { $0.linkedExpenseID == item.id && !$0.ignored }) { continue }
                 let d = day(onCard ? (cardDay ?? payDay) : (item.chargeDay ?? payDay), year: y, month: m)
-                if inRange(d) { total -= amount }
+                if inRange(d) {
+                    lines.append(LedgerLine(id: "fixed:\(item.id):\(key)", date: d, title: item.name + (onCard ? " (באשראי)" : ""),
+                                            amount: -amount, source: .fixed))
+                }
             }
             if m == 12 { y += 1; m = 1 } else { m += 1 }
         }
-        return total
+        return lines
+    }
+
+    /// The checking account as a bank statement: from each balance you typed in, every movement after it — recorded
+    /// transactions, deposits into savings plans, and what follows by itself (salary, fixed expenses, card) — with the
+    /// balance after each line. Newest first. Lines after today are what's expected.
+    func checkingStatement(until: Date, budget: Budget, history: [MonthRecord], months: Int = 6) -> [LedgerLine] {
+        guard let account = checking else { return [] }
+        let cal = Calendar.current
+        let oldest = cal.date(byAdding: .month, value: -months, to: Date()) ?? .distantPast
+        let entries = account.balances.filter { $0.date <= until }.sorted { $0.date < $1.date }
+        // The last balance before the window still opens it.
+        let firstIndex = entries.lastIndex { $0.date <= oldest } ?? 0
+        var result: [LedgerLine] = []
+        for (i, entry) in entries.enumerated() where i >= firstIndex {
+            let end = i + 1 < entries.count ? entries[i + 1].date : until
+            var lines: [LedgerLine] = []
+            for t in transactions where t.date > entry.date && t.date <= end {
+                let change = t.effect(on: account.id)
+                guard change != 0 else { continue }
+                lines.append(LedgerLine(id: "t:" + t.id.uuidString, date: t.date, title: t.title, amount: change,
+                                        source: t.kind == .transfer ? .transfer(t.id) : .transaction(t.id)))
+            }
+            for plan in accounts where plan.kind == .savings || plan.kind == .deposit {
+                for d in plan.contributionDates(from: entry.date, to: end) {
+                    lines.append(LedgerLine(id: "dep:\(plan.id):\(d.timeIntervalSinceReferenceDate)", date: d,
+                                            title: "הפקדה ל" + plan.name, amount: -plan.monthlyContribution, source: .savings))
+                }
+            }
+            if let since = autoBalanceSince {
+                lines += expectedCheckingLines(from: max(entry.date, since), to: end, budget: budget, history: history)
+            }
+            // Oldest first to run the balance, same-day lines income first.
+            lines.sort { $0.date != $1.date ? $0.date < $1.date : $0.amount > $1.amount }
+            var running = entry.amount
+            result.append(LedgerLine(id: "bal:" + entry.id.uuidString, date: entry.date, title: "יתרה שהקלדת",
+                                     amount: 0, source: .balance, balance: running))
+            for var line in lines {
+                running += line.amount
+                line.balance = running
+                result.append(line)
+            }
+        }
+        return result.reversed()
     }
 
     /// Savings deposits live in one place, the savings account. A fixed expense marked "transfer to savings" becomes a
@@ -536,6 +598,30 @@ extension MoneyData {
             changed = true
         }
         return changed
+    }
+}
+
+/// One line of the checking statement.
+struct LedgerLine: Identifiable, Equatable {
+    enum Source: Equatable {
+        case balance, salary, fixed, card, savings
+        case transaction(UUID), transfer(UUID)
+    }
+    let id: String
+    let date: Date
+    let title: String
+    /// Signed: + came in, − went out.
+    let amount: Double
+    let source: Source
+    /// The balance after this line.
+    var balance: Double = 0
+
+    /// Written by hand in "תנועות" (the rest follows from other screens).
+    var isManual: Bool {
+        switch source {
+        case .transaction, .transfer: return true
+        default: return false
+        }
     }
 }
 
