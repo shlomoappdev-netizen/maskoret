@@ -3,6 +3,8 @@ import SwiftUI
 
 /// Holds all app data and persists it as JSON in Application Support.
 final class Store: ObservableObject {
+    /// A screen another screen asked to open (a line in the statement → the screen it comes from).
+    @Published var openScreen: SidebarItem?
     /// Where updated tax rates are published. Edit in "נתוני מס" if you host the file elsewhere.
     static let defaultRatesURL = ""
     static let legacyRatesURL = "https://raw.githubusercontent.com/Shlomo116/maskoret-rates/main/tax-rates.json"

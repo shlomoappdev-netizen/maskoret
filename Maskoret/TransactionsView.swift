@@ -13,48 +13,41 @@ struct TransactionsView: View {
         store.money.transactions.filter { !$0.isPlanned }.sorted { $0.date > $1.date }
     }
 
+    // Quick entry, like typing a line into the bank.
+    @State private var quickKind: TransactionKind = .expense
+    @State private var quickTitle = ""
+    @State private var quickAmount = ""
+    @State private var quickDate = Date()
+
+    /// How far ahead the statement shows what's expected: the next pay day and card charge, or the last plan.
+    private var horizon: Date {
+        let ahead = Calendar.current.date(byAdding: .day, value: 35, to: Date()) ?? Date()
+        return max(ahead, planned.last?.date ?? ahead)
+    }
+
+    private var statement: [LedgerLine] {
+        store.money.checkingStatement(until: horizon, budget: store.budget, history: store.history)
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: "תנועות", subtitle: "הכנסות והוצאות גדולות, העברות בין חשבונות ותכנונים לעתיד") {
+                PageBar(title: "תנועות בעו״ש", subtitle: "כל מה שנכנס ויוצא מהעו״ש, עם היתרה אחרי כל שורה — משכורת, הוצאות קבועות ואשראי מתעדכנים לבד") {
                     Menu {
                         Button("הוצאה גדולה…") { editing = newTransaction(.expense) }
                         Button("הכנסה (מענק, בונוס, מתנה)…") { editing = newTransaction(.income) }
                         Button("העברה בין חשבונות…") { editing = newTransaction(.transfer) }
                     } label: {
-                        Label("תנועה חדשה", systemImage: "plus")
+                        Label("תנועה מפורטת", systemImage: "plus")
                     }
                     .fixedSize()
                 }
+                quickEntry
                 Divider()
-                List {
-                    if !planned.isEmpty {
-                        Section {
-                            ForEach(planned) { t in row(t) }
-                        } header: {
-                            Label("מתוכנן — נכנס לתחזית", systemImage: "calendar.badge.clock")
-                        }
-                    }
-                    if !done.isEmpty {
-                        ForEach(groupedDone, id: \.key) { group in
-                            Section(group.title) {
-                                ForEach(group.items) { t in row(t) }
-                            }
-                        }
-                    }
-                }
-                .listStyle(.inset)
-                .overlay {
-                    if store.money.transactions.isEmpty {
-                        ContentUnavailableView {
-                            Label("אין תנועות", systemImage: "arrow.left.arrow.right")
-                        } description: {
-                            Text("רשום כאן רק דברים גדולים או חריגים: קנייה גדולה, מענק, העברה לפיקדון. תנועה בתאריך עתידי היא תכנון — והיא נכנסת לתחזית. הוצאות קבועות כבר מחושבות לבד.")
-                        } actions: {
-                            Button("תנועה ראשונה") { editing = newTransaction(.expense) }
-                                .buttonStyle(.borderedProminent)
-                        }
-                    }
+                if store.money.checking == nil || statement.isEmpty {
+                    legacyList
+                } else {
+                    statementList
                 }
             }
             .navigationTitle("תנועות")
@@ -67,6 +60,192 @@ struct TransactionsView: View {
                     store.upsertTransaction(saved)
                 }
                 .environmentObject(store)
+            }
+        }
+    }
+
+    // MARK: Quick entry
+
+    private var quickValue: Double? {
+        Double(quickAmount.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "₪", with: "")
+            .trimmingCharacters(in: .whitespaces))
+    }
+
+    private var quickEntry: some View {
+        AdaptiveStack(spacing: 8, wideAlignment: .center) {
+            Picker("", selection: $quickKind) {
+                Text("− הוצאה").tag(TransactionKind.expense)
+                Text("+ הכנסה").tag(TransactionKind.income)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 180)
+            TextField("תיאור", text: $quickTitle, prompt: Text("תיאור (למשל: מתנה לחתונה)"))
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(addQuick)
+            HStack(spacing: 8) {
+                TextField("סכום", text: $quickAmount, prompt: Text(verbatim: "₪ 0"))
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .monospacedDigit()
+                    .frame(width: 100)
+                    .onSubmit(addQuick)
+                DatePicker("", selection: $quickDate, displayedComponents: .date)
+                    .labelsHidden()
+                Button("הוסף", action: addQuick)
+                    .buttonStyle(.borderedProminent)
+                    .disabled((quickValue ?? 0) <= 0)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+    }
+
+    private func addQuick() {
+        guard let amount = quickValue, amount > 0 else { return }
+        var t = newTransaction(quickKind)
+        t.title = quickTitle.trimmingCharacters(in: .whitespaces)
+        t.amount = amount
+        t.date = quickDate
+        store.upsertTransaction(t)
+        quickTitle = ""
+        quickAmount = ""
+        quickDate = Date()
+    }
+
+    // MARK: Statement
+
+    private var statementList: some View {
+        let lines = statement
+        let now = Date()
+        let future = lines.filter { $0.date > now }
+        let past = lines.filter { $0.date <= now }
+        let cal = Calendar.current
+        let months = Dictionary(grouping: past) { cal.component(.year, from: $0.date) * 100 + cal.component(.month, from: $0.date) }
+        return List {
+            if !future.isEmpty {
+                Section {
+                    ForEach(future) { line in ledgerRow(line, expected: true) }
+                } header: {
+                    Label("צפוי — לפי ההכנסות, ההוצאות הקבועות והאשראי", systemImage: "calendar.badge.clock")
+                }
+            }
+            ForEach(months.keys.sorted(by: >), id: \.self) { key in
+                Section(key == cal.component(.year, from: now) * 100 + cal.component(.month, from: now)
+                        ? "היום · " + Fmt.monthTitle(year: key / 100, month: key % 100)
+                        : Fmt.monthTitle(year: key / 100, month: key % 100)) {
+                    ForEach(months[key] ?? []) { line in ledgerRow(line, expected: false) }
+                }
+            }
+            Section {
+            } footer: {
+                Text("📌 מהוצאות קבועות · 💳 מכרטיס אשראי · → לחיסכון · ✔︎ יתרה שהקלדת (ממנה החישוב מתחיל מחדש). לחיצה על שורה שנוצרה לבד פותחת את המסך שלה; שורה שרשמת כאן נפתחת לעריכה.")
+            }
+        }
+        .listStyle(.inset)
+    }
+
+    private func icon(_ line: LedgerLine) -> String {
+        switch line.source {
+        case .balance: return "✔︎"
+        case .salary: return "💰"
+        case .fixed: return "📌"
+        case .card: return "💳"
+        case .savings: return "→"
+        case .transfer: return "⇄"
+        case .transaction: return line.amount > 0 || (line.elsewhere ?? 0) > 0 ? "＋" : "−"
+        }
+    }
+
+    private func open(_ line: LedgerLine) {
+        switch line.source {
+        case .transaction(let id), .transfer(let id):
+            editing = store.money.transactions.first { $0.id == id }
+        case .salary: store.openScreen = .history
+        case .fixed: store.openScreen = .expenses
+        case .card: store.openScreen = .card
+        case .savings, .balance: store.openScreen = .accounts
+        }
+    }
+
+    @ViewBuilder
+    private func ledgerRow(_ line: LedgerLine, expected: Bool) -> some View {
+        let row = Button {
+            open(line)
+        } label: {
+            HStack(spacing: 10) {
+                Text(verbatim: line.date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).locale(Fmt.locale)))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 40, alignment: .leading)
+                Text(verbatim: icon(line))
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(line.title)
+                        .font(line.source == .balance ? .body.weight(.semibold) : .body)
+                        .lineLimit(1)
+                    if !line.note.isEmpty {
+                        Text(line.note).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                if line.source != .balance {
+                    let shown = line.elsewhere ?? line.amount
+                    Text(verbatim: (shown > 0 ? "+" : shown < 0 ? "−" : "") + Fmt.money(abs(shown)))
+                        .monospacedDigit()
+                        .foregroundStyle(line.elsewhere != nil ? Color.secondary : shown > 0 ? Color.green : Color.primary)
+                }
+                Text(verbatim: "יתרה " + Fmt.moneyRounded(line.balance))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(line.balance < 0 ? Color.red : Color.secondary)
+                    .frame(minWidth: 90, alignment: .trailing)
+            }
+            .opacity(expected ? 0.6 : 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        switch line.source {
+        case .transaction(let id), .transfer(let id):
+            if let t = store.money.transactions.first(where: { $0.id == id }) {
+                row.rowMenu(onEdit: { editing = t }) { store.deleteTransaction(t) }
+            } else {
+                row
+            }
+        default:
+            row
+        }
+    }
+
+    // MARK: Without a checking account: the recorded transactions only
+
+    private var legacyList: some View {
+        List {
+            if !planned.isEmpty {
+                Section {
+                    ForEach(planned) { t in row(t) }
+                } header: {
+                    Label("מתוכנן — נכנס לתחזית", systemImage: "calendar.badge.clock")
+                }
+            }
+            if !done.isEmpty {
+                ForEach(groupedDone, id: \.key) { group in
+                    Section(group.title) {
+                        ForEach(group.items) { t in row(t) }
+                    }
+                }
+            }
+        }
+        .listStyle(.inset)
+        .overlay {
+            if store.money.transactions.isEmpty {
+                ContentUnavailableView {
+                    Label("אין תנועות", systemImage: "arrow.left.arrow.right")
+                } description: {
+                    Text("רשום כאן רק דברים גדולים או חריגים: קנייה גדולה, מענק, העברה לפיקדון. תנועה בתאריך עתידי היא תכנון — והיא נכנסת לתחזית. הוצאות קבועות כבר מחושבות לבד.")
+                } actions: {
+                    Button("תנועה ראשונה") { editing = newTransaction(.expense) }
+                        .buttonStyle(.borderedProminent)
+                }
             }
         }
     }

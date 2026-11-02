@@ -254,6 +254,9 @@ struct ContentView: View {
             (selection ?? .summary).screen
             }
         }
+        .onChange(of: store.openScreen) { _, item in
+            if let item { selection = item; store.openScreen = nil }
+        }
         .task {
             updater.check()
             await store.refreshRates()

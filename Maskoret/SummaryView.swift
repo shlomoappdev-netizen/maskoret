@@ -173,59 +173,58 @@ struct SummaryView: View {
         var id: String { name }
     }
 
-    /// Colors for the card categories, apart from the colors of the other slices.
-    private static let categoryColors: [Color] = [
+    /// Colors for the user's trends, apart from the colors of the other slices.
+    private static let trendColors: [Color] = [
         .teal, .cyan, .mint, .yellow, .brown,
         Color(red: 0.95, green: 0.55, blue: 0.35), Color(red: 0.55, green: 0.70, blue: 0.30)
     ]
 
-    /// Card spending by category, biggest first; the small ones are folded into one slice.
-    private func cardSlices(_ p: MonthPicture) -> [Slice] {
-        let estimateTitle = "עוד צפוי לפי ממוצע החודשים הקודמים"
-        var merged: [String: Double] = [:]
-        var estimate = 0.0
-        for line in p.card where line.amount > 0 {
-            if line.title == estimateTitle {
-                estimate += line.amount
-            } else {
-                // Purchases recorded by hand ("💳 …") are one category of their own.
-                merged[line.title.hasPrefix("💳") ? "קניות שנרשמו ידנית" : line.title, default: 0] += line.amount
+    /// The user's trends in this period (by purchase date), out of the card spending and the one-offs they belong to;
+    /// what isn't in any trend stays in its own slice. Cash entries of a trend aren't part of the net, so they're left out.
+    private func trendSlices(_ p: MonthPicture) -> (trends: [Slice], fromCard: Double, fromOneOffs: Double) {
+        guard let start = p.periodStart, let end = p.periodEnd else { return ([], 0, 0) }
+        let money = store.dashboard.money
+        var fromCard = 0.0, fromOneOffs = 0.0
+        var result: [(String, Double)] = []
+        for trend in money.trends {
+            var total = 0.0
+            for item in money.items(of: trend) where item.date >= start && item.date < end {
+                switch item.source {
+                case .card: total += item.amount; fromCard += item.amount
+                case .transaction: total += item.amount; fromOneOffs += item.amount
+                case .manual: break
+                }
             }
+            if total > 0.005 { result.append((trend.emoji + " " + trend.name, total)) }
         }
-        // The estimate is spread over the categories by their share in the last statements.
-        let shares = estimate > 0 ? store.dashboard.money.averageCardCategoryShares() : [:]
-        for (name, share) in shares {
-            merged[name, default: 0] += estimate * share
+        result.sort { $0.1 > $1.1 }
+        let colors = Self.trendColors
+        var slices = result.prefix(colors.count - 1).enumerated().map { i, item in
+            Slice(name: item.0, value: item.1, color: colors[i])
         }
-        if !shares.isEmpty { estimate = 0 }
-        let sorted = merged.sorted { $0.value > $1.value }
-        let shown = sorted.prefix(Self.categoryColors.count - 1)
-        var result = shown.enumerated().map { i, item in
-            Slice(name: "💳 " + item.key, value: item.value, color: Self.categoryColors[i])
-        }
-        let rest = sorted.dropFirst(shown.count).reduce(0) { $0 + $1.value }
-        if rest > 0 {
-            result.append(Slice(name: "💳 קטגוריות אחרות", value: rest, color: Self.categoryColors.last!))
-        }
-        if estimate > 0 {
-            result.append(Slice(name: "💳 עוד צפוי (הערכה)", value: estimate, color: .gray))
-        }
-        return result
+        let rest = result.dropFirst(colors.count - 1).reduce(0) { $0 + $1.1 }
+        if rest > 0 { slices.append(Slice(name: "מגמות אחרות", value: rest, color: colors.last!)) }
+        return (slices, fromCard, fromOneOffs)
     }
 
     private func slices(_ p: MonthPicture) -> [Slice] {
-        ([
+        let trends = trendSlices(p)
+        let cardKnown = p.cardTotal - p.cardEstimate
+        return ([
             Slice(name: "הוצאות קבועות", value: p.spendingTotal, color: .pink),
             Slice(name: "רכישות תקופתיות", value: p.periodic, color: .purple)
         ]
-        + cardSlices(p)
+        + trends.trends
         + [
+            Slice(name: trends.trends.isEmpty ? "כרטיס אשראי (משתנות)" : "💳 אשראי — בלי מגמה",
+                  value: max(0, cardKnown - trends.fromCard), color: .teal.opacity(0.55)),
+            Slice(name: "💳 עוד צפוי באשראי (הערכה)", value: p.cardEstimate, color: .gray),
             Slice(name: "תשלומים (החלק של החודש)", value: p.installmentsTotal, color: .indigo),
             Slice(name: "לחיסכון", value: p.toSavingsTotal, color: .blue),
-            Slice(name: "הוצאות חריגות", value: max(0, -p.oneOffTotal), color: .orange),
+            Slice(name: "הוצאות חריגות", value: max(0, -p.oneOffTotal - trends.fromOneOffs), color: .orange),
             Slice(name: "נשאר", value: max(p.remaining, 0), color: .green)
         ])
-        .filter { $0.value > 0 }
+        .filter { $0.value > 0.005 }
     }
 
     private func chartCard(_ p: MonthPicture) -> some View {
@@ -234,8 +233,8 @@ struct SummaryView: View {
         return Card {
             Text("לאן הולך הנטו")
                 .font(.headline)
-            if p.cardEstimated {
-                Text("💳 קטגוריות האשראי כוללות הערכה לפי ממוצע החודשים הקודמים")
+            if !store.dashboard.money.trends.isEmpty {
+                Text("המגמות שיצרת — מה ששייך להן בתקופה הזו")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

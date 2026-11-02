@@ -547,9 +547,15 @@ extension MoneyData {
             var lines: [LedgerLine] = []
             for t in transactions where t.date > entry.date && t.date <= end {
                 let change = t.effect(on: account.id)
-                guard change != 0 else { continue }
-                lines.append(LedgerLine(id: "t:" + t.id.uuidString, date: t.date, title: t.title, amount: change,
-                                        source: t.kind == .transfer ? .transfer(t.id) : .transaction(t.id)))
+                var line = LedgerLine(id: "t:" + t.id.uuidString, date: t.date, title: t.title, amount: change,
+                                      source: t.kind == .transfer ? .transfer(t.id) : .transaction(t.id))
+                // Paid by card or in another account: shown, but the checking moves only with the card charge.
+                if change == 0 {
+                    line.elsewhere = t.kind == .income ? t.amount : -t.amount
+                    line.note = t.isCardPurchase ? "💳 באשראי — יורד עם חיוב הכרטיס"
+                        : "ב" + (self.account(t.kind == .transfer ? t.toAccountID : t.accountID)?.name ?? "חשבון אחר")
+                }
+                lines.append(line)
             }
             for plan in accounts where plan.kind == .savings || plan.kind == .deposit {
                 for d in plan.contributionDates(from: entry.date, to: end) {
@@ -563,8 +569,11 @@ extension MoneyData {
             // Oldest first to run the balance, same-day lines income first.
             lines.sort { $0.date != $1.date ? $0.date < $1.date : $0.amount > $1.amount }
             var running = entry.amount
-            result.append(LedgerLine(id: "bal:" + entry.id.uuidString, date: entry.date, title: "יתרה שהקלדת",
-                                     amount: 0, source: .balance, balance: running))
+            // A balance typed again before anything moved says nothing new — only the last one of those shows.
+            if !lines.isEmpty || i == entries.count - 1 {
+                result.append(LedgerLine(id: "bal:" + entry.id.uuidString, date: entry.date, title: "יתרה שהקלדת",
+                                         amount: 0, source: .balance, balance: running))
+            }
             for var line in lines {
                 running += line.amount
                 line.balance = running
@@ -615,6 +624,9 @@ struct LedgerLine: Identifiable, Equatable {
     let source: Source
     /// The balance after this line.
     var balance: Double = 0
+    /// A recorded movement that doesn't touch the checking right now (card, another account): its own amount.
+    var elsewhere: Double?
+    var note: String = ""
 
     /// Written by hand in "תנועות" (the rest follows from other screens).
     var isManual: Bool {

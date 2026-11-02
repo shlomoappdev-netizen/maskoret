@@ -10,7 +10,7 @@ struct PhoneRoot: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab: SidebarItem = .summary
 
-    private static let tabs: [SidebarItem] = [.summary, .transactions, .card, .accounts]
+    static let tabs: [SidebarItem] = [.summary, .transactions, .card, .accounts]
 
     var body: some View {
         TabView(selection: $tab) {
@@ -32,6 +32,15 @@ struct PhoneRoot: View {
         .task {
             await store.refreshRates()
             await store.refreshPrime()
+        }
+        .onChange(of: store.openScreen) { _, item in
+            guard let item else { return }
+            if PhoneRoot.tabs.contains(item) {
+                tab = item
+                store.openScreen = nil
+            } else {
+                tab = .updates   // "עוד" opens it
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -126,6 +135,12 @@ struct MoreView: View {
                 }
             }
             .navigationTitle("עוד")
+            .onChange(of: store.openScreen) { _, item in
+                if let item, !PhoneRoot.tabs.contains(item) { selection = item; store.openScreen = nil }
+            }
+            .onAppear {
+                if let item = store.openScreen, !PhoneRoot.tabs.contains(item) { selection = item; store.openScreen = nil }
+            }
         } detail: {
             if let selection {
                 VStack(spacing: 0) {
