@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import UniformTypeIdentifiers
 
 struct SummaryView: View {
     @EnvironmentObject private var store: Store
@@ -480,6 +481,16 @@ struct SaveMonthSheet: View {
     @State private var actualNet: Double = 0
     @State private var addToChecking = true
     @State private var loaded = false
+    @State private var netFieldID = UUID()
+    // Reading a payslip PDF.
+    @State private var importingPayslip = false
+    @State private var payslipFile: URL?
+    @State private var askPassword = false
+    @State private var password = ""
+    @State private var payslip: PayslipReading?
+    @State private var payslipError: String?
+
+    private static let payslipPasswordAccount = "payslip-password"
 
     private var years: [Int] {
         let current = Calendar.current.component(.year, from: Date())
@@ -513,14 +524,42 @@ struct SaveMonthSheet: View {
             }
 
             Section {
+                Button {
+                    importingPayslip = true
+                } label: {
+                    Label("קרא מתלוש PDF…", systemImage: "doc.text.viewfinder")
+                }
+                if let payslipError {
+                    Label(payslipError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+                if let p = payslip {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("נקרא מהתלוש" + (p.month.map { " של " + Fmt.monthNames[$0 - 1] } ?? "") + (p.year.map { " \($0)" } ?? ""),
+                              systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                        if let v = p.gross { BreakdownLine(title: "סה״כ תשלומים (ברוטו)", value: v) }
+                        if let v = p.incomeTax { BreakdownLine(title: "מס הכנסה", value: -v) }
+                        if let v = p.nationalInsurance { BreakdownLine(title: "ביטוח לאומי", value: -v) }
+                        if let v = p.health { BreakdownLine(title: "מס בריאות", value: -v) }
+                        if let v = p.deductions { BreakdownLine(title: "ניכויי חובה וגמל (סה״כ)", value: -v) }
+                        if let net = p.net, let pay = p.netToPay, abs(net - pay) > 0.005 {
+                            BreakdownLine(title: "שכר נטו", value: net)
+                            BreakdownLine(title: "ניכויי רשות", value: pay - net)
+                        }
+                    }
+                    .font(.callout)
+                }
                 if loaded {
                     AmountField(title: "נטו שנכנס בפועל", value: $actualNet)
+                        .id(netFieldID)
                 }
                 Toggle("הוסף גם כהכנסה לעו״ש", isOn: $addToChecking)
             } header: {
                 Text("משכורת בפועל")
             } footer: {
-                Text("הסכום ״נטו לתשלום״ מהתלוש. התחזית משתמשת בממוצע של החודשים האחרונים. ההוספה לעו״ש מעדכנת את היתרה המשוערת עד שתעדכן יתרה ידנית.")
+                Text("הסכום ״נטו לתשלום״ מהתלוש — אפשר לבחור את קובץ התלוש וזה ימולא לבד (בדוק לפני השמירה). התחזית משתמשת בממוצע של החודשים האחרונים. ההוספה לעו״ש מעדכנת את היתרה המשוערת עד שתעדכן יתרה ידנית.")
             }
 
             Section {
@@ -550,6 +589,72 @@ struct SaveMonthSheet: View {
                 actualNet = existing.actualNet ?? 0
             }
             loaded = true
+        }
+        .fileImporter(isPresented: $importingPayslip, allowedContentTypes: [.pdf]) { result in
+            guard case .success(let url) = result else { return }
+            openPayslip(url)
+        }
+        .alert("התלוש נעול בסיסמה", isPresented: $askPassword) {
+            SecureField("סיסמה", text: $password)
+            Button("פתח וזכור במכשיר") { readPayslip(password: password, remember: true) }
+            Button("פתח רק הפעם") { readPayslip(password: password, remember: false) }
+            Button("ביטול", role: .cancel) { password = "" }
+        } message: {
+            Text("בדרך כלל זו תעודת הזהות. ״זכור״ שומר אותה בצורה מוצפנת במכשיר הזה בלבד, כדי שהתלוש הבא ייפתח לבד.")
+        }
+    }
+
+    // MARK: Payslip
+
+    /// Copies the picked file (the picker's access is temporary) and reads it — with the saved password if it's locked.
+    private func openPayslip(_ picked: URL) {
+        payslipError = nil
+        let scoped = picked.startAccessingSecurityScopedResource()
+        defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("payslip-\(UUID().uuidString).pdf")
+        do {
+            try FileManager.default.copyItem(at: picked, to: copy)
+        } catch {
+            payslipError = "לא ניתן לפתוח את הקובץ: " + error.localizedDescription
+            return
+        }
+        payslipFile = copy
+        if PayslipReader.isLocked(url: copy) {
+            if let saved = KeychainStore.load(account: Self.payslipPasswordAccount),
+               (try? PayslipReader.read(url: copy, password: saved)) != nil {
+                readPayslip(password: saved, remember: false)
+            } else {
+                password = ""
+                askPassword = true
+            }
+        } else {
+            readPayslip(password: nil, remember: false)
+        }
+    }
+
+    private func readPayslip(password: String?, remember: Bool) {
+        guard let file = payslipFile else { return }
+        defer { self.password = "" }
+        do {
+            let reading = try PayslipReader.read(url: file, password: password)
+            if remember, let password { KeychainStore.save(password, account: Self.payslipPasswordAccount) }
+            try? FileManager.default.removeItem(at: file)
+            payslipFile = nil
+            payslip = reading
+            payslipError = nil
+            if let m = reading.month, let y = reading.year, years.contains(y) {
+                month = m
+                year = y
+            }
+            if let pay = reading.netToPay { actualNet = pay }
+            netFieldID = UUID()
+        } catch PayslipError.wrongPassword {
+            payslipError = PayslipError.wrongPassword.errorDescription
+            askPassword = true
+        } catch {
+            payslipError = error.localizedDescription
+            try? FileManager.default.removeItem(at: file)
+            payslipFile = nil
         }
     }
 }

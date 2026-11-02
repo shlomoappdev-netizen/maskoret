@@ -12,6 +12,8 @@
 		61D043D974340DF5ED0FE451 /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C3D2A14BDE4B16B0A2E123F /* Store.swift */; };
 		03C24907FB50FDEDBC068EBF /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A04B7F2517B7B1434596EF /* Components.swift */; };
 		0253CCA782FC66C1D6E8CC9F /* SummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F5465FBD99633A3E0ECFDA9 /* SummaryView.swift */; };
+		43879EC14BCA46D496A9508F /* Payslip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A5AB720ADB4D338ADC48D5 /* Payslip.swift */; };
+		BC10FC53E40347B5952FDBE8 /* Payslip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A5AB720ADB4D338ADC48D5 /* Payslip.swift */; };
 		E1D0BB2E243850DCAA10CA04 /* IncomesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D69407B173C53A522C4E6D00 /* IncomesView.swift */; };
 		873A7D6F597FF6B82C41EB5D /* CostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C2CD1EDF82E790FF2C72825 /* CostsView.swift */; };
 		CD8D7540348FA76FAFD3DEA6 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D31EA9DEF02A64F0A72D663C /* HistoryView.swift */; };
@@ -114,6 +116,7 @@
 		5A9357E796B1FEE3F2E57DD5 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		0C3D2A14BDE4B16B0A2E123F /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
 		D0A04B7F2517B7B1434596EF /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		54A5AB720ADB4D338ADC48D5 /* Payslip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Payslip.swift; sourceTree = "<group>"; };
 		4F5465FBD99633A3E0ECFDA9 /* SummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryView.swift; sourceTree = "<group>"; };
 		D69407B173C53A522C4E6D00 /* IncomesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomesView.swift; sourceTree = "<group>"; };
 		1C2CD1EDF82E790FF2C72825 /* CostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostsView.swift; sourceTree = "<group>"; };
@@ -203,6 +206,7 @@
 				0C3D2A14BDE4B16B0A2E123F /* Store.swift */,
 				D0A04B7F2517B7B1434596EF /* Components.swift */,
 				4F5465FBD99633A3E0ECFDA9 /* SummaryView.swift */,
+				54A5AB720ADB4D338ADC48D5 /* Payslip.swift */,
 				D69407B173C53A522C4E6D00 /* IncomesView.swift */,
 				1C2CD1EDF82E790FF2C72825 /* CostsView.swift */,
 				D31EA9DEF02A64F0A72D663C /* HistoryView.swift */,
@@ -388,6 +392,7 @@
 				61D043D974340DF5ED0FE451 /* Store.swift in Sources */,
 				03C24907FB50FDEDBC068EBF /* Components.swift in Sources */,
 				0253CCA782FC66C1D6E8CC9F /* SummaryView.swift in Sources */,
+				43879EC14BCA46D496A9508F /* Payslip.swift in Sources */,
 				E1D0BB2E243850DCAA10CA04 /* IncomesView.swift in Sources */,
 				873A7D6F597FF6B82C41EB5D /* CostsView.swift in Sources */,
 				CD8D7540348FA76FAFD3DEA6 /* HistoryView.swift in Sources */,
@@ -447,6 +452,7 @@
 				BEB884ED10314E11B5E6E321 /* Store.swift in Sources */,
 				0BF731EDCE6A41AE8C3C238D /* Components.swift in Sources */,
 				B2F35D32BB72416E86733FB8 /* SummaryView.swift in Sources */,
+				BC10FC53E40347B5952FDBE8 /* Payslip.swift in Sources */,
 				BD7C13B1A5C34EEFB7672425 /* IncomesView.swift in Sources */,
 				EAD544665FDC4F3F961D82DD /* CostsView.swift in Sources */,
 				7BAAD124BB2244A8A41A1DC4 /* HistoryView.swift in Sources */,
@@ -549,7 +555,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -563,7 +569,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.9.1;
+				MARKETING_VERSION = 4.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -581,7 +587,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -595,7 +601,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.9.1;
+				MARKETING_VERSION = 4.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -611,7 +617,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = 79K93494T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -630,7 +636,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.9.1;
+				MARKETING_VERSION = 4.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;
@@ -649,7 +655,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = 79K93494T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -668,7 +674,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.9.1;
+				MARKETING_VERSION = 4.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;
