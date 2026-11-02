@@ -148,7 +148,7 @@ struct TrackedRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 if let wear = item.wear {
-                    ProgressView(value: min(wear, 1))
+                    ProgressView(value: min(max(wear, 0), 1))
                         .tint(wearColor(wear))
                         .controlSize(.small)
                 }
@@ -205,7 +205,7 @@ struct TrackedItemDetailView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(item.name).font(.title.weight(.bold))
                         if let wear = item.wear, let next = item.nextReplacement {
-                            ProgressView(value: min(wear, 1))
+                            ProgressView(value: min(max(wear, 0), 1))
                                 .tint(wearColor(wear))
                                 .frame(maxWidth: 260)
                             Text(verbatim: wear >= 1

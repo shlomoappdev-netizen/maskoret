@@ -93,7 +93,7 @@ struct ReceivablesView: View {
                     }
                 }
                 if r.expected > 0 && !r.forgiven {
-                    ProgressView(value: min(back, r.expected), total: r.expected).tint(.green)
+                    ProgressView(value: min(max(back, 0), max(r.expected, 0.01)), total: max(r.expected, 0.01)).tint(.green)
                 }
             }
         }

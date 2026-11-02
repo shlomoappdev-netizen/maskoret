@@ -101,7 +101,7 @@ struct TrendCard: View {
                 }
             }
             if trend.monthlyLimit > 0 {
-                ProgressView(value: min(stats.thisMonth, trend.monthlyLimit), total: trend.monthlyLimit) {
+                ProgressView(value: min(max(stats.thisMonth, 0), trend.monthlyLimit), total: trend.monthlyLimit) {
                     Text(verbatim: "תקרה: " + Fmt.money(trend.monthlyLimit))
                         .font(.caption)
                 }

@@ -293,11 +293,15 @@ struct CardView: View {
                         HStack {
                             Text(item.name).font(.body.weight(.medium))
                             Spacer()
-                            Text(verbatim: Fmt.money(rounded(actual)) + " / " + Fmt.moneyRounded(planned))
+                            // A refund bigger than the charges leaves a credit, not a negative spend.
+                            Text(verbatim: actual < 0
+                                 ? "זיכוי " + Fmt.money(rounded(-actual)) + " / " + Fmt.moneyRounded(planned)
+                                 : Fmt.money(rounded(actual)) + " / " + Fmt.moneyRounded(planned))
                                 .monospacedDigit()
-                                .foregroundStyle(actual > planned + 0.5 ? Color.red : Color.primary)
+                                .foregroundStyle(actual > planned + 0.5 ? Color.red : actual < 0 ? Color.green : Color.primary)
                         }
-                        ProgressView(value: min(actual, max(planned, 0.01)), total: max(planned, 0.01))
+                        // A value outside 0...total turns the bar into an endless "loading" animation.
+                        ProgressView(value: min(max(actual, 0), max(planned, 0.01)), total: max(planned, 0.01))
                             .tint(actual > planned + 0.5 ? .red : .green)
                     }
                 }
