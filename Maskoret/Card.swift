@@ -200,12 +200,26 @@ extension MoneyData {
 
     /// Average variable card spending per month, from the last (up to) 3 statements. A statement that wasn't charged yet
     /// may still be open (only some of its purchases) and pull the average down, so it counts only when there's no other.
-    func averageCardVariable() -> Double {
+    /// The last (up to 3) statements the average is taken from — the ones already charged, if any.
+    private var averageStatementKeys: [Int] {
         let now = Date()
         let charged = cardStatementKeys.filter { key in
             cardTransactions(billingKey: key).contains { !$0.chargeEstimated && ($0.chargeDate ?? .distantFuture) <= now }
         }
-        let keys = (charged.isEmpty ? cardStatementKeys : charged).prefix(3)
+        return Array((charged.isEmpty ? cardStatementKeys : charged).prefix(3))
+    }
+
+    /// Each category's share (0...1) of the variable spending in the statements the average is taken from.
+    func averageCardCategoryShares() -> [String: Double] {
+        let txs = averageStatementKeys.flatMap { cardTransactions(billingKey: $0) }
+        let byCategory = CardMonthSummary.of(txs).byCategory.filter { $0.amount > 0 }
+        let total = byCategory.reduce(0) { $0 + $1.amount }
+        guard total > 0 else { return [:] }
+        return Dictionary(uniqueKeysWithValues: byCategory.map { ($0.name, $0.amount / total) })
+    }
+
+    func averageCardVariable() -> Double {
+        let keys = averageStatementKeys
         guard !keys.isEmpty else { return 0 }
         let total = keys.reduce(0.0) { sum, key in
             sum + cardTransactions(billingKey: key).filter { $0.isVariable && $0.installment == nil }.reduce(0) { $0 + $1.myAmount }

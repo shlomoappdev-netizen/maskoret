@@ -172,16 +172,58 @@ struct SummaryView: View {
         var id: String { name }
     }
 
+    /// Colors for the card categories, apart from the colors of the other slices.
+    private static let categoryColors: [Color] = [
+        .teal, .cyan, .mint, .yellow, .brown,
+        Color(red: 0.95, green: 0.55, blue: 0.35), Color(red: 0.55, green: 0.70, blue: 0.30)
+    ]
+
+    /// Card spending by category, biggest first; the small ones are folded into one slice.
+    private func cardSlices(_ p: MonthPicture) -> [Slice] {
+        let estimateTitle = "עוד צפוי לפי ממוצע החודשים הקודמים"
+        var merged: [String: Double] = [:]
+        var estimate = 0.0
+        for line in p.card where line.amount > 0 {
+            if line.title == estimateTitle {
+                estimate += line.amount
+            } else {
+                // Purchases recorded by hand ("💳 …") are one category of their own.
+                merged[line.title.hasPrefix("💳") ? "קניות שנרשמו ידנית" : line.title, default: 0] += line.amount
+            }
+        }
+        // The estimate is spread over the categories by their share in the last statements.
+        let shares = estimate > 0 ? store.dashboard.money.averageCardCategoryShares() : [:]
+        for (name, share) in shares {
+            merged[name, default: 0] += estimate * share
+        }
+        if !shares.isEmpty { estimate = 0 }
+        let sorted = merged.sorted { $0.value > $1.value }
+        let shown = sorted.prefix(Self.categoryColors.count - 1)
+        var result = shown.enumerated().map { i, item in
+            Slice(name: "💳 " + item.key, value: item.value, color: Self.categoryColors[i])
+        }
+        let rest = sorted.dropFirst(shown.count).reduce(0) { $0 + $1.value }
+        if rest > 0 {
+            result.append(Slice(name: "💳 קטגוריות אחרות", value: rest, color: Self.categoryColors.last!))
+        }
+        if estimate > 0 {
+            result.append(Slice(name: "💳 עוד צפוי (הערכה)", value: estimate, color: .gray))
+        }
+        return result
+    }
+
     private func slices(_ p: MonthPicture) -> [Slice] {
-        [
+        ([
             Slice(name: "הוצאות קבועות", value: p.spendingTotal, color: .pink),
-            Slice(name: "רכישות תקופתיות", value: p.periodic, color: .purple),
-            Slice(name: "כרטיס אשראי (משתנות)", value: p.cardTotal, color: .teal),
+            Slice(name: "רכישות תקופתיות", value: p.periodic, color: .purple)
+        ]
+        + cardSlices(p)
+        + [
             Slice(name: "תשלומים (החלק של החודש)", value: p.installmentsTotal, color: .indigo),
             Slice(name: "לחיסכון", value: p.toSavingsTotal, color: .blue),
             Slice(name: "הוצאות חריגות", value: max(0, -p.oneOffTotal), color: .orange),
             Slice(name: "נשאר", value: max(p.remaining, 0), color: .green)
-        ]
+        ])
         .filter { $0.value > 0 }
     }
 
@@ -191,6 +233,11 @@ struct SummaryView: View {
         return Card {
             Text("לאן הולך הנטו")
                 .font(.headline)
+            if p.cardEstimated {
+                Text("💳 קטגוריות האשראי כוללות הערכה לפי ממוצע החודשים הקודמים")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             // A donut with its legend beside it; on an iPhone the legend goes under it.
             AdaptiveStack(spacing: 18, compactAlignment: .center, wideAlignment: .center) {
                 ZStack {
