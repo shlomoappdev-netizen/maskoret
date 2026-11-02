@@ -309,8 +309,8 @@ enum CardImportError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unreadable: return "לא הצלחתי לפתוח את הקובץ. ודא שזה קובץ Excel (‎.xlsx) שיוצא מ-Max."
-        case .notMax: return "הקובץ לא נראה כמו פירוט עסקאות של Max (לא נמצאה עמודת ״תאריך עסקה״)."
+        case .unreadable: return "לא הצלחתי לפתוח את הקובץ. ודא שזה קובץ Excel (‎.xlsx) שיוצא מ-Max או מ-CAL."
+        case .notMax: return "הקובץ לא נראה כמו פירוט עסקאות של Max או של CAL (לא נמצאה עמודת ״תאריך עסקה״)."
         case .empty: return "לא נמצאו עסקאות בקובץ."
         }
     }
@@ -358,6 +358,11 @@ enum XLSXReader {
         }
     }
 
+    /// "x:sheet" → "sheet": some exports (CAL) prefix every element with a namespace.
+    static func localName(_ qualified: String) -> String {
+        qualified.split(separator: ":").last.map(String.init) ?? qualified
+    }
+
     static func columnIndex(_ ref: String) -> Int {
         var index = 0
         for ch in ref.uppercased() {
@@ -383,7 +388,8 @@ enum XLSXReader {
             return d.strings
         }
 
-        func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+        func parser(_ parser: XMLParser, didStartElement qualified: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+            let name = XLSXReader.localName(qualified)
             if name == "si" { inSI = true; current = "" }
             if name == "t" && inSI { inT = true }
         }
@@ -392,7 +398,8 @@ enum XLSXReader {
             if inT { current += string }
         }
 
-        func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+        func parser(_ parser: XMLParser, didEndElement qualified: String, namespaceURI: String?, qualifiedName: String?) {
+            let name = XLSXReader.localName(qualified)
             if name == "t" { inT = false }
             if name == "si" { strings.append(current); inSI = false }
         }
@@ -409,7 +416,8 @@ enum XLSXReader {
             return d.map
         }
 
-        func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+        func parser(_ parser: XMLParser, didStartElement qualified: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+            let name = XLSXReader.localName(qualified)
             if name == "Relationship", let id = attributes["Id"], let target = attributes["Target"] {
                 map[id] = target
             }
@@ -427,7 +435,8 @@ enum XLSXReader {
             return d.sheets
         }
 
-        func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+        func parser(_ parser: XMLParser, didStartElement qualified: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+            let name = XLSXReader.localName(qualified)
             if name == "sheet", let sheetName = attributes["name"] {
                 let rid = attributes["r:id"] ?? attributes.first(where: { $0.key.hasSuffix(":id") })?.value ?? ""
                 sheets.append((sheetName, rid))
@@ -460,7 +469,8 @@ enum XLSXReader {
             return rows
         }
 
-        func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+        func parser(_ parser: XMLParser, didStartElement qualified: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+            let name = XLSXReader.localName(qualified)
             switch name {
             case "c":
                 ref = attributes["r"] ?? ""
@@ -477,7 +487,8 @@ enum XLSXReader {
             if collecting { value += string }
         }
 
-        func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+        func parser(_ parser: XMLParser, didEndElement qualified: String, namespaceURI: String?, qualifiedName: String?) {
+            let name = XLSXReader.localName(qualified)
             switch name {
             case "v", "t":
                 collecting = false
@@ -643,6 +654,148 @@ enum MaxParser {
     }
 }
 
+// MARK: - CAL
+
+/// A CAL ("כאל") export: "פירוט עסקאות וזיכויים". One sheet; the header cells break lines ("תאריך\nעסקה"); no category
+/// and no card digits; a pending purchase has no charge date ("עסקה בקליטה"); an installment purchase shows one row
+/// per payment charged so far, at the purchase date and without its charge date.
+enum CalParser {
+    /// Charges from CAL files all belong to this card (the file doesn't say which card it was).
+    static let card = "CAL"
+
+    static func normalized(_ s: String) -> String {
+        s.replacingOccurrences(of: "\n", with: " ").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
+    static func isCal(_ sheets: [XLSXReader.Sheet]) -> Bool {
+        sheets.contains { sheet in
+            sheet.rows.contains { row in
+                let cells = row.map(normalized)
+                return cells.contains("תאריך עסקה") && cells.contains { $0.contains("מועד חיוב") }
+            }
+        }
+    }
+
+    static func parse(_ sheets: [XLSXReader.Sheet]) throws -> MaxParser.Result {
+        let cal = Calendar.current
+        struct Row { var tx: CardTransaction; var payments: Int? }
+        var rows: [Row] = []
+        for sheet in sheets {
+            guard let headerIndex = sheet.rows.firstIndex(where: { $0.map(normalized).contains("תאריך עסקה") }) else { continue }
+            let header = sheet.rows[headerIndex].map(normalized)
+            func col(_ part: String) -> Int? { header.firstIndex { $0.contains(part) } }
+            let cDate = col("תאריך עסקה"), cMerchant = col("בית עסק"), cAmount = col("סכום")
+            let cCharge = col("מועד חיוב"), cType = col("סוג עסקה"), cNote = col("הערות")
+            for row in sheet.rows.dropFirst(headerIndex + 1) {
+                func cell(_ c: Int?) -> String {
+                    guard let c, c < row.count else { return "" }
+                    return row[c].trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                guard let date = MaxParser.parseDate(cell(cDate)), let amount = MaxParser.parseAmount(cell(cAmount)) else { continue }
+                let merchant = cell(cMerchant)
+                guard !merchant.isEmpty else { continue }
+                let note = cell(cNote)
+                let type = cell(cType)
+                var payments: Int? = nil
+                if let r = note.range(of: #"ב-(\d+) תשלומים"#, options: .regularExpression) {
+                    payments = Int(note[r].filter(\.isNumber))
+                } else if type == "תשלומים" {
+                    payments = 2
+                }
+                let chargeDate = MaxParser.parseDate(cell(cCharge))
+                let pending = chargeDate == nil && payments == nil
+                rows.append(Row(tx: CardTransaction(
+                    id: "", date: date, merchant: merchant, category: "", cardLast4: card, type: type,
+                    amount: amount, originalAmount: amount, originalCurrency: "₪",
+                    chargeDate: chargeDate, chargeEstimated: chargeDate == nil,
+                    note: pending ? "" : note, method: "", status: pending ? .pending : .charged
+                ), payments: payments))
+            }
+        }
+        guard !rows.isEmpty else { throw CardImportError.empty }
+
+        // The months the file covers, and the day CAL charges.
+        let chargeDates = rows.compactMap { $0.tx.chargeDate }
+        let usualDay: Int = {
+            let days = chargeDates.map { cal.component(.day, from: $0) }
+            return Dictionary(grouping: days, by: { $0 }).mapValues(\.count).max { $0.value < $1.value }?.key ?? 2
+        }()
+        func key(_ d: Date) -> Int { cal.component(.year, from: d) * 100 + cal.component(.month, from: d) }
+        func chargeDay(_ key: Int) -> Date {
+            cal.date(from: DateComponents(year: key / 100, month: key % 100, day: usualDay, hour: 12)) ?? Date()
+        }
+        func addMonths(_ key: Int, _ n: Int) -> Int {
+            let d = cal.date(byAdding: .month, value: n, to: chargeDay(key)) ?? chargeDay(key)
+            return self.keyOf(d, cal)
+        }
+        /// The first charge day after a purchase.
+        func firstCharge(after date: Date) -> Int {
+            let k = key(date)
+            return date < chargeDay(k) ? k : addMonths(k, 1)
+        }
+        let months = Set(chargeDates.map(key))
+        let lastMonth = months.max() ?? key(Date())
+
+        // Installments: identical rows are the payments charged in the months this file covers.
+        var groups: [String: [Int]] = [:]
+        for (i, r) in rows.enumerated() where r.payments != nil {
+            groups[[String(r.tx.date.timeIntervalSince1970), r.tx.merchant, String(r.tx.amount)].joined(separator: "|"), default: []].append(i)
+        }
+        for (_, indices) in groups {
+            let first = rows[indices[0]]
+            guard let total = first.payments else { continue }
+            let start = firstCharge(after: first.tx.date)
+            // The covered months from the first payment on, then later months if the file has more rows than that.
+            var slots = months.filter { $0 >= start }.sorted()
+            while slots.count < indices.count { slots.append(addMonths(slots.last ?? lastMonth, 1)) }
+            for (n, i) in indices.enumerated() {
+                let month = slots[n]
+                let number = monthsBetween(start, month, cal) + 1
+                rows[i].tx.chargeDate = chargeDay(month)
+                rows[i].tx.chargeEstimated = !months.contains(month)
+                rows[i].tx.note = "תשלום \(number) מתוך \(total)"
+                rows[i].tx.originalAmount = (first.tx.amount * Double(total) * 100).rounded() / 100
+            }
+        }
+        // Pending purchases: on the next charge day.
+        for i in rows.indices where rows[i].tx.status == .pending {
+            rows[i].tx.chargeDate = chargeDay(max(firstCharge(after: rows[i].tx.date), lastMonth))
+        }
+
+        // Stable ids, like Max — identical purchases on the same day get #1, #2…
+        var seen: [String: Int] = [:]
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.dateFormat = "yyyyMMdd"
+        let result: [CardTransaction] = rows.map { r in
+            var tx = r.tx
+            let base = [tx.status == .pending ? "P" : "C", dayFormatter.string(from: tx.date), tx.merchantKey, tx.cardLast4,
+                        String(format: "%.2f", tx.originalAmount), tx.note].joined(separator: "|")
+            let n = (seen[base] ?? 0) + 1
+            seen[base] = n
+            tx.id = base + "#\(n)"
+            return tx
+        }
+        let label = String(format: "%d/%d", lastMonth % 100, lastMonth / 100)
+        return MaxParser.Result(billingLabel: label, transactions: result)
+    }
+
+    private static func keyOf(_ d: Date, _ cal: Calendar) -> Int {
+        cal.component(.year, from: d) * 100 + cal.component(.month, from: d)
+    }
+
+    private static func monthsBetween(_ a: Int, _ b: Int, _ cal: Calendar) -> Int {
+        (b / 100 - a / 100) * 12 + (b % 100 - a % 100)
+    }
+}
+
+/// Any supported statement: Max or CAL.
+enum CardStatementParser {
+    static func parse(_ sheets: [XLSXReader.Sheet]) throws -> MaxParser.Result {
+        CalParser.isCal(sheets) ? try CalParser.parse(sheets) : try MaxParser.parse(sheets)
+    }
+}
+
 // MARK: - Store actions
 
 extension Store {
@@ -653,7 +806,7 @@ extension Store {
     /// - A pending purchase that later shows up as charged is replaced by the charge (its links follow).
     @discardableResult
     func importCardFile(_ url: URL) throws -> CardImport {
-        let result = try MaxParser.parse(XLSXReader.read(url))
+        let result = try CardStatementParser.parse(XLSXReader.read(url))
         let cal = Calendar.current
 
         var m = money

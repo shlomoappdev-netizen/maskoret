@@ -65,7 +65,7 @@ struct CardView: View {
                         .fixedSize()
                     }
                     Button(action: importFile) {
-                        Label("ייבוא קובץ מ-Max…", systemImage: "square.and.arrow.down")
+                        Label("ייבוא קובץ (Max / CAL)…", systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -116,7 +116,7 @@ struct CardView: View {
     }
 
     private var subtitle: String {
-        guard let last = store.money.cardImports.first else { return "ייבוא פירוט עסקאות מ-Max וצימוד להוצאות הקבועות" }
+        guard let last = store.money.cardImports.first else { return "ייבוא פירוט עסקאות מ-Max או מ-CAL, וצימוד להוצאות הקבועות" }
         return "ייבוא אחרון: " + Fmt.date(last.importedAt) + " · " + last.fileName
     }
 
@@ -132,7 +132,7 @@ struct CardView: View {
             howTo
                 .frame(maxWidth: 520)
             Button(action: importFile) {
-                Label("ייבוא קובץ מ-Max…", systemImage: "square.and.arrow.down")
+                Label("ייבוא קובץ (Max / CAL)…", systemImage: "square.and.arrow.down")
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -151,6 +151,10 @@ struct CardView: View {
             Text("2. בוחרים את חודש החיוב (״כל הכרטיסים״).")
             Text("3. לוחצים על אייקון האקסל (״ייצוא לאקסל״) ושומרים.")
             Text("4. מייבאים כאן. הכי טוב — ביום שהחיוב יורד מהבנק (אצלך בדרך כלל ב-\(store.money.usualChargeDay ?? 2) לחודש).")
+            Text("איך מייצאים מ-CAL (כאל):").font(.headline).padding(.top, 6)
+            Text("1. נכנסים לאתר או לאפליקציה של כאל ← ״פירוט עסקאות״.")
+            Text("2. בוחרים את התקופה ולוחצים על ״ייצוא לאקסל״.")
+            Text("3. מייבאים כאן את הקובץ (״פירוט עסקאות וזיכויים.xlsx״). כאל לא מסווגת קטגוריות, אז החיובים יופיעו בלי קטגוריה.")
         }
         .font(.callout)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -106,7 +106,7 @@ struct SummaryView: View {
         var list: [Todo] = []
         let money = store.dashboard.money
         if store.cardImportDue {
-            list.append(Todo(id: "card", icon: "square.and.arrow.down", text: "לייבא את קובץ האשראי של החודש מ-Max") {
+            list.append(Todo(id: "card", icon: "square.and.arrow.down", text: "לייבא את קובץ האשראי של החודש") {
                 store.openScreen = .card
             })
         }
