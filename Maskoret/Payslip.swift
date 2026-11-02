@@ -1,5 +1,6 @@
 import Foundation
 import PDFKit
+import Vision
 
 /// What a payslip PDF says, as far as the app can tell from its text.
 struct PayslipReading: Equatable {
@@ -28,7 +29,7 @@ enum PayslipError: LocalizedError {
         case .unreadable: return "לא ניתן לפתוח את הקובץ כ-PDF."
         case .needsPassword: return "התלוש נעול בסיסמה."
         case .wrongPassword: return "הסיסמה לא נכונה."
-        case .noText: return "בקובץ אין טקסט (כנראה סריקה כתמונה), אז אי אפשר לקרוא ממנו את הסכומים."
+        case .noText: return "לא הצלחתי לקרוא טקסט מהקובץ."
         case .notFound: return "לא הצלחתי למצוא בתלוש את הנטו. אפשר להקליד אותו ידנית."
         }
     }
@@ -42,7 +43,9 @@ enum PayslipReader {
             guard let password, !password.isEmpty else { throw PayslipError.needsPassword }
             guard doc.unlock(withPassword: password) else { throw PayslipError.wrongPassword }
         }
-        let text = (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }.joined(separator: "\n")
+        var text = (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }.joined(separator: "\n")
+        // A scanned payslip (an image, no text layer): read its numbers on the device.
+        if !text.contains(where: \.isNumber) { text = recognizeNumbers(doc) }
         guard text.contains(where: \.isNumber) else { throw PayslipError.noText }
         let reading = parse(text)
         guard reading.isUseful else { throw PayslipError.notFound }
@@ -87,8 +90,16 @@ enum PayslipReader {
             if rest.count == 2, rest[0] > 0, rest[1] > 0, abs(net - rest[0] - rest[1]) < 0.02 {
                 r.netToPay = rest[1]
             }
+        } else if let (i, total) = sumOfPrevious(amounts) {
+            // No deductions: the payments, their total, and later the same amount as the net.
+            r.gross = total
+            let after = amounts.dropFirst(i + 1).filter { $0 > 0 && $0 <= total + 0.02 }
+            let pay = after.last ?? total
+            r.netToPay = pay
+            r.net = pay
+            if total - pay > 0.005 { r.deductions = total - pay }
         } else {
-            // No chain: the amount right after the "net to pay" label.
+            // No arithmetic to go by: the amount right after the "net to pay" label.
             r.netToPay = amountAfter(label: "טו לתשלום", in: lines)
             r.gross = amountAfter(label: "תשלומים", in: lines)
         }
@@ -111,11 +122,64 @@ enum PayslipReader {
 
     static func amount(_ line: String) -> Double? {
         let s = line.replacingOccurrences(of: "₪", with: "").trimmingCharacters(in: .whitespaces)
-        guard s.range(of: #"^-?\d{1,3}(,\d{3})*\.\d{2}$"#, options: .regularExpression) != nil else { return nil }
-        return Double(s.replacingOccurrences(of: ",", with: ""))
+        if s.range(of: #"^-?\d{1,3}(,\d{3})*\.\d{2}$"#, options: .regularExpression) != nil {
+            return Double(s.replacingOccurrences(of: ",", with: ""))
+        }
+        // From recognized images: no thousands separator, and the ₪ sign sometimes read as a trailing digit.
+        if let m = s.range(of: #"^-?\d+\.\d{2}(?=\d?$)"#, options: .regularExpression) {
+            return Double(s[m])
+        }
+        return nil
     }
 
-    static func monthYear(_ s: String) -> (Int, Int)? {
+    /// An amount that equals the sum of the 2–6 amounts right before it (the payments and their total).
+    static func sumOfPrevious(_ amounts: [Double]) -> (Int, Double)? {
+        var best: (Int, Double)?
+        for i in amounts.indices where amounts[i] > 0 {
+            for k in 2...6 where i - k >= 0 {
+                let parts = amounts[(i - k)..<i]
+                guard parts.allSatisfy({ $0 > 0 }), abs(parts.reduce(0, +) - amounts[i]) < 0.02 else { continue }
+                if best == nil || amounts[i] > best!.1 { best = (i, amounts[i]) }
+            }
+        }
+        return best
+    }
+
+    /// The numbers on scanned pages, read on the device (Apple Vision has no Hebrew, so only digits matter here),
+    /// one per line, top to bottom and right to left — the order a Hebrew payslip is read in.
+    static func recognizeNumbers(_ doc: PDFDocument) -> String {
+        var lines: [String] = []
+        for index in 0..<doc.pageCount {
+            guard let page = doc.page(at: index) else { continue }
+            let box = page.bounds(for: .mediaBox)
+            let scale: CGFloat = 3
+            let w = Int(box.width * scale), h = Int(box.height * scale)
+            guard w > 0, h > 0, let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                                    space: CGColorSpaceCreateDeviceRGB(),
+                                                    bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { continue }
+            ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            ctx.scaleBy(x: scale, y: scale)
+            page.draw(with: .mediaBox, to: ctx)
+            guard let image = ctx.makeImage() else { continue }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["en-US"]
+            request.usesLanguageCorrection = false
+            try? VNImageRequestHandler(cgImage: image).perform([request])
+            let found = (request.results ?? []).compactMap { o in o.topCandidates(1).first.map { ($0.string, o.boundingBox) } }
+            let rows = Dictionary(grouping: found) { Int(($0.1.midY * 200).rounded()) }
+            for key in rows.keys.sorted(by: >) {
+                for (text, _) in rows[key]!.sorted(by: { $0.1.minX > $1.1.minX }) {
+                    lines.append(text.replacingOccurrences(of: " / ", with: "/"))
+                }
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    static func monthYear(_ raw: String) -> (Int, Int)? {
+        let s = raw.replacingOccurrences(of: " ", with: "")
         guard let m = s.range(of: #"^(\d{1,2})/(\d{2}|\d{4})$"#, options: .regularExpression) else { return nil }
         let parts = s[m].split(separator: "/")
         guard let month = Int(parts[0]), var year = Int(parts[1]), (1...12).contains(month) else { return nil }
