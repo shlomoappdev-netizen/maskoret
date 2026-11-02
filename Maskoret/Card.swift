@@ -276,15 +276,6 @@ extension MoneyData {
         return Array((charged.isEmpty ? cardStatementKeys : charged).prefix(3))
     }
 
-    /// Each category's share (0...1) of the variable spending in the statements the average is taken from.
-    func averageCardCategoryShares() -> [String: Double] {
-        let txs = averageStatementKeys.flatMap { cardTransactions(billingKey: $0) }
-        let byCategory = CardMonthSummary.of(txs).byCategory.filter { $0.amount > 0 }
-        let total = byCategory.reduce(0) { $0 + $1.amount }
-        guard total > 0 else { return [:] }
-        return Dictionary(uniqueKeysWithValues: byCategory.map { ($0.name, $0.amount / total) })
-    }
-
     func averageCardVariable() -> Double {
         let keys = averageStatementKeys
         guard !keys.isEmpty else { return 0 }
