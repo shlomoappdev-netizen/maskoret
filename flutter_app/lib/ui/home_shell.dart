@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/card.dart';
 import '../data/max_import.dart';
+import 'admin_screen.dart';
 import 'budget_screens.dart';
 import 'card_screen.dart';
 import 'family_screen.dart';
@@ -48,6 +49,7 @@ enum Dest {
   account('חשבון ומשק בית', Icons.account_circle_outlined, ownScaffold: true),
   support('תמיכה ודיווח תקלות', Icons.support_agent, ownScaffold: true),
   versions('גרסאות קודמות', Icons.history, ownScaffold: true),
+  adminAnnouncements('הודעות למשתמשים', Icons.campaign_outlined, ownScaffold: true),
   updates('עדכונים', Icons.system_update_alt, ownScaffold: true);
 
   const Dest(this.title, this.icon, {this.ownScaffold = false});
@@ -80,17 +82,20 @@ enum Dest {
         account => const HouseholdsScreen(),
         support => const SupportScreen(),
         versions => const VersionsScreen(),
+        adminAnnouncements => const AdminAnnouncementsScreen(),
         updates => const UpdatesScreen(),
       };
 
   /// The sidebar sections, like the Mac (הכנסות / הוצאות / חיסכון / תכנון / הגדרות).
-  static List<(String, List<Dest>)> sections() => [
+  /// [admin]: "הודעות למשתמשים" shows only for an admin (rpc am_i_admin).
+  static List<(String, List<Dest>)> sections({bool admin = false}) => [
         ('', [summary]),
         ('הכנסות', [incomes, deductions]),
         ('הוצאות', [expenses, card, transactions, tracked]),
         ('חיסכון', [accounts]),
         ('תכנון', [forecast, history, maaser, owed, trends, insights]),
         ('הגדרות', [family, tax, account, support, versions, if (Updater.supported) updates]),
+        if (admin) ('ניהול', [adminAnnouncements]),
       ];
 
   /// The phone's bottom tabs; everything else is under "עוד" (like PhoneRoot.swift).
@@ -121,6 +126,8 @@ class _HomeShellState extends State<HomeShell> {
       listenable: Listenable.merge([scope.store, scope.account, scope.sync, scope.updater, scope.support]),
       builder: (context, _) {
         _maybeAskLocalChoice(context);
+        // Signed out, or not an admin any more: leave the admin screen.
+        if (current == Dest.adminAnnouncements && !scope.support.isAdmin) current = Dest.summary;
         final appBar = AppBar(
           title: _Title(),
           actions: [
@@ -353,7 +360,7 @@ class Sidebar extends StatelessWidget {
     return Column(children: [
       Expanded(
         child: ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
-          for (final (title, items) in Dest.sections()) ...[
+          for (final (title, items) in Dest.sections(admin: context.scope.support.isAdmin)) ...[
             if (title.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
@@ -389,10 +396,15 @@ class MoreScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(padding: const EdgeInsets.only(bottom: 24), children: [
+    final support = context.scope.support;
+    return ListenableBuilder(listenable: support, builder: (context, _) => _list(context, support.isAdmin));
+  }
+
+  Widget _list(BuildContext context, bool admin) {
+    return ListView(padding: const EdgeInsets.only(bottom: 110), children: [
       const MonthNumbers(),
       const Divider(height: 1),
-      for (final (title, items) in Dest.sections())
+      for (final (title, items) in Dest.sections(admin: admin))
         if (items.any((d) => !Dest.tabs.contains(d)))
           SectionCard(title: title, children: [
             for (final d in items.where((d) => !Dest.tabs.contains(d)))

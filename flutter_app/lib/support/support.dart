@@ -107,6 +107,9 @@ class SupportCenter extends ChangeNotifier {
   int? memberNo;
   bool loaded = false;
 
+  /// The server says this user is an admin (rpc am_i_admin): the "הודעות למשתמשים" screen shows.
+  bool isAdmin = false;
+
   String? _listeningAs;
   RealtimeChannel? _channel;
 
@@ -117,6 +120,7 @@ class SupportCenter extends ChangeNotifier {
     threads = [];
     unread = 0;
     memberNo = null;
+    isAdmin = false;
     loaded = false;
     notifyListeners();
     if (userId == null) return;
@@ -128,6 +132,12 @@ class SupportCenter extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       AppLog.add('support', 'my_profile נכשל: $e');
+    }
+    try {
+      isAdmin = await _c.rpc('am_i_admin') == true;
+      notifyListeners();
+    } catch (e) {
+      AppLog.add('support', 'am_i_admin נכשל: $e');
     }
     // Row-level security sends each user only their own threads.
     _channel = _c.channel('support-$userId')
