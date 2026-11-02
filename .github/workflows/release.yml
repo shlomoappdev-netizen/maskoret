@@ -1,6 +1,8 @@
 # Publishes a new version of מחשבון שכר to everyone, in the cloud:
 #   when version.json on main has "ready": true and a build newer than the site's latest.json —
-#   builds Windows + Android (flutter-app.yml) and the Mac app (signed with the "Maskoret Signing" certificate),
+#   builds Windows + Android (flutter-app.yml) and the Mac app (signed with the "Maskoret Signing" certificate) —
+#   or, when tools/upload_mac_build.sh already uploaded a DMG built on the Mac (prerelease "mac-build-<build>"),
+#   takes that one instead of waiting for a macOS runner —
 #   creates the GitHub release in this repo with the files, and updates latest.json + changelog.json on the
 #   download site (shlomoappdev-netizen/maskoret-releases), which every app checks for updates.
 #
@@ -38,13 +40,22 @@ jobs:
     outputs:
       go: ${{ steps.v.outputs.go }}
       version: ${{ steps.v.outputs.version }}
+      local_mac: ${{ steps.v.outputs.local_mac }}
     steps:
       - uses: actions/checkout@v4
       - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(jq -r .version version.json); build=$(jq -r .build version.json); ready=$(jq -r '.ready // false' version.json)
           site=$(curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)" | jq -r .build)
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          # A Mac build uploaded from the Mac (tools/upload_mac_build.sh) for this build number.
+          if gh release view "mac-build-$build" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx maskoret-mac.dmg; then
+            echo "local_mac=true" >> "$GITHUB_OUTPUT"; echo "Using the Mac build uploaded from the Mac (mac-build-$build)."
+          else
+            echo "local_mac=false" >> "$GITHUB_OUTPUT"
+          fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"; echo "Dry run: building $version ($build) without publishing."
           elif [ "$ready" = "true" ] && [ "$build" -gt "$site" ]; then
@@ -59,9 +70,26 @@ jobs:
     uses: ./.github/workflows/flutter-app.yml
     secrets: inherit
 
+  # The Mac build uploaded from the Mac: passed on as the same artifact the cloud build makes.
+  mac_local:
+    needs: check
+    if: needs.check.outputs.go == 'true' && needs.check.outputs.local_mac == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build=$(curl -fsS "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GITHUB_SHA/version.json" | jq -r .build)
+          mkdir out && gh release download "mac-build-$build" -R "$GITHUB_REPOSITORY" -p maskoret-mac.dmg -D out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maskoret-mac
+          path: out/maskoret-mac.dmg
+          retention-days: 30
+
   mac:
     needs: check
-    if: needs.check.outputs.go == 'true'
+    if: needs.check.outputs.go == 'true' && needs.check.outputs.local_mac != 'true'
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -113,8 +141,10 @@ jobs:
           retention-days: 30
 
   publish:
-    needs: [check, apps, mac]
-    if: inputs.dry_run != true
+    needs: [check, apps, mac, mac_local]
+    if: >-
+      !cancelled() && inputs.dry_run != true && needs.check.outputs.go == 'true' && needs.apps.result == 'success'
+      && (needs.mac.result == 'success' || needs.mac_local.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,10 +184,16 @@ jobs:
           git -c user.name="maskoret-release" -c user.email="shlomoappdev@gmail.com" commit -q -m "גרסה ${{ needs.check.outputs.version }}"
           git push -q
           echo "Published ${{ needs.check.outputs.version }} — the apps offer it on their next check."
+      - name: Remove the uploaded Mac build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build=$(jq -r .build version.json)
+          gh release delete "mac-build-$build" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
 
   # A failed release opens an issue (GitHub notifies the owner); the scheduled run keeps trying meanwhile.
   alert:
-    needs: [check, apps, mac, publish]
+    needs: [check, apps, mac, mac_local, publish]
     if: failure() && inputs.dry_run != true
     runs-on: ubuntu-latest
     steps:
