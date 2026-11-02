@@ -14,6 +14,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
+import { LimitError, limitError } from './limits.mjs';
 
 const SUPABASE_URL = 'https://pukbrxsuucqrukiaojlp.supabase.co';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB1a2JyeHN1dWNxcnVraWFvamxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyNTIwMjksImV4cCI6MjEwODgyODAyOX0.EOR76pbmTJQUaM8IxCzevHUJM7WT4EF4EIUjk3xip1I';
@@ -24,6 +25,7 @@ const MODEL = process.env.SUPPORT_AGENT_MODEL || 'claude-opus-5-5';
 const ACTIONS = new Set(['reply', 'confirm_email', 'sign_out_user', 'dev_task']);
 const SAFETY_CHECK_MS = 15 * 60 * 1000;   // in case a ping was missed (Mac asleep, network change)
 const RETRY_AFTER_FAILURE_MS = 10 * 60 * 1000;
+const LIMIT_NO_TIME_MS = 30 * 60 * 1000;   // the account can't answer and didn't say until when
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
 
@@ -66,12 +68,30 @@ async function work(reason) {
       const { data: threads, error } = await supabase.rpc('bot_pending_threads', { p_token: token });
       if (error) throw new Error(`bot_pending_threads: ${error.message}`);
       if (threads.length) log(`${reason}: ${threads.length} thread(s) waiting`);
-      for (const thread of threads) await handle(thread);
+      let failed = 0;
+      for (const thread of threads) {
+        // One ticket that fails (a bad answer, a timeout) doesn't hold up the others; it's tried again next pass.
+        try {
+          await handle(thread);
+        } catch (e) {
+          if (e instanceof LimitError) throw e;
+          failed += 1;
+          log(`thread ${thread.id}: failed, will try again:`, e.message);
+        }
+      }
+      if (failed && !again) {
+        setTimeout(() => work('retry'), RETRY_AFTER_FAILURE_MS);
+      }
     } while (again);
   } catch (e) {
-    log('pass failed:', e.message);
-    pausedUntil = Date.now() + RETRY_AFTER_FAILURE_MS;
-    setTimeout(() => work('retry'), RETRY_AFTER_FAILURE_MS + 1000);
+    // Out of usage (or the subscription can't be used): wait until it resets instead of retrying every few minutes.
+    const wait = e instanceof LimitError
+      ? Math.max((e.resetAt ?? Date.now() + LIMIT_NO_TIME_MS) - Date.now(), 0) + 60 * 1000
+      : RETRY_AFTER_FAILURE_MS;
+    pausedUntil = Date.now() + wait;
+    log(e instanceof LimitError ? `Claude can't answer now (${e.message}) — paused until` : 'pass failed, paused until',
+        new Date(pausedUntil).toISOString(), e instanceof LimitError ? '' : e.message);
+    setTimeout(() => work('retry'), wait + 1000);
   } finally {
     running = false;
   }
@@ -160,8 +180,12 @@ function askClaude(thread, asked) {
     child.on('error', e => { clearTimeout(timer); reject(e); });
     child.on('close', () => {
       clearTimeout(timer);
+      let envelope = null;
+      try { envelope = JSON.parse(out); } catch { /* not JSON: an error on stderr */ }
+      const limit = limitError([envelope?.is_error ? envelope.result : '', envelope ? '' : out, err].join('\n'));
+      if (limit) return reject(limit);
       try {
-        const envelope = JSON.parse(out);
+        if (!envelope) throw new Error('no JSON from claude');
         if (envelope.is_error) throw new Error(envelope.result || 'claude error');
         resolve(parseProposal(envelope.result, asked));
       } catch (e) {
