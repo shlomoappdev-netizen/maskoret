@@ -50,7 +50,8 @@ class ReleaseFile {
   final int? build;
 }
 
-enum UpdatePhase { idle, checking, downloading, installing, failed }
+/// verifying: checking the downloaded file is exactly the published one (sha256; takes a few seconds on a phone).
+enum UpdatePhase { idle, checking, downloading, verifying, installing, failed }
 
 /// Updates for Android and Windows: the app checks releases/latest.json on the server and, when there's a
 /// newer build, downloads and installs it (Android: the system installer; Windows: the setup, run silently,
@@ -109,7 +110,16 @@ class Updater extends ChangeNotifier {
     super.dispose();
   }
 
-  bool get busy => phase == UpdatePhase.checking || phase == UpdatePhase.downloading || phase == UpdatePhase.installing;
+  bool get busy =>
+      phase == UpdatePhase.checking ||
+      phase == UpdatePhase.downloading ||
+      phase == UpdatePhase.verifying ||
+      phase == UpdatePhase.installing;
+
+  void _verifying() {
+    phase = UpdatePhase.verifying;
+    notifyListeners();
+  }
 
   /// Back in the app (see main.dart): if the user just allowed installs from this app, install what was downloaded.
   Future<void> resumed() async {
@@ -216,8 +226,13 @@ class Updater extends ChangeNotifier {
     try {
       final file = await _updateFile(build);
       // Downloaded before (e.g. before the user allowed installs from this app): used as is, if it's intact.
-      if (!(await file.exists() && await _matches(file, target.sha256))) {
+      final downloaded = await file.exists();
+      if (downloaded) _verifying();
+      if (!(downloaded && await _matches(file, target.sha256))) {
+        phase = UpdatePhase.downloading;
+        notifyListeners();
         await _download(target.url, file);
+        _verifying();
         if (!await _matches(file, target.sha256)) {
           try {
             await file.delete();

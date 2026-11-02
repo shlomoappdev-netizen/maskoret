@@ -12,9 +12,9 @@ struct Dashboard {
 }
 var dashboard = Dashboard(budget: .starter, money: MoneyData(), history: [])
 
-// "max <file.xlsx>": the Swift app's own reading of a Max statement (XLSXReader + MaxParser in Card.swift).
+// "max <file.xlsx>": the Swift app's own reading of a statement, Max or CAL (XLSXReader + CardStatementParser in Card.swift).
 if CommandLine.arguments[1] == "max" {
-    let result = try MaxParser.parse(XLSXReader.read(URL(fileURLWithPath: CommandLine.arguments[2])))
+    let result = try CardStatementParser.parse(XLSXReader.read(URL(fileURLWithPath: CommandLine.arguments[2])))
     let rows: [[String: Any]] = result.transactions.map { t in
         ["id": t.id, "amount": t.amount, "originalAmount": t.originalAmount, "date": t.date.timeIntervalSinceReferenceDate,
          "chargeDate": t.chargeDate?.timeIntervalSinceReferenceDate ?? 0, "status": t.status.rawValue,

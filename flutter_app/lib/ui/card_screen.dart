@@ -13,7 +13,7 @@ import 'receivables_screen.dart';
 import 'theme.dart';
 import 'trends_screen.dart';
 
-/// Credit card: importing the Max statement, the month's charges, linking them to fixed expenses,
+/// Credit card: importing the Max or CAL statement, the month's charges, linking them to fixed expenses,
 /// categories, installments — port of CardView.swift.
 class CardScreen extends StatefulWidget {
   const CardScreen({super.key});
@@ -47,7 +47,7 @@ class _CardScreenState extends State<CardScreen> {
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['xlsx'],
-      dialogTitle: 'ייבוא קובץ מ-Max',
+      dialogTitle: 'ייבוא קובץ (Max / CAL)',
     );
     if (!mounted) return;
     for (final f in picked) {
@@ -102,7 +102,7 @@ class _CardScreenState extends State<CardScreen> {
             Expanded(
               child: Text(
                 last == null
-                    ? 'ייבוא פירוט עסקאות מ-Max וצימוד להוצאות הקבועות'
+                    ? 'ייבוא פירוט עסקאות מ-Max או מ-CAL, וצימוד להוצאות הקבועות'
                     : 'ייבוא אחרון: ${Fmt.date(JObj(last).date('importedAt') ?? DateTime.now())} · ${JObj(last).s('fileName')}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -119,7 +119,7 @@ class _CardScreenState extends State<CardScreen> {
             alignment: AlignmentDirectional.centerStart,
             child: FilledButton.tonalIcon(
               icon: const Icon(Icons.file_download_outlined),
-              label: const Text('ייבוא מ-Max'),
+              label: const Text('ייבוא קובץ (Max / CAL)…'),
               onPressed: _import,
             ),
           ),
@@ -193,7 +193,7 @@ class _CardScreenState extends State<CardScreen> {
             const SizedBox(height: 16),
             _howTo(context, cards),
             const SizedBox(height: 16),
-            FilledButton.icon(icon: const Icon(Icons.file_download_outlined), label: const Text('ייבוא קובץ מ-Max…'), onPressed: _import),
+            FilledButton.icon(icon: const Icon(Icons.file_download_outlined), label: const Text('ייבוא קובץ (Max / CAL)…'), onPressed: _import),
             if (message != null) ...[const SizedBox(height: 12), _message(context)],
           ]),
         ),
@@ -207,6 +207,11 @@ class _CardScreenState extends State<CardScreen> {
         const Text('2. בוחרים את חודש החיוב (״כל הכרטיסים״).'),
         const Text('3. לוחצים על אייקון האקסל (״ייצוא לאקסל״) ושומרים.'),
         Text('4. מייבאים כאן. הכי טוב — ביום שהחיוב יורד מהבנק (אצלך בדרך כלל ב-${cards.usualChargeDay ?? 2} לחודש).'),
+        const SizedBox(height: 10),
+        Text('איך מייצאים מ-CAL (כאל):', style: Theme.of(context).textTheme.titleSmall),
+        const Text('1. נכנסים לאתר או לאפליקציה של כאל ← ״פירוט עסקאות״.'),
+        const Text('2. בוחרים את התקופה ולוחצים על ״ייצוא לאקסל״.'),
+        const Text('3. מייבאים כאן את הקובץ (״פירוט עסקאות וזיכויים.xlsx״). כאל לא מסווגת קטגוריות, אז החיובים יופיעו בלי קטגוריה.'),
       ]);
 
   Widget _tiles(BuildContext context, List<CardTransaction> txs, int? key) {

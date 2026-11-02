@@ -7,7 +7,7 @@ import 'card.dart';
 import 'json.dart';
 import 'models.dart';
 
-/// Importing the credit-card statement exported from Max (.xlsx) — port of XLSXReader, MaxParser and
+/// Importing the credit-card statement exported from Max or CAL (.xlsx) — port of XLSXReader, MaxParser, CalParser and
 /// Store.importCardFile (Card.swift). New and updated charges are written as the Swift app writes them;
 /// existing charge objects are updated in place, so fields this app doesn't know stay as they were.
 
@@ -17,8 +17,8 @@ class CardImportException implements Exception {
   @override
   String toString() => message;
 
-  static const unreadable = CardImportException('לא הצלחתי לפתוח את הקובץ. ודא שזה קובץ Excel (‎.xlsx) שיוצא מ-Max.');
-  static const notMax = CardImportException('הקובץ לא נראה כמו פירוט עסקאות של Max (לא נמצאה עמודת ״תאריך עסקה״).');
+  static const unreadable = CardImportException('לא הצלחתי לפתוח את הקובץ. ודא שזה קובץ Excel (‎.xlsx) שיוצא מ-Max או מ-CAL.');
+  static const notMax = CardImportException('הקובץ לא נראה כמו פירוט עסקאות של Max או של CAL (לא נמצאה עמודת ״תאריך עסקה״).');
   static const empty = CardImportException('לא נמצאו עסקאות בקובץ.');
 }
 
@@ -39,6 +39,12 @@ class XlsxReader {
     return index - 1 < 0 ? 0 : index - 1;
   }
 
+  /// Elements by their local name: CAL writes every element with a namespace prefix ("x:row", "x:c").
+  static Iterable<XmlElement> _all(XmlNode node, String local) =>
+      node.descendants.whereType<XmlElement>().where((e) => e.name.local == local);
+  static Iterable<XmlElement> _children(XmlElement node, String local) =>
+      node.childElements.where((e) => e.name.local == local);
+
   static List<XlsxSheet> read(List<int> bytes) {
     final Archive zip;
     try {
@@ -55,14 +61,14 @@ class XlsxReader {
     final shared = <String>[];
     final sharedXml = text('xl/sharedStrings.xml');
     if (sharedXml != null) {
-      for (final si in XmlDocument.parse(sharedXml).findAllElements('si')) {
-        shared.add(si.findAllElements('t').map((t) => t.innerText).join());
+      for (final si in _all(XmlDocument.parse(sharedXml), 'si')) {
+        shared.add(_all(si, 't').map((t) => t.innerText).join());
       }
     }
     final rels = <String, String>{};
     final relsXml = text('xl/_rels/workbook.xml.rels');
     if (relsXml != null) {
-      for (final r in XmlDocument.parse(relsXml).findAllElements('Relationship')) {
+      for (final r in _all(XmlDocument.parse(relsXml), 'Relationship')) {
         final id = r.getAttribute('Id'), target = r.getAttribute('Target');
         if (id != null && target != null) rels[id] = target;
       }
@@ -70,7 +76,7 @@ class XlsxReader {
     final workbook = text('xl/workbook.xml');
     if (workbook == null) throw CardImportException.unreadable;
     final sheets = <XlsxSheet>[];
-    for (final s in XmlDocument.parse(workbook).findAllElements('sheet')) {
+    for (final s in _all(XmlDocument.parse(workbook), 'sheet')) {
       final name = s.getAttribute('name') ?? '';
       final rid = s.getAttribute('r:id') ??
           s.attributes.where((a) => a.name.qualified.endsWith(':id')).map((a) => a.value).firstOrNull ??
@@ -81,15 +87,15 @@ class XlsxReader {
       final xml = text(path);
       if (xml == null) continue;
       final cells = <int, Map<int, String>>{};
-      for (final c in XmlDocument.parse(xml).findAllElements('c')) {
+      for (final c in _all(XmlDocument.parse(xml), 'c')) {
         final ref = c.getAttribute('r') ?? '';
         final letters = RegExp(r'^[A-Za-z]+').stringMatch(ref) ?? '';
         final row = int.tryParse(ref.substring(letters.length));
         if (row == null) continue;
         final type = c.getAttribute('t') ?? '';
         // <v> for values, <is><t> for inline strings.
-        var value = c.findElements('v').map((v) => v.innerText).join();
-        if (value.isEmpty) value = c.findAllElements('t').map((t) => t.innerText).join();
+        var value = _children(c, 'v').map((v) => v.innerText).join();
+        if (value.isEmpty) value = _all(c, 't').map((t) => t.innerText).join();
         if (type == 's') {
           final i = int.tryParse(value);
           if (i != null && i >= 0 && i < shared.length) value = shared[i];
@@ -289,6 +295,172 @@ class MaxParser {
   }
 }
 
+/// A CAL ("כאל") export: "פירוט עסקאות וזיכויים" — a port of CalParser (Card.swift). One sheet; the header cells break
+/// lines ("תאריך\nעסקה"); no category and no card digits; a pending purchase has no charge date ("עסקה בקליטה"); an
+/// installment purchase shows one row per payment charged so far, at the purchase date and without its charge date.
+class CalParser {
+  /// Charges from CAL files all belong to this card (the file doesn't say which card it was).
+  static const card = 'CAL';
+
+  static String normalized(String s) => s.replaceAll('\n', ' ').split(RegExp(r'\s+')).where((w) => w.isNotEmpty).join(' ');
+
+  static bool isCal(List<XlsxSheet> sheets) => sheets.any((sheet) => sheet.rows.any((row) {
+        final cells = row.map(normalized).toList();
+        return cells.contains('תאריך עסקה') && cells.any((c) => c.contains('מועד חיוב'));
+      }));
+
+  static final _payments = RegExp(r'ב-(\d+) תשלומים');
+
+  static MaxResult parse(List<XlsxSheet> sheets) {
+    final rows = <({Json tx, int? payments})>[];
+    final importedAt = dateTimeToSwift(DateTime.now());
+    for (final sheet in sheets) {
+      final headerIndex = sheet.rows.indexWhere((r) => r.map(normalized).contains('תאריך עסקה'));
+      if (headerIndex < 0) continue;
+      final header = sheet.rows[headerIndex].map(normalized).toList();
+      int? col(String part) {
+        final i = header.indexWhere((h) => h.contains(part));
+        return i < 0 ? null : i;
+      }
+
+      final cDate = col('תאריך עסקה'), cMerchant = col('בית עסק'), cAmount = col('סכום');
+      final cCharge = col('מועד חיוב'), cType = col('סוג עסקה'), cNote = col('הערות');
+      for (final row in sheet.rows.skip(headerIndex + 1)) {
+        String cell(int? c) => c == null || c >= row.length ? '' : row[c].trim();
+        final date = MaxParser.parseDate(cell(cDate));
+        final amount = MaxParser.parseAmount(cell(cAmount));
+        if (date == null || amount == null) continue;
+        final merchant = cell(cMerchant);
+        if (merchant.isEmpty) continue;
+        final note = cell(cNote);
+        final type = cell(cType);
+        int? payments;
+        final m = _payments.firstMatch(note);
+        if (m != null) {
+          payments = int.tryParse(m.group(1)!);
+        } else if (type == 'תשלומים') {
+          payments = 2;
+        }
+        final chargeDate = MaxParser.parseDate(cell(cCharge));
+        final pending = chargeDate == null && payments == null;
+        rows.add((
+          tx: <String, dynamic>{
+            'id': '',
+            'date': dateTimeToSwift(date),
+            'merchant': merchant,
+            'category': '',
+            'cardLast4': card,
+            'type': type,
+            'amount': jsonNumber(amount),
+            'originalAmount': jsonNumber(amount),
+            'originalCurrency': '₪',
+            if (chargeDate != null) 'chargeDate': dateTimeToSwift(chargeDate),
+            'chargeEstimated': chargeDate == null,
+            'note': pending ? '' : note,
+            'method': '',
+            'status': pending ? 'pending' : 'charged',
+            'ignored': false,
+            'importedAt': importedAt,
+            'owedPortion': 0,
+          },
+          payments: payments,
+        ));
+      }
+    }
+    if (rows.isEmpty) throw CardImportException.empty;
+
+    // The months the file covers, and the day CAL charges (the most common one).
+    final chargeDates = [for (final r in rows) ?CardTransaction(r.tx).chargeDate];
+    final counts = <int, int>{};
+    for (final d in chargeDates) {
+      counts[d.day] = (counts[d.day] ?? 0) + 1;
+    }
+    var usualDay = 2;
+    if (counts.isNotEmpty) {
+      final best = counts.values.reduce((a, b) => a > b ? a : b);
+      usualDay = counts.keys.firstWhere((d) => counts[d] == best);
+    }
+    int keyOf(DateTime d) => d.year * 100 + d.month;
+    DateTime chargeDay(int key) => DateTime(key ~/ 100, key % 100, usualDay, 12);
+    int addMonths(int key, int n) {
+      final d = chargeDay(key);
+      // Like Calendar.date(byAdding: .month): the day is clamped to the end of the month.
+      final total = d.year * 12 + d.month - 1 + n;
+      final y = total ~/ 12, m = total % 12 + 1;
+      return keyOf(DateTime(y, m, 1));
+    }
+
+    /// The first charge day after a purchase.
+    int firstCharge(DateTime date) {
+      final k = keyOf(date);
+      return date.isBefore(chargeDay(k)) ? k : addMonths(k, 1);
+    }
+
+    int monthsBetween(int a, int b) => (b ~/ 100 - a ~/ 100) * 12 + (b % 100 - a % 100);
+    final months = {for (final d in chargeDates) keyOf(d)};
+    final lastMonth = months.isEmpty ? keyOf(DateTime.now()) : months.reduce((a, b) => a > b ? a : b);
+
+    // Installments: identical rows are the payments charged in the months this file covers.
+    final groups = <String, List<int>>{};
+    for (var i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      if (r.payments == null) continue;
+      groups.putIfAbsent('${r.tx['date']}|${r.tx['merchant']}|${r.tx['amount']}', () => []).add(i);
+    }
+    for (final indices in groups.values) {
+      final first = rows[indices.first];
+      final total = first.payments!;
+      final start = firstCharge(CardTransaction(first.tx).date);
+      // The covered months from the first payment on, then later months if the file has more rows than that.
+      final slots = months.where((k) => k >= start).toList()..sort();
+      while (slots.length < indices.length) {
+        slots.add(addMonths(slots.isEmpty ? lastMonth : slots.last, 1));
+      }
+      final amount = (first.tx['amount'] as num).toDouble();
+      for (var n = 0; n < indices.length; n++) {
+        final tx = rows[indices[n]].tx;
+        final month = slots[n];
+        tx['chargeDate'] = dateTimeToSwift(chargeDay(month));
+        tx['chargeEstimated'] = !months.contains(month);
+        tx['note'] = 'תשלום ${monthsBetween(start, month) + 1} מתוך $total';
+        tx['originalAmount'] = jsonNumber((amount * total * 100).round() / 100);
+      }
+    }
+    // Pending purchases: on the next charge day.
+    for (final r in rows) {
+      if (r.tx['status'] != 'pending') continue;
+      final first = firstCharge(CardTransaction(r.tx).date);
+      r.tx['chargeDate'] = dateTimeToSwift(chargeDay(first > lastMonth ? first : lastMonth));
+    }
+
+    // Stable ids, like Max — identical purchases on the same day get #1, #2…
+    final seen = <String, int>{};
+    final result = <Json>[];
+    for (final r in rows) {
+      final t = CardTransaction(r.tx);
+      final d = t.date;
+      final base = [
+        t.status == 'pending' ? 'P' : 'C',
+        '${d.year.toString().padLeft(4, '0')}${MaxParser._two(d.month)}${MaxParser._two(d.day)}',
+        t.merchantKey,
+        t.cardLast4,
+        t.originalAmount.toStringAsFixed(2),
+        t.note,
+      ].join('|');
+      final n = (seen[base] ?? 0) + 1;
+      seen[base] = n;
+      r.tx['id'] = '$base#$n';
+      result.add(r.tx);
+    }
+    return MaxResult('${lastMonth % 100}/${lastMonth ~/ 100}', result);
+  }
+}
+
+/// Any supported statement: Max or CAL (CardStatementParser in Card.swift).
+class CardStatementParser {
+  static MaxResult parse(List<XlsxSheet> sheets) => CalParser.isCal(sheets) ? CalParser.parse(sheets) : MaxParser.parse(sheets);
+}
+
 /// The result of an import, as shown to the user (CardImport.summary in Swift).
 class CardImportRecord {
   CardImportRecord(this.json);
@@ -317,7 +489,7 @@ class CardActions {
 
   /// Imports a Max export without creating duplicates (see Store.importCardFile in Card.swift).
   CardImportRecord importFile(List<int> bytes, String fileName, {DateTime? now}) {
-    final result = MaxParser.parse(XlsxReader.read(bytes));
+    final result = CardStatementParser.parse(XlsxReader.read(bytes));
     final today = now ?? DateTime.now();
     final money = _money;
     final rules = <String, String>{};

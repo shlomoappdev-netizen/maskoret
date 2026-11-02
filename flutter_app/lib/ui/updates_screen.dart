@@ -83,10 +83,11 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                 children: [
                   for (final n in latest.notes)
                     ListTile(dense: true, leading: const Icon(Icons.check, size: 18), title: Text(n)),
-                  if (updater.phase == UpdatePhase.downloading)
+                  if (updater.phase == UpdatePhase.downloading || updater.phase == UpdatePhase.verifying)
                     Padding(
                       padding: const EdgeInsets.all(16),
-                      child: LinearProgressIndicator(value: updater.progress > 0 ? updater.progress : null),
+                      child: LinearProgressIndicator(
+                          value: updater.phase == UpdatePhase.downloading && updater.progress > 0 ? updater.progress : null),
                     ),
                   Padding(
                     padding: const EdgeInsets.all(16),
@@ -94,6 +95,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                       icon: const Icon(Icons.download),
                       label: Text(switch (updater.phase) {
                         UpdatePhase.downloading => 'מוריד… ${(updater.progress * 100).round()}%',
+                        UpdatePhase.verifying => 'מאמת את הקובץ…',
                         UpdatePhase.installing => 'מתקין…',
                         _ => 'עדכן עכשיו',
                       }),

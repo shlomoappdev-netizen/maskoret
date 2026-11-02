@@ -160,7 +160,7 @@ class _Todos extends StatelessWidget {
     final theme = Theme.of(context);
     final todos = <(IconData, String, VoidCallback)>[
       if (CardData(money).importDue())
-        (Icons.file_download_outlined, 'לייבא את קובץ האשראי של החודש מ-Max', () => openDest(context, Dest.card)),
+        (Icons.file_download_outlined, 'לייבא את קובץ האשראי של החודש', () => openDest(context, Dest.card)),
       if (!pic.isActual)
         (Icons.document_scanner_outlined, 'לרשום כמה נכנס בפועל החודש (אפשר מקובץ התלוש)', () => showSaveMonth(context)),
       ...() {
