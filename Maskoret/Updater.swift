@@ -80,8 +80,19 @@ final class Updater: ObservableObject {
     /// The Mac download of the newest release (when updating from the server).
     private var remoteMac: Manifest.Asset?
 
-    /// No project folder on this Mac → updates come from the server (a ready-made build), not from source.
-    var updatesFromServer: Bool { !hasProject }
+    static let buildFromSourceKey = "updateBuildFromSource"
+
+    /// Developer option: build updates from the source in the project folder instead of downloading them.
+    @Published var buildFromSource: Bool = UserDefaults.standard.bool(forKey: Updater.buildFromSourceKey) {
+        didSet {
+            UserDefaults.standard.set(buildFromSource, forKey: Updater.buildFromSourceKey)
+            latest = nil
+            check()
+        }
+    }
+
+    /// Updates come from the server — the same signed build everyone gets — unless the developer option is on.
+    var updatesFromServer: Bool { !(buildFromSource && hasProject) }
 
     func check() {
         guard !isBusy else { return }

@@ -265,7 +265,7 @@ struct UpdatePrompt: ViewModifier {
     }
 
     private func offer() {
-        // The developer's Mac builds from source; the prompt is for everyone who updates from the site.
+        // A Mac that builds from source (developer option) updates by hand; the prompt is for server updates.
         guard updater.updatesFromServer, updater.updateAvailable, !updater.isBusy,
               let build = updater.latest?.build, build != offeredBuild else { return }
         offeredBuild = build

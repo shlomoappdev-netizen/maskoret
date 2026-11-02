@@ -32,7 +32,7 @@ struct UpdatesView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("האפליקציה עדיין לא מותקנת בתיקיית Applications", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                    Text("ההתקנה בונה גרסה סופית מהקוד בתיקיית הפרויקט, מעתיקה אותה ל-Applications ופותחת אותה משם. הנתונים שלך נשמרים.")
+                    Text("ההתקנה מורידה את הגרסה האחרונה מהשרת, מעתיקה אותה ל-Applications ופותחת אותה משם. הנתונים שלך נשמרים.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -100,7 +100,9 @@ struct UpdatesView: View {
         } header: {
             Text("עדכון")
         } footer: {
-            Text("כש-Claude מכין גרסה חדשה הוא מעדכן את הקוד בתיקיית הפרויקט. האפליקציה בודקת את התיקייה בכל פעם שהיא נפתחת, ובלחיצה על ״עדכן עכשיו״ בונה את הגרסה החדשה עם Xcode שמותקן אצלך (כדקה), מחליפה את עצמה ונפתחת מחדש.")
+            Text(updater.updatesFromServer
+                 ? "האפליקציה בודקת בשרת אם יש גרסה חדשה כשהיא נפתחת וכל 3 שעות. ״עדכן עכשיו״ מוריד את הגרסה שפורסמה, מוודא שהיא הקובץ המקורי, מחליף את האפליקציה ופותח אותה מחדש. הנתונים שלך נשמרים."
+                 : "מצב מפתח: ״עדכן עכשיו״ בונה את הקוד מתיקיית הפרויקט עם Xcode (כדקה), מחליף את האפליקציה ופותח אותה מחדש.")
         }
     }
 
@@ -128,6 +130,8 @@ struct UpdatesView: View {
 
     private var folderSection: some View {
         Section {
+            Toggle("מצב מפתח: לבנות עדכונים מהקוד בתיקייה", isOn: $updater.buildFromSource)
+            if updater.buildFromSource {
             RateLine(title: "תיקיית הפרויקט", value: updater.folder.path)
             HStack {
                 Button("שנה תיקייה…") { updater.chooseFolder() }
@@ -141,8 +145,11 @@ struct UpdatesView: View {
                         .font(.caption)
                 }
             }
+            }
         } header: {
             Text("מקור העדכונים")
+        } footer: {
+            Text("כבוי (מומלץ): העדכונים מגיעים מהשרת, אותה גרסה חתומה שכל המשתמשים מקבלים.")
         }
     }
 
