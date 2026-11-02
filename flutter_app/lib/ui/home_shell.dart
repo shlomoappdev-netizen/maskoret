@@ -302,24 +302,31 @@ class MonthNumbers extends StatelessWidget {
     final d = store.dashboard;
     final money = d.money;
     final checking = MoneyCalc(money.primeRate).total(money, {AccountKind.checking}, budget: d.budget, history: d.history);
-    final remaining = MonthPicture.current(d).remaining;
+    final pic = MonthPicture.current(d);
     Widget number(String label, double value, {Color? color}) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(label, style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            Text(Fmt.money(value),
-                textDirection: TextDirection.rtl,
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color, fontFeatures: tabular)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(Fmt.money(value),
+                  textDirection: TextDirection.rtl,
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color, fontFeatures: tabular)),
+            ),
           ],
         );
+    Color tone(double v) => v >= 0 ? AppColors.positive(context) : AppColors.negative(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      child: Row(children: [
-        Expanded(child: number('עו״ש עכשיו', checking)),
-        Expanded(
-          child: number('נשאר מההכנסה האחרונה', remaining,
-              color: remaining >= 0 ? AppColors.positive(context) : AppColors.negative(context)),
-        ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        number('עו״ש עכשיו', checking),
+        const SizedBox(height: 6),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: number('נשאר בפועל', pic.remainingActual, color: tone(pic.remainingActual))),
+          const SizedBox(width: 8),
+          Expanded(child: number('צפוי להישאר', pic.remaining, color: tone(pic.remaining))),
+        ]),
       ]),
     );
   }

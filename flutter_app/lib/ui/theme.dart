@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -231,11 +232,17 @@ class StatTile extends StatelessWidget {
         Row(children: [
           Icon(icon, size: 15, color: theme.colorScheme.onSurfaceVariant),
           const SizedBox(width: 6),
+          // The title always takes two lines, so a short title doesn't make a lower tile.
           Expanded(
-            child: Text(title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            child: Stack(children: [
+              Text('\n',
+                  maxLines: 2,
+                  style: theme.textTheme.labelMedium?.copyWith(color: Colors.transparent)),
+              Text(title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ]),
           ),
         ]),
         const SizedBox(height: 6),
@@ -264,9 +271,21 @@ class TileGrid extends StatelessWidget {
     return LayoutBuilder(builder: (context, c) {
       final columns = ((c.maxWidth + spacing) / (minWidth + spacing)).floor().clamp(1, 6);
       final width = (c.maxWidth - spacing * (columns - 1)) / columns;
-      return Wrap(spacing: spacing, runSpacing: spacing, children: [
-        for (final w in children) SizedBox(width: width, child: w),
-      ]);
+      // Row by row, every tile as tall as the tallest one in its row.
+      final rows = <Widget>[];
+      for (var i = 0; i < children.length; i += columns) {
+        final row = children.sublist(i, min(i + columns, children.length));
+        if (rows.isNotEmpty) rows.add(SizedBox(height: spacing));
+        rows.add(IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            for (var j = 0; j < row.length; j++) ...[
+              if (j > 0) SizedBox(width: spacing),
+              SizedBox(width: width, child: row[j]),
+            ],
+          ]),
+        ));
+      }
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows);
     });
   }
 }

@@ -288,7 +288,8 @@ void main() {
     await store.flush();
     final text = aiContext(store);
     final p = MonthPicture.current(store.dashboard);
-    expect(text, contains('נשאר מההכנסה האחרונה (לפי האפליקציה): ${Fmt.money(p.remaining)}'));
+    expect(text, contains('נשאר בפועל מההכנסה האחרונה: ${Fmt.money(p.remainingActual)}'));
+    expect(text, contains('צפוי להישאר אחרי חיוב האשראי (לפי ממוצע): ${Fmt.money(p.remaining)}'));
     expect(text, contains('## תלוש'));
     expect(text, contains('## חשבונות'));
     expect(text, contains('## כרטיס אשראי'));

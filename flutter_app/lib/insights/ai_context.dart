@@ -39,7 +39,8 @@ String aiContext(AppStore store, {DateTime? at}) {
   final monthStart = p.periodStart!, monthEnd = p.periodEnd!;
   lines.add('\n## החודש (${p.title})');
   lines.add('נטו: ${m(p.net)}${p.isActual ? ' (בפועל)' : ' (הערכה)'}');
-  lines.add('נשאר מההכנסה האחרונה (לפי האפליקציה): ${m(p.remaining)} · ימים עד המשכורת הבאה: ${p.daysLeft}');
+  lines.add('נשאר בפועל מההכנסה האחרונה: ${m(p.remainingActual)}');
+  lines.add('צפוי להישאר אחרי חיוב האשראי (לפי ממוצע): ${m(p.remaining)} · ימים עד המשכורת הבאה: ${p.daysLeft}');
   for (final l in p.spending) {
     lines.add('- הוצאה קבועה: ${l.title} ${m(l.amount)}');
   }

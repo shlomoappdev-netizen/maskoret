@@ -50,6 +50,7 @@ class MonthPicture {
     required this.oneOffs,
     required this.card,
     required this.cardEstimated,
+    this.cardEstimate = 0,
     this.fixedInCardSuspects = const [],
     this.periodStart,
     this.periodEnd,
@@ -71,6 +72,9 @@ class MonthPicture {
 
   /// True when `card` includes an estimate of what's still to come, by the average of the last statements.
   final bool cardEstimated;
+
+  /// The "עוד צפוי לפי ממוצע החודשים הקודמים" line in `card`, or 0 when there is no estimate.
+  final double cardEstimate;
 
   /// Card purchases priced like a fixed expense but not linked to it: they may be counted twice.
   final List<String> fixedInCardSuspects;
@@ -94,7 +98,11 @@ class MonthPicture {
 
   /// Positive = money came in, negative = went out.
   double get oneOffTotal => _sum(oneOffs.map((l) => l.amount));
+  /// What is expected to be left after the card is charged, the estimate of the rest of the card included.
   double get remaining => net - spendingTotal - periodic - toSavingsTotal - cardWithInstallments + oneOffTotal;
+
+  /// What is actually left so far: `remaining` without the estimate of card spending still to come.
+  double get remainingActual => remaining + cardEstimate;
   String get title => Fmt.monthTitle(year, month);
 
   /// "10 באוק׳ – 9 בנוב׳", or the month's name when the period is a calendar month.
@@ -194,10 +202,12 @@ class MonthPicture {
     ];
     // What wasn't imported yet: the rest of the usual spending, by the average of the last statements.
     var cardEstimated = false;
+    var cardEstimate = 0.0;
     final known = card.fold(0.0, (s, l) => s + l.amount);
     final average = cards.averageCardVariable();
     if (average > known && (monthEnd.isAfter(DateTime.now()) || card.isEmpty)) {
-      card.add(MonthLine('עוד צפוי לפי ממוצע החודשים הקודמים', average - known));
+      cardEstimate = average - known;
+      card.add(MonthLine('עוד צפוי לפי ממוצע החודשים הקודמים', cardEstimate));
       cardEstimated = true;
     }
     // A fixed expense paid by card that isn't linked to its charge would count twice — point it out.
@@ -269,6 +279,7 @@ class MonthPicture {
       oneOffs: oneOffs,
       card: card,
       cardEstimated: cardEstimated,
+      cardEstimate: cardEstimate,
       fixedInCardSuspects: suspects,
       periodStart: monthStart,
       periodEnd: monthEnd,

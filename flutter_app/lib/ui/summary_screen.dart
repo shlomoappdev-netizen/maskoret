@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -127,7 +129,8 @@ class SummaryScreen extends StatelessWidget {
     }
     lines
       ..add('')
-      ..add('נשאר מההכנסה האחרונה: ${m(p.remaining)}')
+      ..add('נשאר בפועל מההכנסה האחרונה: ${m(p.remainingActual)}')
+      ..add('צפוי להישאר אחרי חיוב האשראי (לפי ממוצע): ${m(p.remaining)}')
       ..add('עו״ש עכשיו (משוער): ${Fmt.money(checking)}')
       ..add('חיסכון ופיקדונות: ${Fmt.money(savings)}');
     return lines.join('\n');
@@ -156,6 +159,36 @@ class _Hero extends StatelessWidget {
             ),
           ]),
         );
+    // Both big numbers side by side and the same size: what's left now, and what's expected after the card.
+    // One font size for both, shrunk so the longer one fits.
+    TextStyle bigStyle(double size) => theme.textTheme.displayMedium!
+        .copyWith(color: Colors.white, fontWeight: FontWeight.w800, fontSize: size, fontFeatures: tabular, height: 1.1);
+    Widget big(String title, String value, double size, {String? note}) => Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title,
+                maxLines: 2,
+                style: theme.textTheme.titleSmall?.copyWith(color: Colors.white.withValues(alpha: 0.85), fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Text(value, textDirection: TextDirection.rtl, maxLines: 1, softWrap: false, style: bigStyle(size)),
+            if (note != null)
+              Text(note, style: theme.textTheme.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.75))),
+          ]),
+        );
+    final actual = Fmt.money(pic.remainingActual), expected = Fmt.money(pic.remaining);
+    final numbers = LayoutBuilder(builder: (context, c) {
+      const gap = 16.0, full = 46.0;
+      double width(String v) =>
+          (TextPainter(text: TextSpan(text: v, style: bigStyle(full)), textDirection: TextDirection.rtl, maxLines: 1)
+                ..layout())
+              .width;
+      final room = (c.maxWidth - gap) / 2;
+      final size = full * min(1.0, room / max(width(actual), width(expected)));
+      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        big('נשאר בפועל מהמשכורת האחרונה', actual, size),
+        const SizedBox(width: gap),
+        big('צפוי להישאר אחרי חיוב האשראי', expected, size, note: 'לפי ממוצע החודשים הקודמים'),
+      ]);
+    });
     return Container(
       constraints: BoxConstraints(minHeight: isWide(context) ? 262 : 230),
       padding: const EdgeInsets.all(22),
@@ -175,17 +208,7 @@ class _Hero extends StatelessWidget {
         ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('נשאר לך מההכנסה האחרונה',
-            style: theme.textTheme.titleMedium?.copyWith(color: Colors.white.withValues(alpha: 0.85), fontWeight: FontWeight.w600)),
-        const SizedBox(height: 10),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: AlignmentDirectional.centerStart,
-          child: Text(Fmt.money(pic.remaining),
-              textDirection: TextDirection.rtl,
-              style: theme.textTheme.displayMedium
-                  ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 52, fontFeatures: tabular, height: 1.1)),
-        ),
+        numbers,
         const SizedBox(height: 26),
         Row(children: [
           mini(pic.isActual ? 'נטו בפועל' : 'נטו (משוער)', pic.net),
