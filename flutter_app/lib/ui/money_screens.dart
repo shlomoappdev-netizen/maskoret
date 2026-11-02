@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../data/card.dart';
 import '../data/fmt.dart';
@@ -7,7 +8,9 @@ import '../data/json.dart';
 import '../data/models.dart';
 import '../data/money_calc.dart';
 import 'common.dart';
+import 'home_shell.dart';
 import 'receivables_screen.dart';
+import 'theme.dart';
 
 IconData accountIcon(AccountKind k) => switch (k) {
       AccountKind.checking => Icons.account_balance,
@@ -246,86 +249,474 @@ class TransactionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StoreBuilder(builder: (context, store) {
-      final money = store.money;
-      final list = money.transactions..sort((a, b) => b.date.compareTo(a.date));
-      final planned = list.where((t) => t.isPlanned).toList().reversed.toList();
-      final past = list.where((t) => !t.isPlanned).toList();
-      final cards = CardData(money);
-      final open = openReceivables(money);
-      Widget tile(MoneyTransaction t) {
-        final theme = Theme.of(context);
-        final color = switch (t.kind) {
-          TransactionKind.income => Colors.green.shade700,
-          TransactionKind.expense => theme.colorScheme.error,
-          TransactionKind.transfer => theme.colorScheme.primary,
-        };
-        final where = t.kind == TransactionKind.transfer
-            ? '${money.account(t.accountID)?.name ?? '?'} ← ${money.account(t.toAccountID)?.name ?? '?'}'
-            : (t.paidByCard ? 'באשראי${t.cardInstallments > 1 ? ' · ${t.cardInstallments} תשלומים' : ''}' : money.account(t.accountID)?.name ?? '');
-        final debt = t.kind == TransactionKind.income ? cards.receivables.where((r) => r.incomeIDs.contains(t.id)).firstOrNull : null;
-        final canLink = t.kind == TransactionKind.income && t.salaryKey == null && debt == null && open.isNotEmpty;
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: color.withValues(alpha: 0.12),
-            child: Icon(
-                switch (t.kind) {
-                  TransactionKind.income => Icons.south_west,
-                  TransactionKind.expense => Icons.north_east,
-                  TransactionKind.transfer => Icons.swap_horiz,
-                },
-                color: color),
+    return StoreBuilder(
+      builder: (context, store) {
+        final money = store.money;
+        final now = DateTime.now();
+        // How far ahead the statement shows what's expected: the next pay day and card charge, or the last plan.
+        final ahead = DateTime(now.year, now.month, now.day + 35, now.hour, now.minute);
+        final lastPlan = money.transactions
+            .where((t) => t.isPlanned)
+            .fold<DateTime?>(null, (d, t) => d == null || t.date.isAfter(d) ? t.date : d);
+        final horizon = lastPlan != null && lastPlan.isAfter(ahead) ? lastPlan : ahead;
+        final lines = money.checking == null
+            ? <LedgerLine>[]
+            : money.checkingStatement(horizon, store.file.budget, store.file.history);
+        return Scaffold(
+          body: Column(
+            children: [
+              const _QuickEntry(),
+              const Divider(height: 1),
+              Expanded(child: lines.isEmpty ? const _LegacyTransactions() : _Statement(lines: lines)),
+            ],
           ),
-          title: Text(t.title.isEmpty ? t.kind.title : t.title),
-          subtitle: Text('${Fmt.date(t.date)}${where.isEmpty ? '' : ' · $where'}${debt == null ? '' : ' · ↩︎ החזר חוב של ${debt.person}'}'),
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (canLink)
-              PopupMenuButton<String>(
-                tooltip: 'שייך להחזר חוב',
-                icon: const Icon(Icons.assignment_return_outlined, size: 20),
-                onSelected: (id) => store.edit((f) => ReceivableActions(f).linkIncome(t.id, id)),
-                itemBuilder: (_) => [
-                  const PopupMenuItem(enabled: false, height: 32, child: Text('זה תשלום על חוב של…')),
-                  for (final r in open)
-                    PopupMenuItem(
-                        value: r.id,
-                        child: Text('${r.person} — נשאר ${Fmt.money(cards.outstanding(r, money.transactions))}')),
-                ],
-              ),
-            Text((t.kind == TransactionKind.expense ? '−' : '') + Fmt.money(t.amount),
-                textDirection: TextDirection.rtl, style: theme.textTheme.titleMedium?.copyWith(color: color)),
-          ]),
-          onTap: () => editTransaction(context, t),
         );
-      }
-
-      return Scaffold(
-        floatingActionButton: FloatingActionButton.extended(
-          heroTag: 'add-tx',
-          icon: const Icon(Icons.add),
-          label: const Text('תנועה'),
-          onPressed: () => editTransaction(context, null),
-        ),
-        body: PageList(children: [
-          if (list.isEmpty)
-            const SectionCard(title: 'תנועות', children: [
-              EmptyHint('כאן רושמים הכנסות והוצאות גדולות או חריגות, והעברות בין חשבונות. תאריך עתידי = מתוכנן.'),
-            ]),
-          if (planned.isNotEmpty) SectionCard(title: 'מתוכננות', children: [for (final t in planned) tile(t)]),
-          if (past.isNotEmpty) SectionCard(title: 'שבוצעו', children: [for (final t in past) tile(t)]),
-        ]),
-      );
-    });
+      },
+    );
   }
 }
 
-Future<void> editTransaction(BuildContext context, MoneyTransaction? existing) async {
+/// "− הוצאה / + הכנסה", a description, an amount and a date — like typing a line into the bank. It goes to the checking.
+class _QuickEntry extends StatefulWidget {
+  const _QuickEntry();
+
+  @override
+  State<_QuickEntry> createState() => _QuickEntryState();
+}
+
+class _QuickEntryState extends State<_QuickEntry> {
+  var kind = TransactionKind.expense;
+  final title = TextEditingController();
+  final amount = TextEditingController();
+  DateTime date = DateTime.now();
+
+  double? get value => double.tryParse(amount.text.replaceAll(',', '').replaceAll('₪', '').trim());
+
+  @override
+  void initState() {
+    super.initState();
+    amount.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    amount.dispose();
+    super.dispose();
+  }
+
+  void add() {
+    final v = value;
+    if (v == null || v <= 0) return;
+    final store = context.store;
+    store.edit((f) {
+      final checking = f.money.ensureChecking();
+      f.money.upsertTransaction(
+        MoneyTransaction.create(kind: kind, accountID: checking.id)
+          ..['title'] = title.text.trim()
+          ..['amount'] = jsonNumber(v)
+          ..['date'] = dateTimeToSwift(date),
+      );
+    });
+    setState(() {
+      title.clear();
+      amount.clear();
+      date = DateTime.now();
+    });
+    FocusScope.of(context).unfocus();
+  }
+
+  Future<void> pickDate() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: date,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (d != null) setState(() => date = DateTime(d.year, d.month, d.day, date.hour, date.minute));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final kindPicker = SegmentedButton<TransactionKind>(
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment(value: TransactionKind.expense, label: Text('− הוצאה')),
+        ButtonSegment(value: TransactionKind.income, label: Text('+ הכנסה')),
+      ],
+      selected: {kind},
+      onSelectionChanged: (v) => setState(() => kind = v.first),
+    );
+    final detailed = MenuAnchor(
+      menuChildren: [
+        MenuItemButton(onPressed: () => editTransaction(context, null), child: const Text('הוצאה גדולה…')),
+        MenuItemButton(
+          onPressed: () => editTransaction(context, null, kind: TransactionKind.income),
+          child: const Text('הכנסה (מענק, בונוס, מתנה)…'),
+        ),
+        MenuItemButton(
+          onPressed: () => editTransaction(context, null, kind: TransactionKind.transfer),
+          child: const Text('העברה בין חשבונות…'),
+        ),
+      ],
+      builder: (context, controller, _) => TextButton.icon(
+        icon: const Icon(Icons.add),
+        label: const Text('תנועה מפורטת'),
+        onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+      ),
+    );
+    final titleField = TextField(
+      controller: title,
+      decoration: const InputDecoration(
+        isDense: true,
+        border: OutlineInputBorder(),
+        hintText: 'תיאור (למשל: מתנה לחתונה)',
+      ),
+      onSubmitted: (_) => add(),
+    );
+    final amountField = SizedBox(
+      width: 110,
+      child: TextField(
+        controller: amount,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.end,
+        decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(), hintText: '₪ 0'),
+        onSubmitted: (_) => add(),
+      ),
+    );
+    final dateButton = OutlinedButton(
+      onPressed: pickDate,
+      child: Text(
+        DateFormat('dd.MM.yy').format(date),
+        style: theme.textTheme.bodyMedium?.copyWith(fontFeatures: tabular),
+      ),
+    );
+    final addButton = FilledButton(onPressed: (value ?? 0) > 0 ? add : null, child: const Text('הוסף'));
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final header = Row(
+            children: [
+              Expanded(
+                child: Text('תנועות בעו״ש', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+              ),
+              detailed,
+            ],
+          );
+          if (c.maxWidth >= 760) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                header,
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    kindPicker,
+                    const SizedBox(width: 8),
+                    Expanded(child: titleField),
+                    const SizedBox(width: 8),
+                    amountField,
+                    const SizedBox(width: 8),
+                    dateButton,
+                    const SizedBox(width: 8),
+                    addButton,
+                  ],
+                ),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              const SizedBox(height: 6),
+              Row(children: [Expanded(child: kindPicker)]),
+              const SizedBox(height: 8),
+              titleField,
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: amountField),
+                  const SizedBox(width: 8),
+                  dateButton,
+                  const SizedBox(width: 8),
+                  addButton,
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// The checking account as a bank statement (statementList in TransactionsView.swift): what's expected first, then
+/// month by month, newest first, with the balance after every line.
+class _Statement extends StatelessWidget {
+  const _Statement({required this.lines});
+  final List<LedgerLine> lines;
+
+  static String icon(LedgerLine l) => switch (l.source) {
+    LedgerSource.balance => '✔︎',
+    LedgerSource.salary => '💰',
+    LedgerSource.fixed => '📌',
+    LedgerSource.card => '💳',
+    LedgerSource.savings => '→',
+    LedgerSource.transfer => '⇄',
+    LedgerSource.transaction => l.amount > 0 || (l.elsewhere ?? 0) > 0 ? '＋' : '−',
+  };
+
+  void open(BuildContext context, LedgerLine l) {
+    switch (l.source) {
+      case LedgerSource.transaction || LedgerSource.transfer:
+        final t = context.store.money.transactions.where((t) => t.id == l.transactionId).firstOrNull;
+        if (t != null) editTransaction(context, t);
+      case LedgerSource.salary:
+        openDest(context, Dest.history);
+      case LedgerSource.fixed:
+        openDest(context, Dest.expenses);
+      case LedgerSource.card:
+        openDest(context, Dest.card);
+      case LedgerSource.savings || LedgerSource.balance:
+        openDest(context, Dest.accounts);
+    }
+  }
+
+  Future<void> menu(BuildContext context, LedgerLine l, Offset at) async {
+    final t = context.store.money.transactions.where((t) => t.id == l.transactionId).firstOrNull;
+    if (t == null) return;
+    final choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
+      items: const [
+        PopupMenuItem(value: 'edit', child: Text('עריכה')),
+        PopupMenuItem(value: 'delete', child: Text('מחיקה')),
+      ],
+    );
+    if (!context.mounted) return;
+    if (choice == 'edit') editTransaction(context, t);
+    if (choice == 'delete' &&
+        await confirm(context, 'למחוק את התנועה?', 'אי אפשר לבטל את הפעולה.', ok: 'מחיקה') &&
+        context.mounted) {
+      context.store.edit((f) => f.money.removeTransaction(t.id));
+    }
+  }
+
+  Widget row(BuildContext context, LedgerLine l, {required bool expected}) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final shown = l.elsewhere ?? l.amount;
+    final amountText =
+        '${shown > 0
+            ? '+'
+            : shown < 0
+            ? '−'
+            : ''}${Fmt.money(shown.abs())}';
+    final balance = l.balance.roundToDouble();
+    return Opacity(
+      opacity: expected ? 0.6 : 1,
+      child: GestureDetector(
+        onLongPressStart: l.isManual ? (d) => menu(context, l, d.globalPosition) : null,
+        child: InkWell(
+          onTap: () => open(context, l),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    DateFormat('dd.MM').format(l.date),
+                    style: theme.textTheme.bodySmall?.copyWith(color: muted, fontFeatures: tabular),
+                  ),
+                ),
+                SizedBox(width: 24, child: Text(icon(l), textAlign: TextAlign.center)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l.title.isEmpty ? '—' : l.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: l.source == LedgerSource.balance ? const TextStyle(fontWeight: FontWeight.w600) : null,
+                      ),
+                      if (l.note.isNotEmpty) Text(l.note, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // The amount, and the balance after it under it (leaves the title room on a phone).
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (l.source != LedgerSource.balance)
+                      Text(
+                        amountText,
+                        textDirection: TextDirection.rtl,
+                        style: TextStyle(
+                          fontFeatures: tabular,
+                          color: l.elsewhere != null ? muted : (shown > 0 ? AppColors.positive(context) : null),
+                        ),
+                      ),
+                    Text(
+                      'יתרה ${Fmt.money(balance)}',
+                      textDirection: TextDirection.rtl,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFeatures: tabular,
+                        color: l.balance < 0 ? theme.colorScheme.error : muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final future = lines.where((l) => l.date.isAfter(now)).toList();
+    final past = lines.where((l) => !l.date.isAfter(now)).toList();
+    final months = <int, List<LedgerLine>>{};
+    for (final l in past) {
+      months.putIfAbsent(l.date.year * 100 + l.date.month, () => []).add(l);
+    }
+    final thisMonth = now.year * 100 + now.month;
+    final keys = months.keys.toList()..sort((a, b) => b.compareTo(a));
+    return PageList(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 110),
+      children: [
+        if (future.isNotEmpty)
+          SectionCard(
+            title: 'צפוי — לפי ההכנסות, ההוצאות הקבועות והאשראי',
+            children: [for (final l in future) row(context, l, expected: true)],
+          ),
+        for (final key in keys)
+          SectionCard(
+            title: '${key == thisMonth ? 'היום · ' : ''}${Fmt.monthTitle(key ~/ 100, key % 100)}',
+            children: [for (final l in months[key]!) row(context, l, expected: false)],
+          ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: EmptyHint(
+            '💰 משכורת · 📌 מהוצאות קבועות · 💳 מכרטיס אשראי · → לחיסכון · ⇄ העברה · ✔︎ יתרה שהקלדת (ממנה החישוב '
+            'מתחיל מחדש). לחיצה על שורה שנוצרה לבד פותחת את המסך שלה; שורה שרשמת כאן נפתחת לעריכה, ולחיצה ארוכה מוחקת.',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Without a checking account: the recorded transactions only.
+class _LegacyTransactions extends StatelessWidget {
+  const _LegacyTransactions();
+
+  @override
+  Widget build(BuildContext context) {
+    return StoreBuilder(
+      builder: (context, store) {
+        final money = store.money;
+        final list = money.transactions..sort((a, b) => b.date.compareTo(a.date));
+        final planned = list.where((t) => t.isPlanned).toList().reversed.toList();
+        final past = list.where((t) => !t.isPlanned).toList();
+        final cards = CardData(money);
+        final open = openReceivables(money);
+        Widget tile(MoneyTransaction t) {
+          final theme = Theme.of(context);
+          final color = switch (t.kind) {
+            TransactionKind.income => Colors.green.shade700,
+            TransactionKind.expense => theme.colorScheme.error,
+            TransactionKind.transfer => theme.colorScheme.primary,
+          };
+          final where = t.kind == TransactionKind.transfer
+              ? '${money.account(t.accountID)?.name ?? '?'} ← ${money.account(t.toAccountID)?.name ?? '?'}'
+              : (t.paidByCard
+                    ? 'באשראי${t.cardInstallments > 1 ? ' · ${t.cardInstallments} תשלומים' : ''}'
+                    : money.account(t.accountID)?.name ?? '');
+          final debt = t.kind == TransactionKind.income
+              ? cards.receivables.where((r) => r.incomeIDs.contains(t.id)).firstOrNull
+              : null;
+          final canLink = t.kind == TransactionKind.income && t.salaryKey == null && debt == null && open.isNotEmpty;
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: color.withValues(alpha: 0.12),
+              child: Icon(switch (t.kind) {
+                TransactionKind.income => Icons.south_west,
+                TransactionKind.expense => Icons.north_east,
+                TransactionKind.transfer => Icons.swap_horiz,
+              }, color: color),
+            ),
+            title: Text(t.title.isEmpty ? t.kind.title : t.title),
+            subtitle: Text(
+              '${Fmt.date(t.date)}${where.isEmpty ? '' : ' · $where'}${debt == null ? '' : ' · ↩︎ החזר חוב של ${debt.person}'}',
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (canLink)
+                  PopupMenuButton<String>(
+                    tooltip: 'שייך להחזר חוב',
+                    icon: const Icon(Icons.assignment_return_outlined, size: 20),
+                    onSelected: (id) => store.edit((f) => ReceivableActions(f).linkIncome(t.id, id)),
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(enabled: false, height: 32, child: Text('זה תשלום על חוב של…')),
+                      for (final r in open)
+                        PopupMenuItem(
+                          value: r.id,
+                          child: Text('${r.person} — נשאר ${Fmt.money(cards.outstanding(r, money.transactions))}'),
+                        ),
+                    ],
+                  ),
+                Text(
+                  (t.kind == TransactionKind.expense ? '−' : '') + Fmt.money(t.amount),
+                  textDirection: TextDirection.rtl,
+                  style: theme.textTheme.titleMedium?.copyWith(color: color),
+                ),
+              ],
+            ),
+            onTap: () => editTransaction(context, t),
+          );
+        }
+
+        return PageList(
+          children: [
+            if (list.isEmpty)
+              const SectionCard(
+                title: 'תנועות',
+                children: [
+                  EmptyHint('כאן רושמים הכנסות והוצאות גדולות או חריגות, והעברות בין חשבונות. תאריך עתידי = מתוכנן.'),
+                ],
+              ),
+            if (planned.isNotEmpty) SectionCard(title: 'מתוכננות', children: [for (final t in planned) tile(t)]),
+            if (past.isNotEmpty) SectionCard(title: 'שבוצעו', children: [for (final t in past) tile(t)]),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// [kind]: for a new transaction, what it starts as (a transfer goes to the first account that isn't the checking).
+Future<void> editTransaction(BuildContext context, MoneyTransaction? existing, {TransactionKind kind = TransactionKind.expense}) async {
   final store = context.store;
   if (existing == null && store.money.checking == null) store.edit((f) => f.money.ensureChecking());
   final accounts = store.money.accounts;
   final draft = MoneyTransaction(existing != null
       ? deepCopy(existing.json) as Json
-      : MoneyTransaction.create(accountID: store.money.checking?.id));
+      : MoneyTransaction.create(kind: kind, accountID: store.money.checking?.id));
+  if (existing == null && kind == TransactionKind.transfer) {
+    draft.toAccountID = accounts.where((a) => a.kind != AccountKind.checking).firstOrNull?.id;
+  }
   await showEditor(
     context,
     title: existing == null ? 'תנועה חדשה' : 'עריכת תנועה',

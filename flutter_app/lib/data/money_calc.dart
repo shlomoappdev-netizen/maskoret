@@ -1,8 +1,39 @@
 import 'dart:math' as math;
 
 import 'card.dart';
+import 'fmt.dart';
 import 'forecast.dart';
 import 'models.dart';
+
+enum LedgerSource { balance, salary, fixed, card, savings, transaction, transfer }
+
+/// One line of the checking statement (LedgerLine in Money.swift).
+class LedgerLine {
+  LedgerLine(this.id, this.date, this.title, this.amount, this.source, {this.cardKey, this.transactionId});
+  final String id;
+  final DateTime date;
+  final String title;
+
+  /// Signed: + came in, − went out.
+  final double amount;
+  final LedgerSource source;
+
+  /// For a card charge: which card and month (yyyymm).
+  final ({String card, int month})? cardKey;
+
+  /// For a recorded transaction or transfer.
+  final String? transactionId;
+
+  /// The balance after this line.
+  double balance = 0;
+
+  /// A recorded movement that doesn't touch the checking right now (card, another account): its own amount.
+  double? elsewhere;
+  String note = '';
+
+  /// Written by hand in "תנועות" (the rest follows from other screens).
+  bool get isManual => source == LedgerSource.transaction || source == LedgerSource.transfer;
+}
 
 /// Calendar month arithmetic like Foundation's `Calendar.date(byAdding: .month…)`:
 /// the day is clamped to the end of the target month (Jan 31 + 1 month = Feb 28/29).
@@ -192,42 +223,114 @@ extension MoneyPeriods on MoneyData {
 
   /// What should have moved in the checking account in (from, to] without being recorded: the salary on the pay day,
   /// fixed expenses on their day, and the card on its charge day. Typing in a balance starts this count over.
-  double expectedChecking(DateTime from, DateTime to, Budget budget, List<MonthRecord> history) {
-    if (!from.isBefore(to)) return 0;
+  double expectedChecking(DateTime from, DateTime to, Budget budget, List<MonthRecord> history) =>
+      expectedCheckingLines(from, to, budget, history).fold(0.0, (s, l) => s + l.amount);
+
+  /// The same as [expectedChecking], one line per movement (for the statement in "תנועות") — a port of
+  /// expectedCheckingLines in Money.swift.
+  List<LedgerLine> expectedCheckingLines(DateTime from, DateTime to, Budget budget, List<MonthRecord> history) {
+    if (!from.isBefore(to)) return [];
     DateTime day(int wanted, int year, int month) {
       final days = DateTime(year, month + 1, 0).day;
       return DateTime(year, month, math.min(math.max(wanted, 1), days));
     }
 
+    DateTime plusDays(DateTime d, int n) => DateTime(d.year, d.month, d.day + n, d.hour, d.minute, d.second, d.millisecond);
     bool inRange(DateTime d) => d.isAfter(from) && !d.isAfter(to);
+    int monthOf(DateTime d) => d.year * 100 + d.month;
     final cards = CardData(this);
-    var total = 0.0;
+    final lines = <LedgerLine>[];
 
-    // Card: every imported charge once its day came — fixed expenses and tracked purchases on the card included.
+    // Card: every imported charge once the bank takes it — fixed expenses and tracked purchases on the card included.
+    // One line per card and day, like the bank shows it. An amount typed in for that month replaces the statement's.
+    final primary = cards.primaryCard;
+    final groups = <String, ({DateTime date, double amount})>{}; // "last4|day", or "last4|m<month>" when typed in
+    void add(String card, DateTime charge, double amount) {
+      final d = cards.bankDate(card, charge);
+      final month = monthOf(charge);
+      if (cards.setting(card)?.actualCharge(month) != null) {
+        final key = '$card|m$month';
+        final old = groups[key]?.date;
+        groups[key] = (date: old != null && old.isAfter(d) ? old : d, amount: 0);
+      } else if (inRange(d)) {
+        final key = '$card|${d.millisecondsSinceEpoch}';
+        groups[key] = (date: d, amount: (groups[key]?.amount ?? 0) + amount);
+      }
+    }
+
     for (final t in cards.cardTransactions.where((t) => !t.ignored)) {
       final d = t.chargeDate;
-      if (d != null && inRange(d)) total -= t.amount;
+      if (d != null) add(t.cardLast4, d, t.amount);
     }
-    for (final p in cards.manualCardPayments.where((p) => inRange(p.chargeDate))) {
-      total -= p.amount;
+    for (final p in cards.manualCardPayments) {
+      add(primary, p.chargeDate, p.amount);
+    }
+    for (final e in groups.entries) {
+      final sep = e.key.indexOf('|');
+      final card = e.key.substring(0, sep), rest = e.key.substring(sep + 1);
+      var amount = e.value.amount;
+      if (rest.startsWith('m')) {
+        final actual = cards.setting(card)?.actualCharge(int.parse(rest.substring(1)));
+        if (!inRange(e.value.date) || actual == null) continue;
+        amount = actual;
+      }
+      if (amount == 0) continue;
+      lines.add(LedgerLine('card:${e.key}', e.value.date, 'חיוב ${cards.cardName(card)}', -amount, LedgerSource.card,
+          cardKey: (card: card, month: monthOf(e.value.date))));
+    }
+    // Cards without imported statements: what they usually charge, on their day.
+    for (final s in cards.cardSettings.where((s) => s.monthlyEstimate > 0)) {
+      var yy = from.year, mm = from.month;
+      final last = monthOf(to);
+      while (yy * 100 + mm <= last) {
+        final key = yy * 100 + mm;
+        final d = plusDays(day(s.chargeDay ?? payDay, yy, mm), s.delayDays);
+        if (inRange(d)) {
+          final actual = s.actualCharge(key);
+          lines.add(LedgerLine('cardm:${s.id}:$key', d, 'חיוב ${s.displayName}${actual == null ? ' (משוער)' : ''}',
+              -(actual ?? s.monthlyEstimate), LedgerSource.card,
+              cardKey: (card: s.key, month: key)));
+        }
+        if (mm == 12) {
+          yy += 1;
+          mm = 1;
+        } else {
+          mm += 1;
+        }
+      }
     }
 
     var y = from.year, m = from.month;
-    final endKey = to.year * 100 + to.month;
-    final cardDay = cards.usualChargeDay;
+    final endKey = monthOf(to);
+    final primarySetting = cards.setting(primary);
+    final cardDay = primarySetting?.chargeDay ?? cards.usualChargeDay;
+    final cardDelay = primarySetting?.delayDays ?? 0;
     final average = cards.averageCardVariable();
     final tx = transactions;
     while (y * 100 + m <= endKey) {
       final key = y * 100 + m;
       // Salary, unless it was recorded as a transaction.
-      if (inRange(periodStart(y, m)) && !tx.any((t) => t.salaryKey == key)) {
-        total += history.where((r) => r.year == y && r.month == m).firstOrNull?.actualNet ?? budget.net;
+      final payDate = periodStart(y, m);
+      if (inRange(payDate) && !tx.any((t) => t.salaryKey == key)) {
+        final actual = history.where((r) => r.year == y && r.month == m).firstOrNull?.actualNet;
+        lines.add(LedgerLine('salary:$key', payDate, 'משכורת ${Fmt.monthNames[m - 1]}${actual == null ? ' (הערכה)' : ''}',
+            actual ?? budget.net, LedgerSource.salary));
       }
       final statement = cards.chargedIn(key);
       // A statement that wasn't imported: the usual spending and the planned installments.
       if (cardDay != null && statement.isEmpty) {
-        final d = day(cardDay, y, m);
-        if (inRange(d)) total -= average + Forecaster.projectedInstallments(cards, DateTime(d.year, d.month, d.day - 1), d);
+        final charge = day(cardDay, y, m);
+        final d = plusDays(charge, cardDelay);
+        if (inRange(d)) {
+          final actual = primarySetting?.actualCharge(key);
+          lines.add(LedgerLine(
+              'cardEstimate:$key',
+              d,
+              'חיוב ${cards.cardName(primary)}${actual == null ? ' (לפי ממוצע)' : ''}',
+              -(actual ?? (average + Forecaster.projectedInstallments(cards, plusDays(charge, -1), charge))),
+              LedgerSource.card,
+              cardKey: (card: primary, month: key)));
+        }
       }
       // Fixed expenses. One paid by card leaves with the statement, so it never counts by itself as well.
       for (final item in budget.expenses.where((e) => e.isActive)) {
@@ -235,8 +338,11 @@ extension MoneyPeriods on MoneyData {
         if (amount == 0) continue;
         final onCard = cards.cardTransactions.any((t) => t.linkedExpenseID == item.id && !t.ignored);
         if (onCard && statement.any((t) => t.linkedExpenseID == item.id && !t.ignored)) continue;
-        final d = day(onCard ? (cardDay ?? payDay) : (item.chargeDay ?? payDay), y, m);
-        if (inRange(d)) total -= amount;
+        var d = day(onCard ? (cardDay ?? payDay) : (item.chargeDay ?? payDay), y, m);
+        if (onCard) d = plusDays(d, cardDelay);
+        if (inRange(d)) {
+          lines.add(LedgerLine('fixed:${item.id}:$key', d, '${item.name}${onCard ? ' (באשראי)' : ''}', -amount, LedgerSource.fixed));
+        }
       }
       if (m == 12) {
         y += 1;
@@ -245,7 +351,64 @@ extension MoneyPeriods on MoneyData {
         m += 1;
       }
     }
-    return total;
+    return lines;
+  }
+
+  /// The checking account as a bank statement: from each balance you typed in, every movement after it — recorded
+  /// transactions, deposits into savings plans, and what follows by itself (salary, fixed expenses, card) — with the
+  /// balance after each line. Newest first. Lines after today are what's expected (checkingStatement in Money.swift).
+  List<LedgerLine> checkingStatement(DateTime until, Budget budget, List<MonthRecord> history, {int months = 6, DateTime? now}) {
+    final account = checking;
+    if (account == null) return [];
+    final oldest = addMonths(now ?? DateTime.now(), -months);
+    final entries = account.balances.where((e) => !e.date.isAfter(until)).toList()..sort((a, b) => a.date.compareTo(b.date));
+    // The last balance before the window still opens it.
+    final lastOld = entries.lastIndexWhere((e) => !e.date.isAfter(oldest));
+    final firstIndex = lastOld < 0 ? 0 : lastOld;
+    final since = autoBalanceSince;
+    final tx = transactions;
+    final result = <LedgerLine>[];
+    for (var i = firstIndex; i < entries.length; i++) {
+      final entry = entries[i];
+      final end = i + 1 < entries.length ? entries[i + 1].date : until;
+      final lines = <LedgerLine>[];
+      for (final t in tx.where((t) => t.date.isAfter(entry.date) && !t.date.isAfter(end))) {
+        final change = t.effectOn(account.id);
+        final line = LedgerLine('t:${t.id}', t.date, t.title, change,
+            t.kind == TransactionKind.transfer ? LedgerSource.transfer : LedgerSource.transaction,
+            transactionId: t.id);
+        // Paid by card or in another account: shown, but the checking moves only with the card charge.
+        if (change == 0) {
+          line.elsewhere = t.kind == TransactionKind.income ? t.amount : -t.amount;
+          line.note = t.kind == TransactionKind.expense && t.paidByCard
+              ? '💳 באשראי — יורד עם חיוב הכרטיס'
+              : 'ב${this.account(t.kind == TransactionKind.transfer ? t.toAccountID : t.accountID)?.name ?? 'חשבון אחר'}';
+        }
+        lines.add(line);
+      }
+      for (final plan in accounts.where((a) => a.kind == AccountKind.savings || a.kind == AccountKind.deposit)) {
+        for (final d in MoneyCalc.contributionDates(plan, entry.date, end)) {
+          lines.add(LedgerLine('dep:${plan.id}:${d.millisecondsSinceEpoch}', d, 'הפקדה ל${plan.name}', -plan.monthlyContribution,
+              LedgerSource.savings));
+        }
+      }
+      if (since != null) {
+        lines.addAll(expectedCheckingLines(entry.date.isAfter(since) ? entry.date : since, end, budget, history));
+      }
+      // Oldest first to run the balance, same-day lines income first.
+      lines.sort((a, b) => a.date != b.date ? a.date.compareTo(b.date) : b.amount.compareTo(a.amount));
+      var running = entry.amount;
+      // A balance typed again before anything moved says nothing new — only the last one of those shows.
+      if (lines.isNotEmpty || i == entries.length - 1) {
+        result.add(LedgerLine('bal:${entry.id}', entry.date, 'יתרה שהקלדת', 0, LedgerSource.balance)..balance = running);
+      }
+      for (final line in lines) {
+        running += line.amount;
+        line.balance = running;
+        result.add(line);
+      }
+    }
+    return result.reversed.toList();
   }
 
   /// Savings deposits live in one place, the savings account. A fixed expense marked "transfer to savings" becomes a

@@ -153,6 +153,20 @@ void main() {
         'accounts': money.accounts.map((a) => calc.value(a, now, money.transactions)).toList(),
         'balances': money.accounts.map((a) => money.balance(a, now)).toList(),
         'autoBalances': money.accounts.map((a) => money.balance(a, now, b, f.history)).toList(),
+        'statement': () {
+          final until = DateTime(now.year, now.month, now.day + 35, now.hour, now.minute, now.second, now.millisecond);
+          final lines = money.checkingStatement(until, b, f.history, now: now);
+          // Lines of the same day and amount may come in either order: the titles, notes and kinds are compared as sets.
+          return {
+            'amounts': [for (final l in lines) l.amount],
+            'balances': [for (final l in lines) l.balance],
+            'elsewhere': [for (final l in lines) l.elsewhere ?? 0],
+            'days': [for (final l in lines) (dateTimeToSwift(l.date) / 86400).truncate()],
+            'titles': [for (final l in lines) l.title]..sort(),
+            'notes': [for (final l in lines) l.note]..sort(),
+            'sources': [for (final l in lines) l.source.name]..sort(),
+          };
+        }(),
         'periodNow': [money.period(now).$1, money.period(now).$2],
         'payDay': money.payDay,
       };
@@ -190,7 +204,7 @@ void main() {
       for (final k in (d[id] as Map).keys) {
         final dv = d[id][k];
         final sv = s[id][k];
-        if (const {'card', 'forecast', 'maaser', 'owed', 'tracked', 'trends'}.contains(k)) {
+        if (const {'card', 'forecast', 'maaser', 'owed', 'tracked', 'trends', 'statement'}.contains(k)) {
           deepClose(dv, sv, 'card');
         } else if (k == 'months') {
           final sm = sv as List;
@@ -579,9 +593,25 @@ void main() {
         'savedAt': dateTimeToSwift(now),
         'actualNet': 6543.21,
       });
+      // Per-card settings (CardSetting): the imported card on its own day plus a delay, an amount typed in for this
+      // month, and a card without statements with its usual monthly charge. The first round keeps no settings.
+      if (day != 1) {
+        final primary = CardData(money).primaryCard;
+        final thisMonth = '${now.year * 100 + now.month}', lastMonth = '${last.year * 100 + last.month}';
+        JObj.lazy(file.json, 'money').writeList('cardSettings').addAll([
+          {'id': newId(), 'last4': primary, 'name': 'ויזה', 'chargeDay': 12, 'delayDays': 1, 'monthlyEstimate': 0,
+            'actualCharges': {thisMonth: 333.33}},
+          {'id': newId(), 'last4': '', 'name': 'כרטיס בלי קובץ', 'chargeDay': 20, 'delayDays': 0, 'monthlyEstimate': 450,
+            'actualCharges': {lastMonth: 400}},
+        ]);
+      }
       final checking = money.checking!;
       final auto = money.balance(checking, now, b, file.history);
       expect(auto, isNot(closeTo(money.balance(checking, now), 0.01)), reason: 'payDay $day: the estimate moved');
+      // The statement's line for today ends at the same balance as "עו״ש עכשיו".
+      final statement = money.checkingStatement(DateTime(now.year, now.month, now.day + 35), b, file.history, now: now);
+      final today = statement.firstWhere((l) => !l.date.isAfter(now));
+      expect(today.balance, closeTo(auto, 0.01), reason: 'payDay $day: the statement reaches the checking balance');
       compare(doc);
     }
   }, skip: canRun ? false : 'needs swiftc (macOS)');

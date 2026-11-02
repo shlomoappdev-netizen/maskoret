@@ -210,6 +210,10 @@ class MonthPicture {
       card.add(MonthLine('עוד צפוי לפי ממוצע החודשים הקודמים', cardEstimate));
       cardEstimated = true;
     }
+    // Cards whose statements aren't imported (e.g. the bank's own card): what they usually charge.
+    for (final s in cards.cardSettings.where((s) => s.monthlyEstimate > 0)) {
+      card.add(MonthLine('💳 ${s.displayName} (משוער)', s.monthlyEstimate));
+    }
     // A fixed expense paid by card that isn't linked to its charge would count twice — point it out.
     final fixedAmounts = spending.map((l) => l.amount).where((a) => a >= 20).toList();
     final suspects = {

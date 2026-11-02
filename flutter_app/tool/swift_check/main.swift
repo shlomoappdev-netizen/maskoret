@@ -172,6 +172,24 @@ for (id, file) in family.files {
         "accounts": money.accounts.map { MoneyCalc.value(of: $0, on: now, transactions: money.transactions) },
         "balances": money.accounts.map { money.balance(of: $0, on: now) },
         "autoBalances": money.accounts.map { money.balance(of: $0, on: now, budget: budget, history: history) },
+        "statement": { () -> [String: Any] in
+            let until = Calendar.current.date(byAdding: .day, value: 35, to: now) ?? now
+            let lines = money.checkingStatement(until: until, budget: budget, history: history)
+            func source(_ l: LedgerLine) -> String {
+                switch l.source {
+                case .balance: return "balance"
+                case .salary: return "salary"
+                case .fixed: return "fixed"
+                case .card: return "card"
+                case .savings: return "savings"
+                case .transaction: return "transaction"
+                case .transfer: return "transfer"
+                }
+            }
+            return ["amounts": lines.map(\.amount), "balances": lines.map(\.balance),
+                    "elsewhere": lines.map { $0.elsewhere ?? 0 }, "days": lines.map { Int($0.date.timeIntervalSinceReferenceDate / 86400) },
+                    "titles": lines.map(\.title).sorted(), "notes": lines.map(\.note).sorted(), "sources": lines.map(source).sorted()]
+        }(),
         "periodNow": [money.period(containing: now).year, money.period(containing: now).month],
         "payDay": money.payDay,
         "transactions": money.transactions.count, "cardTransactions": money.cardTransactions.count,

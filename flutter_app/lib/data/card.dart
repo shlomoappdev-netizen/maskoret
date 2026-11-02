@@ -197,6 +197,39 @@ class CardMonthSummary {
 }
 
 /// The card and "owed to me" calculations on one member's money data.
+/// What the user set for one card (CardSetting in Card.swift).
+class CardSetting {
+  CardSetting(this.json);
+  final Json json;
+  JObj get _o => JObj(json);
+
+  String get id => _o.s('id');
+
+  /// The last 4 digits of an imported card; empty for a card whose statements aren't imported.
+  String get last4 => _o.s('last4');
+  String get name => _o.s('name');
+
+  /// The day of the month the bank takes the charge (null = as the statements say).
+  int? get chargeDay => _o.iOpt('chargeDay');
+
+  /// Days after that until it actually leaves the checking.
+  int get delayDays => _o.i('delayDays');
+
+  /// A card without imported statements: what it usually charges a month.
+  double get monthlyEstimate => _o.d('monthlyEstimate');
+
+  /// The amount the bank actually took, by month ("yyyymm").
+  double? actualCharge(int month) {
+    final m = json['actualCharges'];
+    final v = m is Map ? m['$month'] : null;
+    return v is num ? v.toDouble() : null;
+  }
+
+  /// How charges and settings find this card.
+  String get key => last4.isEmpty ? 'm:$id' : last4;
+  String get displayName => name.isNotEmpty ? name : (last4.isEmpty ? 'כרטיס' : 'כרטיס $last4');
+}
+
 class CardData {
   CardData(this.money) {
     final raw = money.raw;
@@ -206,6 +239,38 @@ class CardData {
 
   final MoneyData money;
   late final List<CardTransaction> cardTransactions;
+
+  late final List<CardSetting> cardSettings = JObj(money.raw).objects('cardSettings').map(CardSetting.new).toList();
+
+  CardSetting? setting(String card) => cardSettings.where((s) => s.key == card).firstOrNull;
+
+  String cardName(String card) => setting(card)?.displayName ?? (card.isEmpty ? 'כרטיס אשראי' : 'כרטיס $card');
+
+  /// The card most charges are on — purchases recorded by hand and the estimate go to it.
+  late final String primaryCard = () {
+    final counts = <String, int>{};
+    for (final t in cardTransactions) {
+      counts[t.cardLast4] = (counts[t.cardLast4] ?? 0) + 1;
+    }
+    String? best;
+    for (final e in counts.entries) {
+      if (best == null || e.value > counts[best]!) best = e.key;
+    }
+    return best ?? '';
+  }();
+
+  /// The day a charge leaves the checking: the card's own day if set (same month), plus its delay.
+  DateTime bankDate(String card, DateTime charge) {
+    final s = setting(card);
+    if (s == null) return charge;
+    var d = charge;
+    final day = s.chargeDay;
+    if (day != null) {
+      final days = DateTime(charge.year, charge.month + 1, 0).day;
+      d = DateTime(charge.year, charge.month, day.clamp(1, days), charge.hour, charge.minute);
+    }
+    return DateTime(d.year, d.month, d.day + s.delayDays, d.hour, d.minute, d.second, d.millisecond);
+  }
 
   /// Card charges linked to each fixed expense in a billing month.
   Map<String, double> actuals(int billingKey) {

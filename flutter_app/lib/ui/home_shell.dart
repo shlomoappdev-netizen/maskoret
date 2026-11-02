@@ -406,6 +406,14 @@ class Sidebar extends StatelessWidget {
   }
 }
 
+/// Opens one of the app's screens on top of the current one (a line in the checking statement opens its screen).
+void openDest(BuildContext context, Dest d) {
+  Navigator.push(
+    context,
+    glassRoute((_) => d.ownScaffold ? d.page : Scaffold(appBar: AppBar(title: Text(d.title)), body: d.page)),
+  );
+}
+
 /// Phone: every screen that isn't a bottom tab, grouped like the Mac sidebar (MoreView in PhoneRoot.swift).
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
