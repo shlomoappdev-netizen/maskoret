@@ -31,7 +31,9 @@ import '../update/updater.dart';
 
 /// Every screen of the app, grouped like the Mac sidebar (SidebarItem in MaskoretApp.swift).
 enum Dest {
-  summary('סיכום', Icons.pie_chart_outline),
+  summary('בית', Icons.home_outlined),
+  money('הכסף שלי', Icons.account_balance_wallet_outlined),
+  budget('תקציב', Icons.list_alt),
   incomes('הכנסות', Icons.payments_outlined),
   deductions('ניכויים', Icons.account_balance_outlined),
   expenses('הוצאות קבועות', Icons.shopping_cart_outlined),
@@ -60,11 +62,26 @@ enum Dest {
   /// Screens with their own app bar (the others get the household's).
   final bool ownScaffold;
 
-  /// A shorter name for the phone's bottom tabs.
-  String get tabTitle => switch (this) { accounts => 'חשבונות', card => 'אשראי', _ => title };
+  /// The screens grouped under "הכסף שלי" and "תקציב", as tabs inside them (moneyTabs / budgetTabs in MaskoretApp.swift).
+  static const moneyTabs = [transactions, card, accounts];
+  static const budgetTabs = [incomes, deductions, expenses, tracked];
+
+  /// The menu item that shows this screen.
+  Dest get home => moneyTabs.contains(this) ? money : (budgetTabs.contains(this) ? budget : this);
+
+  /// The short name inside a group's tabs, and on the phone's bottom tabs.
+  String get tabTitle => switch (this) {
+        transactions => 'עו״ש',
+        card => 'אשראי',
+        accounts => 'חיסכון',
+        expenses => 'קבועות',
+        _ => title,
+      };
 
   Widget get page => switch (this) {
         summary => const SummaryScreen(),
+        money => const GroupScreen(tabs: moneyTabs),
+        budget => const GroupScreen(tabs: budgetTabs),
         incomes => const IncomesScreen(),
         deductions => const DeductionsScreen(),
         expenses => const ExpensesScreen(),
@@ -87,20 +104,86 @@ enum Dest {
         updates => const UpdatesScreen(),
       };
 
-  /// The sidebar sections, like the Mac (הכנסות / הוצאות / חיסכון / תכנון / הגדרות).
+  /// The sidebar sections, like the Mac: בית, הכסף שלי, תקציב, then תכנון ותובנות and הגדרות.
   /// [admin]: "הודעות למשתמשים" shows only for an admin (rpc am_i_admin).
   static List<(String, List<Dest>)> sections({bool admin = false}) => [
-        ('', [summary]),
-        ('הכנסות', [incomes, deductions]),
-        ('הוצאות', [expenses, card, transactions, tracked]),
-        ('חיסכון', [accounts]),
-        ('תכנון', [forecast, history, maaser, owed, trends, insights]),
-        ('הגדרות', [family, tax, account, support, versions, if (Updater.supported) updates]),
-        if (admin) ('ניהול', [adminAnnouncements]),
+        ('', [summary, money, budget]),
+        ('תכנון ותובנות', [forecast, history, maaser, owed, trends, insights]),
+        ('הגדרות', [
+          family, tax, account, support, if (admin) adminAnnouncements, versions, if (Updater.supported) updates,
+        ]),
       ];
 
   /// The phone's bottom tabs; everything else is under "עוד" (like PhoneRoot.swift).
-  static const tabs = [summary, transactions, card, accounts];
+  static const tabs = [summary, money, budget];
+}
+
+/// The open tab in each group, and a screen another screen asked to open (moneyTab / budgetTab / show /
+/// openScreen in Store.swift).
+class Nav extends ChangeNotifier {
+  Dest moneyTab = Dest.transactions;
+  Dest budgetTab = Dest.incomes;
+
+  /// Asked for by another screen; the shell opens it (its group and tab) and clears it.
+  Dest? opening;
+
+  Dest tabOf(List<Dest> tabs) => identical(tabs, Dest.moneyTabs) ? moneyTab : budgetTab;
+
+  /// Selects the tab a screen lives in (when it's inside a group).
+  void show(Dest d) {
+    if (Dest.moneyTabs.contains(d)) moneyTab = d;
+    if (Dest.budgetTabs.contains(d)) budgetTab = d;
+    notifyListeners();
+  }
+
+  void open(Dest d) {
+    opening = d;
+    show(d);
+  }
+}
+
+final nav = Nav();
+
+/// A few related screens behind one menu item, with tabs on top (GroupScreen in MaskoretApp.swift).
+class GroupScreen extends StatelessWidget {
+  const GroupScreen({super.key, required this.tabs});
+  final List<Dest> tabs;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: nav,
+      builder: (context, _) {
+        final selected = nav.tabOf(tabs);
+        return Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<Dest>(
+                  showSelectedIcon: false,
+                  segments: [
+                    for (final d in tabs)
+                      ButtonSegment(
+                        value: d,
+                        label: d == Dest.card && CardData(context.store.money).importDue()
+                            ? Badge(label: const Text('!'), child: Text(d.tabTitle))
+                            : FittedBox(fit: BoxFit.scaleDown, child: Text(d.tabTitle, maxLines: 1)),
+                      ),
+                  ],
+                  selected: {selected},
+                  onSelectionChanged: (v) => nav.show(v.first),
+                ),
+              ),
+            ),
+          ),
+          Expanded(child: KeyedSubtree(key: ValueKey(selected), child: selected.page)),
+        ]);
+      },
+    );
+  }
 }
 
 /// Navigation: on wide screens (Windows) a sidebar with sections and the month's numbers at the bottom;
@@ -124,9 +207,22 @@ class _HomeShellState extends State<HomeShell> {
     final scope = context.scope;
     final wide = isWide(context);
     return ListenableBuilder(
-      listenable: Listenable.merge([scope.store, scope.account, scope.sync, scope.updater, scope.support]),
+      listenable: Listenable.merge([scope.store, scope.account, scope.sync, scope.updater, scope.support, nav]),
       builder: (context, _) {
         _maybeAskLocalChoice(context);
+        // Another screen asked to open one (a line in the checking statement, "מה מחכה לך"…): its group and tab.
+        final opening = nav.opening;
+        if (opening != null) {
+          nav.opening = null;
+          if (wide || Dest.tabs.contains(opening.home)) {
+            current = opening.home;
+            more = false;
+          } else {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) Navigator.push(context, glassRoute((_) => _pageWithBar(opening)));
+            });
+          }
+        }
         // Signed out, or not an admin any more: leave the admin screen.
         if (current == Dest.adminAnnouncements && !scope.support.isAdmin) current = Dest.summary;
         final appBar = AppBar(
@@ -182,7 +278,7 @@ class _HomeShellState extends State<HomeShell> {
               for (final d in Dest.tabs)
                 NavigationDestination(
                   icon: Badge(
-                    isLabelVisible: d == Dest.card && CardData(scope.store.money).importDue(),
+                    isLabelVisible: d == Dest.money && CardData(scope.store.money).importDue(),
                     label: const Text('!'),
                     child: Icon(d.icon),
                   ),
@@ -345,7 +441,7 @@ Widget? _badgeFor(BuildContext context, Dest d) {
   if (d == Dest.support && scope.support.unread > 0) return Badge(label: Text('${scope.support.unread}'));
   if (d == Dest.account && scope.sync.lastError != null) return const Badge(label: Text('!'));
   if (d == Dest.updates && scope.updater.available) return const Badge(label: Text('חדש'));
-  if (d == Dest.card && CardData(scope.store.money).importDue()) return const Badge(label: Text('ייבוא'));
+  if (d == Dest.money && CardData(scope.store.money).importDue()) return const Badge(label: Text('ייבוא'));
   return null;
 }
 
@@ -406,12 +502,13 @@ class Sidebar extends StatelessWidget {
   }
 }
 
-/// Opens one of the app's screens on top of the current one (a line in the checking statement opens its screen).
+Widget _pageWithBar(Dest d) => d.ownScaffold ? d.page : Scaffold(appBar: AppBar(title: Text(d.title)), body: d.page);
+
+/// Opens one of the app's screens from another (a line in the checking statement, "מה מחכה לך"): back to the main
+/// screen, then its group and tab in the menu (store.openScreen in Swift).
 void openDest(BuildContext context, Dest d) {
-  Navigator.push(
-    context,
-    glassRoute((_) => d.ownScaffold ? d.page : Scaffold(appBar: AppBar(title: Text(d.title)), body: d.page)),
-  );
+  Navigator.of(context).popUntil((r) => r.isFirst);
+  nav.open(d);
 }
 
 /// Phone: every screen that isn't a bottom tab, grouped like the Mac sidebar (MoreView in PhoneRoot.swift).
@@ -438,9 +535,7 @@ class MoreScreen extends StatelessWidget {
                 trailing: _badgeFor(context, d) ?? const Icon(Icons.chevron_left),
                 onTap: () => Navigator.push(
                   context,
-                  glassRoute(
-                    (_) => d.ownScaffold ? d.page : Scaffold(appBar: AppBar(title: Text(d.title)), body: d.page),
-                  ),
+                  glassRoute((_) => _pageWithBar(d)),
                 ),
               ),
           ]),

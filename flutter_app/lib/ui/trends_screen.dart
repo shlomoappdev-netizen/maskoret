@@ -37,7 +37,7 @@ class TrendsScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                FilledButton(onPressed: () => _newTrend(context), child: const Text('מגמה חדשה')),
+                FilledButton(onPressed: () => newTrend(context), child: const Text('מגמה חדשה')),
               ]),
             ),
           ),
@@ -48,7 +48,7 @@ class TrendsScreen extends StatelessWidget {
           heroTag: 'new-trend',
           icon: const Icon(Icons.add),
           label: const Text('מגמה חדשה'),
-          onPressed: () => _newTrend(context),
+          onPressed: () => newTrend(context),
         ),
         body: PageList(children: [
           Text('כמה באמת הולך על דברים שאין להם קטגוריה — דייטים, מתנות, יציאות', style: theme.textTheme.bodySmall),
@@ -173,8 +173,9 @@ class TrendBars extends StatelessWidget {
   }
 }
 
-/// NewTrendSheet, then straight into the new trend.
-Future<void> _newTrend(BuildContext context) async {
+/// NewTrendSheet, then straight into the new trend — or, from "מה זה?" with [withCard], the new trend starts with
+/// that charge and the window stays where it was.
+Future<void> newTrend(BuildContext context, {String? withCard}) async {
   final store = context.store;
   var name = '', emoji = '🏷️';
   var limit = 0.0;
@@ -224,9 +225,10 @@ Future<void> _newTrend(BuildContext context) async {
     onSave: () => store.edit((f) => TrendActions(f).upsert(trend
       ..['name'] = name.trim().isEmpty ? 'מגמה חדשה' : name.trim()
       ..['emoji'] = emoji.trim().isEmpty ? '🏷️' : emoji.trim()
-      ..['monthlyLimit'] = jsonNumber(limit))),
+      ..['monthlyLimit'] = jsonNumber(limit)
+      ..['cardIDs'] = [?withCard])),
   );
-  if (saved && context.mounted) {
+  if (saved && withCard == null && context.mounted) {
     Navigator.push(context, glassRoute((_) => TrendDetailScreen(trendId: trend['id'] as String)));
   }
 }

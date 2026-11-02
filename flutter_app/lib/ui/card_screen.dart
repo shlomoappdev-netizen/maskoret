@@ -11,6 +11,7 @@ import '../data/models.dart';
 import 'common.dart';
 import 'receivables_screen.dart';
 import 'theme.dart';
+import 'trends_screen.dart';
 
 /// Credit card: importing the Max statement, the month's charges, linking them to fixed expenses,
 /// categories, installments — port of CardView.swift.
@@ -132,14 +133,6 @@ class _CardScreenState extends State<CardScreen> {
               text: 'אחרי הייבוא תוכל לצמד כל חיוב להוצאה הקבועה שלו. בתי עסק שכבר צימדת בעבר יצומדו לבד.',
               action: 'ייבוא…',
               onAction: _import,
-            ),
-          if (monthTxs.any((t) => t.isVariable) && filter != _Filter.open)
-            _Banner(
-              icon: Icons.add_link,
-              text: '${monthTxs.where((t) => t.isVariable).length} חיובים עוד לא מצומדים. חיוב שהוא בעצם הוצאה קבועה '
-                  '(חשמל, טלפון, מנוי) — צמד אותו כדי שלא ייספר פעמיים.',
-              action: 'הצג אותם',
-              onAction: () => setState(() => filter = _Filter.open),
             ),
           _tiles(context, monthTxs, key),
           if (wide)
@@ -471,7 +464,7 @@ class CardTxRow extends StatelessWidget {
             Text(Fmt.money(_r(tx.amount)),
                 textDirection: TextDirection.rtl,
                 style: TextStyle(fontWeight: FontWeight.w600, color: amountColor)),
-            _LinkMenu(tx: tx),
+            _ClassifyButton(tx: tx),
           ]),
         ]),
       ),
@@ -479,75 +472,160 @@ class CardTxRow extends StatelessWidget {
   }
 }
 
-class _LinkMenu extends StatelessWidget {
-  const _LinkMenu({required this.tx});
+/// "מה זה?" (or "שנה" once it's classified): opens the window that says what a charge is.
+class _ClassifyButton extends StatelessWidget {
+  const _ClassifyButton({required this.tx});
   final CardTransaction tx;
 
   @override
   Widget build(BuildContext context) {
-    final store = context.store;
-    final budget = store.budget;
-    final tracked = JObj(store.file.json['budget'] as Json).objects('trackedItems');
-    final trends = JObj(store.money.raw).objects('trends');
-    final unlinked = tx.linkedExpenseID == null && tx.linkedTrackedID == null;
-    final maaser = MaaserSettings(JObj((store.money.raw['maaser'] as Json?) ?? {}));
-    PopupMenuEntry<void Function()> header(String text) =>
-        PopupMenuItem(enabled: false, height: 32, child: Text(text, style: Theme.of(context).textTheme.labelSmall));
-    PopupMenuEntry<void Function()> item(String text, void Function(SaveFile f) action, {bool checked = false}) =>
-        CheckedPopupMenuItem(checked: checked, value: () => store.edit(action), child: Text(text));
-    return PopupMenuButton<void Function()>(
-      tooltip: unlinked ? 'צמד ל…' : 'שנה',
-      onSelected: (action) => action(),
-      itemBuilder: (_) => [
-        header('הוצאה קבועה — כל החיובים מבית העסק הזה'),
-        if (budget.expenses.isEmpty) const PopupMenuItem(enabled: false, child: Text('אין הוצאות קבועות')),
-        for (final e in budget.expenses)
-          item(e.name, (f) => CardActions(f).linkToExpense(tx.id, e.id), checked: tx.linkedExpenseID == e.id),
-        if (tracked.isNotEmpty) ...[
-          const PopupMenuDivider(),
-          header('מעקב רכישות — נרשם כרכישה'),
-          for (final t in tracked)
-            item('${t['emoji'] ?? ''} ${t['name'] ?? ''}', (f) => CardActions(f).linkToTracked(tx.id, t['id'] as String),
-                checked: tx.linkedTrackedID == t['id']),
-        ],
-        if (trends.isNotEmpty) ...[
-          const PopupMenuDivider(),
-          header('מגמות — לניתוח, לא משנה את התקציב'),
-          for (final t in trends)
-            item('${t['emoji'] ?? ''} ${t['name'] ?? ''}', (f) => CardActions(f).toggleInTrend(tx.id, t['id'] as String),
-                checked: (t['cardIDs'] as List?)?.contains(tx.id) == true),
-        ],
-        const PopupMenuDivider(),
-        header('חייבים לי'),
-        if (tx.owedPortion > 0)
-          item('ביטול — לא צריך להחזיר', (f) => ReceivableActions(f).removeCardFromReceivables(tx.id))
-        else if (tx.amount > 0)
-          PopupMenuItem(value: () => showOwedQuick(context, tx), child: const Text('מישהו צריך להחזיר לי…')),
-        if (maaser.enabled) ...[
-          const PopupMenuDivider(),
-          header('מעשרות'),
-          if (maaser.isMaaser(tx))
-            item('בטל סימון מעשרות', (f) => MaaserCalc.setCardMaaser(f, tx, on: false, merchant: false))
-          else ...[
-            item('החיוב הזה הוא מעשרות', (f) => MaaserCalc.setCardMaaser(f, tx, on: true, merchant: false)),
-            item('כל החיובים מבית העסק הזה הם מעשרות', (f) => MaaserCalc.setCardMaaser(f, tx, on: true, merchant: true)),
-          ],
-        ],
-        const PopupMenuDivider(),
-        if (tx.linkedExpenseID != null) item('בטל צימוד (הוצאה משתנה)', (f) => CardActions(f).linkToExpense(tx.id, null)),
-        if (tx.linkedTrackedID != null) item('בטל צימוד למעקב', (f) => CardActions(f).linkToTracked(tx.id, null)),
-        item(tx.ignored ? 'החזר לחישוב' : 'הסתר מהחישוב (כבר נרשם / כפול)', (f) => CardActions(f).setIgnored(tx.id, !tx.ignored)),
-      ],
+    final classified = tx.linkedExpenseID != null || tx.linkedTrackedID != null || tx.ignored;
+    final color = Theme.of(context).colorScheme.primary;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => showClassify(context, tx.id),
       child: Padding(
         padding: const EdgeInsets.only(top: 2),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.link, size: 16, color: Theme.of(context).colorScheme.primary),
+          Icon(Icons.help_outline, size: 16, color: color),
           const SizedBox(width: 2),
-          Text(unlinked ? 'צמד ל…' : 'שנה', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 13)),
+          Text(classified ? 'שנה' : 'מה זה?', style: TextStyle(color: color, fontSize: 13)),
         ]),
       ),
     );
   }
+}
+
+/// "מה זה?" (ClassifyCardSheet in CardView.swift): one clear window for a charge — how it counts in the budget, which
+/// trends it belongs to, whether someone owes you part of it, and maaser. Every choice applies at once.
+Future<void> showClassify(BuildContext context, String txID) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    useSafeArea: true,
+    builder: (sheet) => StoreBuilder(builder: (sheet, store) {
+      final tx = CardData(store.money).cardTransactions.where((t) => t.id == txID).firstOrNull;
+      if (tx == null) return const SizedBox(height: 120, child: Center(child: Text('החיוב לא נמצא')));
+      final theme = Theme.of(sheet);
+      final muted = theme.colorScheme.onSurfaceVariant;
+      final budget = store.budget;
+      final tracked = JObj(store.file.json['budget'] as Json).objects('trackedItems');
+      final trends = JObj(store.money.raw).objects('trends');
+      final maaser = MaaserSettings(JObj((store.money.raw['maaser'] as Json?) ?? {}));
+      final kind = tx.ignored
+          ? 'ignored'
+          : tx.linkedExpenseID != null
+              ? 'fixed:${tx.linkedExpenseID}'
+              : tx.linkedTrackedID != null
+                  ? 'tracked:${tx.linkedTrackedID}'
+                  : 'regular';
+      void set(String to) => store.edit((f) {
+            final a = CardActions(f);
+            if (tx.ignored && to != 'ignored') a.setIgnored(tx.id, false);
+            if (to == 'regular') {
+              if (tx.linkedExpenseID != null) a.linkToExpense(tx.id, null);
+              if (tx.linkedTrackedID != null) a.linkToTracked(tx.id, null);
+            } else if (to.startsWith('fixed:')) {
+              a.linkToExpense(tx.id, to.substring(6));
+            } else if (to.startsWith('tracked:')) {
+              a.linkToTracked(tx.id, to.substring(8));
+            } else {
+              a.setIgnored(tx.id, true);
+            }
+          });
+      Widget choice(String value, String title, String detail) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(kind == value ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                color: kind == value ? theme.colorScheme.primary : muted),
+            title: Text(title),
+            subtitle: Text(detail, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+            onTap: () => set(value),
+          );
+      Widget header(String text) => Padding(
+            padding: const EdgeInsets.only(top: 14, bottom: 2),
+            child: Text(text, style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
+          );
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('מה זה?', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(tx.merchant, style: theme.textTheme.titleMedium),
+                Text('${Fmt.date(tx.date)}${tx.category.isEmpty ? '' : ' · ${tx.category}'}',
+                    style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+              ]),
+            ),
+            Text(Fmt.money(tx.amount),
+                textDirection: TextDirection.rtl, style: theme.textTheme.titleMedium?.copyWith(fontFeatures: tabular)),
+          ]),
+          header('איך זה נספר בתקציב'),
+          choice('regular', 'קנייה רגילה', 'נספרת בהוצאות המשתנות של החודש'),
+          for (final e in budget.expenses)
+            choice('fixed:${e.id}', 'חלק מ״${e.name}״',
+                'הוצאה קבועה — כבר בתקציב, לא תיספר שוב. גם החיובים הבאים מבית העסק הזה'),
+          for (final t in tracked)
+            choice('tracked:${t['id']}', '${t['emoji'] ?? ''} ${t['name'] ?? ''}', 'רכישה במעקב רכישות'),
+          choice('ignored', 'לא לספור', 'כפול, או שכבר נרשם במקום אחר'),
+          header('מגמות — לניתוח בלבד, לא משנה את התקציב'),
+          for (final t in trends)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('${t['emoji'] ?? ''} ${t['name'] ?? ''}'),
+              value: (t['cardIDs'] as List?)?.contains(tx.id) == true,
+              onChanged: (_) => store.edit((f) => CardActions(f).toggleInTrend(tx.id, t['id'] as String)),
+            ),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              icon: const Icon(Icons.add),
+              label: const Text('מגמה חדשה…'),
+              onPressed: () => newTrend(sheet, withCard: tx.id),
+            ),
+          ),
+          header('חייבים לי'),
+          if (tx.owedPortion > 0) ...[
+            Text('מישהו צריך להחזיר ${Fmt.money(tx.owedPortion)}'),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                style: TextButton.styleFrom(foregroundColor: theme.colorScheme.error),
+                onPressed: () => store.edit((f) => ReceivableActions(f).removeCardFromReceivables(tx.id)),
+                child: const Text('ביטול — לא צריך להחזיר'),
+              ),
+            ),
+          ] else if (tx.amount > 0)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton(
+                onPressed: () => showOwedQuick(sheet, tx),
+                child: const Text('מישהו צריך להחזיר לי חלק מזה…'),
+              ),
+            ),
+          if (maaser.enabled) ...[
+            header('מעשרות'),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('החיוב הזה הוא מעשרות'),
+              value: maaser.isMaaser(tx),
+              onChanged: (on) => store.edit((f) => MaaserCalc.setCardMaaser(f, tx, on: on, merchant: false)),
+            ),
+            if (!maaser.isMaaser(tx))
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: () => store.edit((f) => MaaserCalc.setCardMaaser(f, tx, on: true, merchant: true)),
+                  child: const Text('כל החיובים מבית העסק הזה הם מעשרות'),
+                ),
+              ),
+          ],
+        ]),
+      );
+    }),
+  );
 }
 
 /// "כרטיסים וימי חיוב" (CardDaysCard in CardView.swift): for each imported card and each card without statements,

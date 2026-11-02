@@ -10,6 +10,7 @@ import '../data/forecast.dart';
 import '../data/json.dart';
 import '../data/card.dart';
 import '../data/maaser.dart';
+import '../data/max_import.dart';
 import '../data/receivables.dart';
 import '../data/models.dart';
 import '../data/money_calc.dart';
@@ -21,6 +22,7 @@ import '../support/payslip_pdf.dart';
 import 'app_prompts.dart';
 import 'common.dart';
 import 'family_screen.dart';
+import 'home_shell.dart';
 import 'theme.dart';
 
 /// The current month: what's left, where the net goes, the money now — the same layout as SummaryView.swift.
@@ -86,6 +88,8 @@ class SummaryScreen extends StatelessWidget {
           if (donut != null) ...[const SizedBox(height: 14), donut],
         ],
         const SizedBox(height: 14),
+        _Todos(pic: pic, money: money),
+        const SizedBox(height: 14),
         TileGrid(minWidth: 130, children: [
           StatTile(title: 'עו״ש עכשיו (משוער)', value: Fmt.money(checking), icon: Icons.credit_card),
           StatTile(title: 'חיסכון ופיקדונות', value: Fmt.money(savings), icon: Icons.lock_outline),
@@ -93,21 +97,24 @@ class SummaryScreen extends StatelessWidget {
           StatTile(title: 'פנסיה', value: Fmt.money(calc.total(money, {AccountKind.pension}, budget: b, history: d.history)), icon: Icons.beach_access_outlined),
         ]),
         const SizedBox(height: 14),
-        if (wide)
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: Column(children: [breakdown, ?payslip])),
-            const SizedBox(width: 14),
-            SizedBox(width: 340, child: stats),
-          ])
-        else ...[
-          breakdown,
-          ?payslip,
-          stats,
-        ],
-        if (members.length > 1)
-          SectionCard(title: 'נטו לפי בן משפחה', subtitle: 'כל אחד לפי התלוש שלו', children: [
-            for (final m in members) AmountRow(m.title, store.family.file(m.id)?.budget.net ?? 0),
-          ]),
+        // Everything else, folded by default (the choice is remembered).
+        _Details(children: [
+          if (wide)
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(children: [breakdown, ?payslip])),
+              const SizedBox(width: 14),
+              SizedBox(width: 340, child: stats),
+            ])
+          else ...[
+            breakdown,
+            ?payslip,
+            stats,
+          ],
+          if (members.length > 1)
+            SectionCard(title: 'נטו לפי בן משפחה', subtitle: 'כל אחד לפי התלוש שלו', children: [
+              for (final m in members) AmountRow(m.title, store.family.file(m.id)?.budget.net ?? 0),
+            ]),
+        ]),
       ]);
     });
   }
@@ -139,6 +146,95 @@ class SummaryScreen extends StatelessWidget {
       ..add('עו״ש עכשיו (משוער): ${Fmt.money(checking)}')
       ..add('חיסכון ופיקדונות: ${Fmt.money(savings)}');
     return lines.join('\n');
+  }
+}
+
+/// "מה מחכה לך": what's left to do this month, each line opens where it's done (todos in SummaryView.swift).
+class _Todos extends StatelessWidget {
+  const _Todos({required this.pic, required this.money});
+  final MonthPicture pic;
+  final MoneyData money;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final todos = <(IconData, String, VoidCallback)>[
+      if (CardData(money).importDue())
+        (Icons.file_download_outlined, 'לייבא את קובץ האשראי של החודש מ-Max', () => openDest(context, Dest.card)),
+      if (!pic.isActual)
+        (Icons.document_scanner_outlined, 'לרשום כמה נכנס בפועל החודש (אפשר מקובץ התלוש)', () => showSaveMonth(context)),
+      ...() {
+        final last = money.checking?.latestBalance;
+        if (last == null) {
+          return [(Icons.account_balance_outlined, 'להקליד את יתרת העו״ש — ממנה הכול מחושב', () => openDest(context, Dest.accounts))];
+        }
+        final days = DateTime.now().difference(last.date).inSeconds ~/ 86400;
+        return [
+          if (days > 30)
+            (Icons.account_balance_outlined, 'לעדכן את יתרת העו״ש — עברו $days ימים מהעדכון האחרון',
+                () => openDest(context, Dest.accounts)),
+        ];
+      }(),
+      if (pic.fixedInCardSuspects.isNotEmpty)
+        (Icons.warning_amber_rounded, 'ייתכן שנספר פעמיים: ${pic.fixedInCardSuspects.join(', ')}', () => openDest(context, Dest.card)),
+    ];
+    if (todos.isEmpty) {
+      return Glass(
+        padding: const EdgeInsets.all(16),
+        child: Row(children: [
+          const Icon(Icons.check_circle, color: AppColors.green),
+          const SizedBox(width: 8),
+          Expanded(child: Text('הכול מעודכן — אין מה לעשות כרגע', style: TextStyle(color: AppColors.positive(context)))),
+        ]),
+      );
+    }
+    return SectionCard(title: 'מה מחכה לך', children: [
+      for (final (icon, text, action) in todos)
+        ListTile(
+          leading: Icon(icon, color: theme.colorScheme.primary),
+          title: Text(text),
+          trailing: Icon(Icons.chevron_left, color: theme.colorScheme.onSurfaceVariant),
+          onTap: action,
+        ),
+    ]);
+  }
+}
+
+/// "פרטים נוספים — מהנטו ועד מה שנשאר, ומספרים על החודש", folded by default; open or closed is remembered.
+class _Details extends StatefulWidget {
+  const _Details({required this.children});
+  final List<Widget> children;
+
+  @override
+  State<_Details> createState() => _DetailsState();
+}
+
+class _DetailsState extends State<_Details> {
+  static const _key = 'summaryShowDetails';
+
+  @override
+  Widget build(BuildContext context) {
+    final prefs = context.scope.prefs;
+    final open = prefs.getBool(_key) ?? false;
+    final theme = Theme.of(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => prefs.setBool(_key, !open)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          child: Row(children: [
+            Icon(open ? Icons.expand_more : Icons.chevron_left, color: theme.colorScheme.primary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text('פרטים נוספים — מהנטו ועד מה שנשאר, ומספרים על החודש',
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+            ),
+          ]),
+        ),
+      ),
+      if (open) ...[const SizedBox(height: 6), ...widget.children],
+    ]);
   }
 }
 
