@@ -266,15 +266,6 @@ class CardData {
     return (charged.isEmpty ? cardStatementKeys : charged).take(3).toList();
   }
 
-  /// Each category's share (0...1) of the variable spending in the statements the average is taken from.
-  Map<String, double> averageCardCategoryShares() {
-    final txs = [for (final k in _averageStatementKeys) ...chargedIn(k)];
-    final byCategory = CardMonthSummary.of(txs).byCategory.where((c) => c.amount > 0).toList();
-    final total = byCategory.fold(0.0, (s, c) => s + c.amount);
-    if (total <= 0) return {};
-    return {for (final c in byCategory) c.name: c.amount / total};
-  }
-
   /// Average variable card spending per month, from the last (up to) 3 full statements.
   double averageCardVariable() {
     final keys = _averageStatementKeys;

@@ -81,9 +81,6 @@ void main() {
             }(),
         ],
         'average': cards.averageCardVariable(),
-        // In basis points, so the cent tolerance doesn't hide a wrong share.
-        'shares': cards.averageCardCategoryShares().map((k, v) => MapEntry(k, v * 10000)),
-        'shareNames': (cards.averageCardCategoryShares().keys.toList()..sort()),
         'usualDay': cards.usualChargeDay ?? 0,
         'statementKeys': cards.cardStatementKeys,
         'plans': [

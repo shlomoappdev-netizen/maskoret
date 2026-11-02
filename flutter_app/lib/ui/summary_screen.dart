@@ -15,6 +15,7 @@ import '../data/models.dart';
 import '../data/money_calc.dart';
 import '../data/month_picture.dart';
 import '../data/payslip.dart';
+import '../data/trends.dart';
 import '../support/app_log.dart';
 import '../support/payslip_pdf.dart';
 import 'app_prompts.dart';
@@ -44,7 +45,7 @@ class SummaryScreen extends StatelessWidget {
       final last = forecast.last;
 
       final hero = _Hero(pic: pic);
-      final donut = pic.net > 0 ? _NetDonut(pic: pic, cards: CardData(d.money)) : null;
+      final donut = pic.net > 0 ? _NetDonut(pic: pic, money: d.money) : null;
       final breakdown = SectionCard(title: 'החודש — מהנטו ועד מה שנשאר', children: monthBreakdown(context, pic));
       final payslip = b.gross > 0
           ? SectionCard(title: 'מהברוטו לנטו (הערכה לפי התלוש)', children: payslipBreakdown(context, b))
@@ -226,52 +227,72 @@ class _Hero extends StatelessWidget {
   }
 }
 
+/// The slices of "לאן הולך הנטו" (name, amount, color).
+List<(String, double, Color)> netSlices(MonthPicture pic, MoneyData money) => _NetDonut._slices(pic, money);
+
 /// "לאן הולך הנטו": a donut with its legend beside it (under it on a phone).
 class _NetDonut extends StatelessWidget {
-  const _NetDonut({required this.pic, required this.cards});
+  const _NetDonut({required this.pic, required this.money});
   final MonthPicture pic;
-  final CardData cards;
+  final MoneyData money;
 
-  /// Card spending by category, biggest first; the small ones are folded into one slice (cardSlices in SummaryView.swift).
-  static List<(String, double, Color)> cardSlices(MonthPicture p, CardData cards) {
-    const estimateTitle = 'עוד צפוי לפי ממוצע החודשים הקודמים';
-    final merged = <String, double>{};
-    var estimate = 0.0;
-    for (final line in p.card.where((l) => l.amount > 0)) {
-      if (line.title == estimateTitle) {
-        estimate += line.amount;
-      } else {
-        // Purchases recorded by hand ("💳 …") are one category of their own.
-        final name = line.title.startsWith('💳') ? 'קניות שנרשמו ידנית' : line.title;
-        merged[name] = (merged[name] ?? 0) + line.amount;
+  /// What the user's trends got in this period, biggest first (only card charges and transactions, not entries typed
+  /// by hand), with how much of it came from the card and from transactions — trendSlices in SummaryView.swift.
+  static ({List<(String, double, Color)> slices, double fromCard, double fromOneOffs}) _trendSlices(MonthPicture p, MoneyData money) {
+    final start = p.periodStart, end = p.periodEnd;
+    if (start == null || end == null) return (slices: const [], fromCard: 0, fromOneOffs: 0);
+    var fromCard = 0.0, fromOneOffs = 0.0;
+    final result = <(String, double)>[];
+    for (final trend in JObj(money.raw).objects('trends').map(Trend.new)) {
+      var total = 0.0;
+      for (final item in TrendCalc.items(money, trend)) {
+        if (item.date.isBefore(start) || !item.date.isBefore(end)) continue;
+        switch (item.source) {
+          case TrendSource.card:
+            total += item.amount;
+            fromCard += item.amount;
+          case TrendSource.transaction:
+            total += item.amount;
+            fromOneOffs += item.amount;
+          case TrendSource.manual:
+            break;
+        }
       }
+      if (total > 0.005) result.add(('${trend.emoji} ${trend.name}', total));
     }
-    // The estimate is spread over the categories by their share in the last statements.
-    final shares = estimate > 0 ? cards.averageCardCategoryShares() : const <String, double>{};
-    shares.forEach((name, share) => merged[name] = (merged[name] ?? 0) + estimate * share);
-    if (shares.isNotEmpty) estimate = 0;
-    final sorted = merged.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    result.sort((a, b) => b.$2.compareTo(a.$2));
     const colors = AppColors.cardCategories;
-    final shown = sorted.take(colors.length - 1).toList();
-    final result = [for (var i = 0; i < shown.length; i++) ('💳 ${shown[i].key}', shown[i].value, colors[i])];
-    final rest = sorted.skip(shown.length).fold(0.0, (s, e) => s + e.value);
-    if (rest > 0) result.add(('💳 קטגוריות אחרות', rest, colors.last));
-    if (estimate > 0) result.add(('💳 עוד צפוי (הערכה)', estimate, AppColors.gray));
-    return result;
+    final shown = result.take(colors.length - 1).toList();
+    final slices = [for (var i = 0; i < shown.length; i++) (shown[i].$1, shown[i].$2, colors[i])];
+    final rest = result.skip(shown.length).fold(0.0, (s, e) => s + e.$2);
+    if (rest > 0) slices.add(('מגמות אחרות', rest, colors.last));
+    return (slices: slices, fromCard: fromCard, fromOneOffs: fromOneOffs);
+  }
+
+  /// The donut's slices (slices in SummaryView.swift): the user's trends, then what's left of the card and the
+  /// one-off spending outside them.
+  static List<(String, double, Color)> _slices(MonthPicture pic, MoneyData money) {
+    final trends = _trendSlices(pic, money);
+    final cardKnown = pic.cardTotal - pic.cardEstimate;
+    double atLeast0(double v) => v > 0 ? v : 0;
+    return [
+      ('הוצאות קבועות', pic.spendingTotal, AppColors.pink),
+      ('רכישות תקופתיות', pic.periodic, AppColors.purple),
+      ...trends.slices,
+      (trends.slices.isEmpty ? 'כרטיס אשראי (משתנות)' : '💳 אשראי — בלי מגמה', atLeast0(cardKnown - trends.fromCard),
+          AppColors.tealChart.withValues(alpha: 0.55)),
+      ('💳 עוד צפוי באשראי (הערכה)', pic.cardEstimate, AppColors.gray),
+      ('תשלומים (החלק של החודש)', pic.installmentsTotal, AppColors.indigo),
+      ('לחיסכון', pic.toSavingsTotal, AppColors.sky),
+      ('הוצאות חריגות', atLeast0(-pic.oneOffTotal - trends.fromOneOffs), AppColors.orange),
+      ('נשאר', atLeast0(pic.remaining), AppColors.green),
+    ].where((i) => i.$2 > 0.005).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final items = [
-      ('הוצאות קבועות', pic.spendingTotal, AppColors.pink),
-      ('רכישות תקופתיות', pic.periodic, AppColors.purple),
-      ...cardSlices(pic, cards),
-      ('תשלומים (החלק של החודש)', pic.installmentsTotal, AppColors.indigo),
-      ('לחיסכון', pic.toSavingsTotal, AppColors.sky),
-      ('הוצאות חריגות', pic.oneOffTotal < 0 ? -pic.oneOffTotal : 0.0, AppColors.orange),
-      ('נשאר', pic.remaining > 0 ? pic.remaining : 0.0, AppColors.green),
-    ].where((i) => i.$2 > 0).toList();
+    final items = netSlices(pic, money);
     final total = items.fold(0.0, (s, i) => s + i.$2).clamp(1.0, double.infinity);
     final donut = SizedBox(
       width: 170,
@@ -315,8 +336,8 @@ class _NetDonut extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('לאן הולך הנטו', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-        if (pic.cardEstimated)
-          Text('💳 קטגוריות האשראי כוללות הערכה לפי ממוצע החודשים הקודמים',
+        if (JObj(money.raw).objects('trends').isNotEmpty)
+          Text('המגמות שיצרת — מה ששייך להן בתקופה הזו',
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         const SizedBox(height: 12),
         LayoutBuilder(

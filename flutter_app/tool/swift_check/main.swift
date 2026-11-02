@@ -127,8 +127,6 @@ for (id, file) in family.files {
          "keys": p.payments.map { $0.billingKey }, "variable": p.countsAsVariable]
     }
     let cardInfo: [String: Any] = ["months": cards, "average": money.averageCardVariable(),
-                                   "shares": money.averageCardCategoryShares().mapValues { $0 * 10000 },
-                                   "shareNames": money.averageCardCategoryShares().keys.sorted(),
                                    "usualDay": money.usualChargeDay ?? 0, "statementKeys": money.cardStatementKeys,
                                    "plans": plans,
                                    "manual": money.manualCardPayments.map { ["amount": $0.amount, "key": $0.billingKey] }]
