@@ -368,7 +368,7 @@ class CardActions {
       int? best;
       for (var i = 0; i < list.length; i++) {
         final p = CardTransaction(list[i]);
-        if (p.merchantKey == t.merchantKey &&
+        if (CardTransaction.sameMerchant(p.merchant, t.merchant) &&
             p.cardLast4 == t.cardLast4 &&
             (p.originalAmount - t.originalAmount).abs() < 0.005 &&
             days(p.date, t.date) <= 2) {
@@ -437,36 +437,9 @@ class CardActions {
     }).toList();
     all.addAll([...fresh, ...kept]);
 
-    if (renamed.isNotEmpty) {
-      for (final r in money.objects('receivables')) {
-        final shares = r['cardShares'];
-        if (shares is Map) {
-          for (final e in renamed.entries) {
-            if (shares.containsKey(e.key)) shares[e.value] = shares.remove(e.key);
-          }
-        }
-        final credits = r['cardCreditIDs'];
-        if (credits is List) {
-          for (var i = 0; i < credits.length; i++) {
-            credits[i] = renamed[credits[i]] ?? credits[i];
-          }
-        }
-      }
-      for (final t in money.objects('trends')) {
-        final ids = t['cardIDs'];
-        if (ids is List) {
-          for (var i = 0; i < ids.length; i++) {
-            ids[i] = renamed[ids[i]] ?? ids[i];
-          }
-        }
-        final shares = t['shares'];
-        if (shares is Map) {
-          for (final e in renamed.entries) {
-            if (shares.containsKey(e.key)) shares[e.value] = shares.remove(e.key);
-          }
-        }
-      }
-    }
+    file.money.renameCardIDs(renamed);
+    // Pending items kept from before that this file shows as charged under a slightly different name.
+    file.money.dropConfirmedPending();
 
     // Like CardTransaction.occurrence: the number after the last "#".
     final repeats = result.transactions.where((t) => (int.tryParse((t['id'] as String).split('#').last) ?? 1) > 1).length;

@@ -39,6 +39,23 @@ class CardTransaction {
 
   String get merchantKey => merchant.toLowerCase().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).join(' ');
 
+  /// The merchant without company suffixes and punctuation: Max names the same merchant a little differently while a
+  /// purchase is pending ("… בע\"מ") and once it's charged.
+  static String looseKey(String merchant) {
+    var s = merchant.toLowerCase();
+    for (final suffix in const ['בע"מ', 'בע״מ', 'בעמ', 'ltd', "בע'מ"]) {
+      s = s.replaceAll(suffix, ' ');
+    }
+    s = s.split('').map((c) => '.,-\'"״׳()'.contains(c) ? ' ' : c).join();
+    return s.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).join(' ');
+  }
+
+  static bool sameMerchant(String a, String b) {
+    final x = looseKey(a), y = looseKey(b);
+    if (x == y) return true;
+    return (x.length < y.length ? x.length : y.length) >= 6 && (x.startsWith(y) || y.startsWith(x));
+  }
+
   static final _installmentPattern = RegExp(r'תשלום\s*(\d+)\s*מתוך\s*(\d+)');
 
   /// "תשלום 1 מתוך 2" → (1, 2).

@@ -1,3 +1,4 @@
+import 'card.dart';
 import 'json.dart';
 import 'tax.dart';
 
@@ -646,6 +647,80 @@ class MoneyData {
 
   /// The money object itself (read-only use: card charges, receivables…).
   Json get raw => _o.readMap ?? <String, dynamic>{};
+
+  /// Points every link to a charge at its new id (a pending item that became a charge) — renameCardIDs in Card.swift.
+  void renameCardIDs(Map<String, String> renamed) {
+    if (renamed.isEmpty) return;
+    for (final r in _o.objects('receivables')) {
+      final shares = r['cardShares'];
+      if (shares is Map) {
+        for (final e in renamed.entries) {
+          if (shares.containsKey(e.key)) shares[e.value] = shares.remove(e.key);
+        }
+      }
+      final credits = r['cardCreditIDs'];
+      if (credits is List) {
+        for (var i = 0; i < credits.length; i++) {
+          credits[i] = renamed[credits[i]] ?? credits[i];
+        }
+      }
+    }
+    for (final t in _o.objects('trends')) {
+      final ids = t['cardIDs'];
+      if (ids is List) {
+        final seen = <dynamic>{};
+        final moved = [for (final id in ids) renamed[id] ?? id].where(seen.add).toList();
+        ids
+          ..clear()
+          ..addAll(moved);
+      }
+      final shares = t['shares'];
+      if (shares is Map) {
+        for (final e in renamed.entries) {
+          if (shares.containsKey(e.key)) shares[e.value] = shares.remove(e.key);
+        }
+      }
+    }
+  }
+
+  /// A pending purchase that already shows up as a charge (same card and amount, a few days apart, the same merchant
+  /// even if named a little differently) is that charge counted twice: it goes, and its links move to the charge.
+  /// Returns how many went (dropConfirmedPending in Card.swift).
+  int dropConfirmedPending() {
+    final all = _o.objects('cardTransactions');
+    int days(DateTime a, DateTime b) =>
+        DateTime(a.year, a.month, a.day).difference(DateTime(b.year, b.month, b.day)).inDays.abs();
+    final renamed = <String, String>{};
+    final used = <String>{};
+    for (final pj in all) {
+      final p = CardTransaction(pj);
+      if (p.status != 'pending') continue;
+      Json? match;
+      for (final cj in all) {
+        final c = CardTransaction(cj);
+        if (c.status != 'pending' && !used.contains(c.id) && c.cardLast4 == p.cardLast4 &&
+            (c.originalAmount - p.originalAmount).abs() < 0.005 && days(c.date, p.date) <= 3 &&
+            CardTransaction.sameMerchant(c.merchant, p.merchant)) {
+          match = cj;
+          break;
+        }
+      }
+      if (match == null) continue;
+      final c = CardTransaction(match);
+      used.add(c.id);
+      renamed[p.id] = c.id;
+      if (c.linkedExpenseID == null && c.linkedTrackedID == null) {
+        for (final k in const ['linkedExpenseID', 'linkedTrackedID']) {
+          if (pj[k] != null) match[k] = pj[k];
+        }
+      }
+      if (c.owedPortion == 0 && pj['owedPortion'] != null) match['owedPortion'] = pj['owedPortion'];
+    }
+    if (renamed.isEmpty) return 0;
+    _o.removeWhere('cardTransactions', (t) => renamed.containsKey(t['id']));
+    renameCardIDs(renamed);
+    return renamed.length;
+  }
 
   List<Account> get accounts => _o.objects('accounts').map(Account.new).toList();
   List<MoneyTransaction> get transactions => _o.objects('transactions').map(MoneyTransaction.new).toList();

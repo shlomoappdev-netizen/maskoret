@@ -66,10 +66,13 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Savings deposits live on the savings account; old "transfer to savings" expenses move there (like Store.apply).
+  /// Savings deposits live on the savings account; old "transfer to savings" expenses move there (like Store.apply),
+  /// and pending card purchases that were already charged go.
   bool _adoptSavingsTransfers() {
     final f = file;
-    return f.money.adoptSavingsTransfers(f.budget);
+    final adopted = f.money.adoptSavingsTransfers(f.budget);
+    // A pending purchase that already shows up as a charge is the same charge (dropConfirmedPending in Card.swift).
+    return f.money.dropConfirmedPending() > 0 || adopted;
   }
 
   FamilyMember? get activeMember {

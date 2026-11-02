@@ -40,6 +40,24 @@ if CommandLine.arguments[1] == "adopt" {
     exit(0)
 }
 
+// "drop <household.json>": dropConfirmedPending on every member's card charges (Card.swift).
+if CommandLine.arguments[1] == "drop" {
+    let family = try JSONDecoder().decode(FamilyBackup.self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2])))
+    var out: [String: Any] = [:]
+    for (id, f) in family.files {
+        var money = f.money ?? MoneyData()
+        let dropped = money.dropConfirmedPending()
+        out[id] = ["dropped": dropped,
+                   "cards": money.cardTransactions.map { ["id": $0.id, "expense": $0.linkedExpenseID?.uuidString ?? "",
+                                                           "tracked": $0.linkedTrackedID?.uuidString ?? "", "owed": $0.owedPortion] },
+                   "trendCards": money.trends.map { $0.cardIDs }, "trendShares": money.trends.map { $0.shares.keys.sorted() },
+                   "owedShares": money.receivables.map { $0.cardShares.keys.sorted() },
+                   "owedCredits": money.receivables.map { $0.cardCreditIDs }]
+    }
+    print(String(data: try JSONSerialization.data(withJSONObject: out, options: [.sortedKeys]), encoding: .utf8)!)
+    exit(0)
+}
+
 // "parse <file.json>": InsightSegment.parse on a list of answers.
 if CommandLine.arguments[1] == "parse" {
     let samples = try JSONDecoder().decode([String].self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2])))

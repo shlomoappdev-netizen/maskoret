@@ -624,6 +624,57 @@ void main() {
     expect(file.money.adoptSavingsTransfers(b), isFalse, reason: 'runs once');
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 
+  test('a pending purchase already charged under a slightly different name goes, its links move — like Swift', () {
+    final doc = loadFixture();
+    final family = FamilyBackup(doc);
+    final file = family.fileForEditing(family.state.activeID);
+    final cards = JObj.lazy(file.json, 'money').writeList('cardTransactions');
+    final charged = [for (final c in cards) if (c is Map && c['status'] == 'charged') c.cast<String, dynamic>()];
+    final expenseID = file.budget.expenses.first.id;
+    Json pendingOf(Json c, String id, String merchant, {int days = 1, double? amount}) => {
+          ...deepCopy(c) as Json,
+          'id': id,
+          'status': 'pending',
+          'merchant': merchant,
+          'date': (c['date'] as num) + days * 86400,
+          if (amount != null) 'originalAmount': amount,
+        }..remove('linkedExpenseID')..remove('linkedTrackedID');
+    // Made-up names: a company suffix and punctuation on the pending one, and a shorter name that is a prefix.
+    charged[0]['merchant'] = 'א.מ. סיטי קאר רכב שיתופי';
+    charged[1]['merchant'] = 'PAYBOX TEL AVIV IL';
+    charged[2]['merchant'] = 'ABC';
+    cards.addAll([
+      pendingOf(charged[0], 'p-company', 'א.מ. סיטי קאר רכב שיתופי בע"מ')
+        ..['linkedExpenseID'] = expenseID
+        ..['owedPortion'] = 1.5,
+      pendingOf(charged[1], 'p-prefix', 'PAYBOX', days: 3),
+      pendingOf(charged[2], 'p-short', 'ABCDEF'), // under 6 letters: not the same merchant
+      pendingOf(charged[3], 'p-far', charged[3]['merchant'] as String, days: 4), // too many days apart
+      pendingOf(charged[4], 'p-amount', charged[4]['merchant'] as String, amount: 999), // another amount
+    ]);
+    final money = JObj.lazy(file.json, 'money');
+    (money.objects('trends').first['cardIDs'] as List).addAll(['p-company', charged[0]['id']]);
+    (money.objects('receivables').first['cardShares'] as Map)['p-prefix'] = 3.0;
+
+    final dir = Directory.systemTemp.createTempSync('drop');
+    final path = '${dir.path}/h.json';
+    File(path).writeAsStringSync(jsonEncode(doc));
+    final out = Process.runSync('zsh', ['tool/swift_check.sh', 'drop', path], stdoutEncoding: utf8);
+    dir.deleteSync(recursive: true);
+    expect(out.exitCode, 0, reason: '${out.stderr}');
+    final s = (jsonDecode(out.stdout as String) as Map)[family.state.activeID] as Map;
+
+    expect(file.money.dropConfirmedPending(), 2);
+    expect(s['dropped'], 2);
+    final dart = CardData(file.money);
+    expect([for (final c in dart.cardTransactions) c.id], [for (final c in s['cards'] as List) c['id']]);
+    expect([for (final c in dart.cardTransactions) c.linkedExpenseID ?? ''], [for (final c in s['cards'] as List) c['expense']]);
+    deepClose([for (final c in dart.cardTransactions) c.owedPortion], [for (final c in s['cards'] as List) c['owed']], 'owed');
+    expect([for (final t in money.objects('trends')) t['cardIDs']], s['trendCards']);
+    expect([for (final r in money.objects('receivables')) ((r['cardShares'] as Map).keys.toList()..sort())], s['owedShares']);
+    expect(file.money.dropConfirmedPending(), 0, reason: 'runs once');
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
   test('a new household made by this app is read by Swift', () {
     final doc = Starter.family();
     final f = FamilyBackup(doc).file(FamilyBackup(doc).state.primaryID)!;
