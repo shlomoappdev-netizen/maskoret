@@ -15,6 +15,7 @@ import '../data/models.dart';
 import '../data/money_calc.dart';
 import '../data/month_picture.dart';
 import '../data/payslip.dart';
+import '../support/app_log.dart';
 import '../support/payslip_pdf.dart';
 import 'app_prompts.dart';
 import 'common.dart';
@@ -525,7 +526,8 @@ Future<void> showSaveMonth(BuildContext context) async {
         } on PayslipError catch (e) {
           setState(() => payslipError = e.message);
         } catch (e) {
-          setState(() => payslipError = 'לא ניתן לפתוח את הקובץ: $e');
+          AppLog.add('payslip', 'קריאת התלוש נכשלה: $e');
+          setState(() => payslipError = PayslipError.unreadable.message);
         } finally {
           await PayslipPdf.discard(file);
           if (ctx.mounted) setState(() => reading = false);

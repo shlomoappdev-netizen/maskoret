@@ -52,6 +52,7 @@ android {
             // Without the release key (e.g. a fresh checkout) the build still works, signed with the debug key —
             // but such an APK can't update, or be updated by, the published one.
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }

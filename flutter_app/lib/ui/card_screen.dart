@@ -281,8 +281,10 @@ class _CardScreenState extends State<CardScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Expanded(child: Text(e.name, style: const TextStyle(fontWeight: FontWeight.w500))),
-                Text('${Fmt.money(_r(actual))} / ${Fmt.money(planned)}',
-                    textDirection: TextDirection.rtl, style: TextStyle(color: over ? theme.colorScheme.error : null)),
+                // A credit linked to the expense makes the actual negative: "זיכוי X", in green.
+                Text(actual < 0 ? 'זיכוי ${Fmt.money(_r(-actual))} / ${Fmt.money(planned)}' : '${Fmt.money(_r(actual))} / ${Fmt.money(planned)}',
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(color: over ? theme.colorScheme.error : (actual < 0 ? AppColors.positive(context) : null))),
               ]),
               const SizedBox(height: 3),
               LinearProgressIndicator(

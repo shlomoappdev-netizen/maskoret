@@ -31,6 +31,8 @@ enum PayslipError implements Exception {
   needsPassword('התלוש נעול בסיסמה.'),
   wrongPassword('הסיסמה לא נכונה.'),
   noText('לא הצלחתי לקרוא טקסט מהקובץ.'),
+  /// A scan where the device can't read it (Windows): nothing is sent anywhere.
+  noTextLayer('בקובץ אין טקסט — הקלד את הנטו ידנית.'),
   notFound('לא הצלחתי למצוא בתלוש את הנטו. אפשר להקליד אותו ידנית.');
 
   const PayslipError(this.message);
