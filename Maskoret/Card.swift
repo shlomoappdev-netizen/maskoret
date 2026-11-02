@@ -925,6 +925,75 @@ extension MoneyData {
 // MARK: - Purchases recorded by hand as "paid by card"
 
 /// One expected card charge of a purchase you recorded yourself (not in an imported statement yet).
+/// What the user set for one card.
+struct CardSetting: Identifiable, Codable, Equatable, Hashable {
+    var id = UUID()
+    /// The last 4 digits of an imported card; empty for a card whose statements aren't imported.
+    var last4: String = ""
+    var name: String = ""
+    /// The day of the month the bank takes the charge (nil = as the statements say).
+    var chargeDay: Int? = nil
+    /// Days after that until it actually leaves the checking.
+    var delayDays: Int = 0
+    /// A card without imported statements: what it usually charges a month.
+    var monthlyEstimate: Double = 0
+    /// The amount the bank actually took, by month ("yyyymm") — typed in at the last minute.
+    var actualCharges: [String: Double] = [:]
+
+    private enum CodingKeys: String, CodingKey { case id, last4, name, chargeDay, delayDays, monthlyEstimate, actualCharges }
+
+    /// How charges and settings find this card.
+    var key: String { last4.isEmpty ? "m:" + id.uuidString : last4 }
+    var displayName: String { !name.isEmpty ? name : last4.isEmpty ? "כרטיס" : "כרטיס " + last4 }
+}
+
+extension CardSetting {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        last4 = try c.decodeIfPresent(String.self, forKey: .last4) ?? ""
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        chargeDay = try c.decodeIfPresent(Int.self, forKey: .chargeDay)
+        delayDays = try c.decodeIfPresent(Int.self, forKey: .delayDays) ?? 0
+        monthlyEstimate = try c.decodeIfPresent(Double.self, forKey: .monthlyEstimate) ?? 0
+        actualCharges = try c.decodeIfPresent([String: Double].self, forKey: .actualCharges) ?? [:]
+    }
+}
+
+extension MoneyData {
+    func setting(card: String) -> CardSetting? { cardSettings.first { $0.key == card } }
+
+    func cardName(_ card: String) -> String {
+        setting(card: card)?.displayName ?? (card.isEmpty ? "כרטיס אשראי" : "כרטיס " + card)
+    }
+
+    /// The card most charges are on — purchases recorded by hand and the estimate go to it.
+    var primaryCard: String {
+        let counts = Dictionary(grouping: cardTransactions, by: \.cardLast4).mapValues(\.count)
+        return counts.max { $0.value < $1.value }?.key ?? ""
+    }
+
+    /// Imported cards, most charges first.
+    var importedCards: [String] {
+        let counts = Dictionary(grouping: cardTransactions, by: \.cardLast4).mapValues(\.count)
+        return counts.keys.filter { !$0.isEmpty }.sorted { counts[$0]! > counts[$1]! }
+    }
+
+    /// The day a charge leaves the checking: the card's own day if set (same month), plus its delay.
+    func bankDate(card: String, charge: Date) -> Date {
+        guard let s = setting(card: card) else { return charge }
+        let cal = Calendar.current
+        var d = charge
+        if let day = s.chargeDay {
+            var comps = cal.dateComponents([.year, .month, .hour, .minute], from: charge)
+            let days = cal.range(of: .day, in: .month, for: charge)?.count ?? 28
+            comps.day = min(max(day, 1), days)
+            d = cal.date(from: comps) ?? charge
+        }
+        return cal.date(byAdding: .day, value: s.delayDays, to: d) ?? d
+    }
+}
+
 struct ManualCardPayment: Identifiable {
     let transaction: MoneyTransaction
     let number: Int

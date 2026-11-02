@@ -423,6 +423,25 @@ final class Store: ObservableObject {
         money.accounts[i].balances.removeAll { $0.id == entryID }
     }
 
+    func upsertCardSetting(_ setting: CardSetting) {
+        if let i = money.cardSettings.firstIndex(where: { $0.id == setting.id }) {
+            money.cardSettings[i] = setting
+        } else {
+            money.cardSettings.append(setting)
+        }
+    }
+
+    func deleteCardSetting(_ setting: CardSetting) {
+        money.cardSettings.removeAll { $0.id == setting.id }
+    }
+
+    /// The amount the bank actually took for a card in a month (nil goes back to the statement / estimate).
+    func setActualCharge(_ key: CardChargeKey, amount: Double?) {
+        var s = money.setting(card: key.card) ?? CardSetting(last4: key.card.hasPrefix("m:") ? "" : key.card)
+        s.actualCharges[String(key.month)] = amount
+        upsertCardSetting(s)
+    }
+
     func upsertTransaction(_ transaction: MoneyTransaction) {
         var transaction = transaction
         if transaction.title.trimmingCharacters(in: .whitespaces).isEmpty { transaction.title = transaction.kind.title }

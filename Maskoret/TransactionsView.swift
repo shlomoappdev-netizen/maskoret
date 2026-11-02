@@ -18,6 +18,7 @@ struct TransactionsView: View {
     @State private var quickTitle = ""
     @State private var quickAmount = ""
     @State private var quickDate = Date()
+    @State private var actualFor: LedgerLine?
 
     /// How far ahead the statement shows what's expected: the next pay day and card charge, or the last plan.
     private var horizon: Date {
@@ -51,6 +52,9 @@ struct TransactionsView: View {
                 }
             }
             .navigationTitle("תנועות")
+            .sheet(item: $actualFor) { line in
+                ActualChargeSheet(line: line).environmentObject(store)
+            }
             .sheet(item: $editing) { t in
                 TransactionEditor(
                     transaction: t,
@@ -139,7 +143,7 @@ struct TransactionsView: View {
             }
             Section {
             } footer: {
-                Text("📌 מהוצאות קבועות · 💳 מכרטיס אשראי · → לחיסכון · ✔︎ יתרה שהקלדת (ממנה החישוב מתחיל מחדש). לחיצה על שורה שנוצרה לבד פותחת את המסך שלה; שורה שרשמת כאן נפתחת לעריכה.")
+                Text("📌 מהוצאות קבועות · 💳 מכרטיס אשראי · → לחיסכון · ✔︎ יתרה שהקלדת (ממנה החישוב מתחיל מחדש). לחיצה על חיוב אשראי מאפשרת לרשום כמה ירד בפועל; שורה אחרת שנוצרה לבד פותחת את המסך שלה; שורה שרשמת כאן נפתחת לעריכה.")
             }
         }
         .listStyle(.inset)
@@ -163,7 +167,7 @@ struct TransactionsView: View {
             editing = store.money.transactions.first { $0.id == id }
         case .salary: store.openScreen = .history
         case .fixed: store.openScreen = .expenses
-        case .card: store.openScreen = .card
+        case .card: if line.cardKey != nil { actualFor = line } else { store.openScreen = .card }
         case .savings, .balance: store.openScreen = .accounts
         }
     }
@@ -531,6 +535,53 @@ struct TransactionEditor: View {
         case .income: return "למשל: מענק שחרור"
         case .expense: return "למשל: מחשב חדש"
         case .transfer: return "למשל: העברה לפיקדון"
+        }
+    }
+}
+
+/// "ירד בסכום אחר": the amount the bank actually took for a card this month.
+struct ActualChargeSheet: View {
+    @EnvironmentObject private var store: Store
+    @Environment(\.dismiss) private var dismiss
+    let line: LedgerLine
+    @State private var amount: Double = 0
+    @State private var loaded = false
+
+    private var current: Double? {
+        guard let key = line.cardKey else { return nil }
+        return store.money.setting(card: key.card)?.actualCharges[String(key.month)]
+    }
+
+    var body: some View {
+        SheetContainer(title: line.title, width: 420, onSave: {
+            if let key = line.cardKey { store.setActualCharge(key, amount: amount > 0 ? amount : nil) }
+        }) {
+            Section {
+                BreakdownLine(title: current == nil ? "לפי האפליקציה" : "רשמת שירד", value: -line.amount)
+                if loaded {
+                    AmountField(title: "ירד בפועל", value: $amount)
+                }
+            } footer: {
+                Text("הבנק עדכן את הסכום ברגע האחרון? רשום כמה ירד, ודף העו״ש והיתרה יתעדכנו. כשהקובץ של החודש ייובא, הסכום שרשמת עדיין קובע — אפשר למחוק אותו כאן.")
+            }
+            if current != nil {
+                Section {
+                    Button("חזור לסכום של האפליקציה", role: .destructive) {
+                        if let key = line.cardKey { store.setActualCharge(key, amount: nil) }
+                        dismiss()
+                    }
+                }
+            }
+            Section {
+                Button("פתח את מסך כרטיס האשראי") {
+                    store.openScreen = .card
+                    dismiss()
+                }
+            }
+        }
+        .onAppear {
+            amount = -line.amount
+            loaded = true
         }
     }
 }

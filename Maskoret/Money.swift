@@ -380,10 +380,12 @@ struct MoneyData: Codable, Equatable {
     /// From when the checking estimate follows the salary, fixed expenses and card charges by themselves
     /// (set once, so updating the app doesn't rewrite what happened before it).
     var autoBalanceSince: Date? = nil
+    /// Per card: name, the day the bank takes it, and cards whose statements aren't imported.
+    var cardSettings: [CardSetting] = []
 
     private enum CodingKeys: String, CodingKey {
         case accounts, transactions, forecast, primeRate, primeAuto, boiRate, primeCheckedAt, nextRateDecision, rateLastChanged
-        case cardTransactions, merchantRules, cardImports, trends, maaser, receivables, payDay, autoBalanceSince
+        case cardTransactions, merchantRules, cardImports, trends, maaser, receivables, payDay, autoBalanceSince, cardSettings
     }
 
     var checking: Account? { accounts.first { $0.kind == .checking } }
@@ -414,6 +416,7 @@ extension MoneyData {
         receivables = (try? c.decodeIfPresent([Receivable].self, forKey: .receivables)) ?? []
         payDay = (try? c.decodeIfPresent(Int.self, forKey: .payDay)) ?? 1
         autoBalanceSince = try? c.decodeIfPresent(Date.self, forKey: .autoBalanceSince)
+        cardSettings = (try? c.decodeIfPresent([CardSetting].self, forKey: .cardSettings)) ?? []
         if !accounts.contains(where: { $0.kind == .checking }) {
             accounts.insert(Account(name: "עו״ש", kind: .checking), at: 0)
         }
@@ -478,21 +481,61 @@ extension MoneyData {
         func inRange(_ d: Date) -> Bool { d > from && d <= to }
         var lines: [LedgerLine] = []
 
-        // Card: every imported charge once its day came — fixed expenses and tracked purchases on the card included.
-        // One line per charge day, like the bank shows it.
-        var charges: [Date: Double] = [:]
-        for t in cardTransactions where !t.ignored {
-            if let d = t.chargeDate, inRange(d) { charges[d, default: 0] += t.amount }
+        // Card: every imported charge once the bank takes it — fixed expenses and tracked purchases on the card included.
+        // One line per card and day, like the bank shows it. An amount typed in for that month replaces the statement's.
+        let primary = primaryCard
+        struct Group { var date: Date; var amount: Double }
+        var groups: [String: Group] = [:]   // "last4|day" or, when the actual amount was typed, "last4|month"
+        func add(card: String, charge: Date, amount: Double) {
+            let d = bankDate(card: card, charge: charge)
+            let month = cal.component(.year, from: charge) * 100 + cal.component(.month, from: charge)
+            if setting(card: card)?.actualCharges[String(month)] != nil {
+                let key = card + "|m" + String(month)
+                groups[key] = Group(date: max(groups[key]?.date ?? d, d), amount: 0)
+            } else if inRange(d) {
+                groups[card + "|" + String(d.timeIntervalSinceReferenceDate), default: Group(date: d, amount: 0)].amount += amount
+            }
         }
-        for p in manualCardPayments where inRange(p.chargeDate) { charges[p.chargeDate, default: 0] += p.amount }
-        for (d, amount) in charges where amount != 0 {
-            lines.append(LedgerLine(id: "card:\(d.timeIntervalSinceReferenceDate)", date: d, title: "חיוב כרטיס אשראי",
-                                    amount: -amount, source: .card))
+        for t in cardTransactions where !t.ignored {
+            if let d = t.chargeDate { add(card: t.cardLast4, charge: d, amount: t.amount) }
+        }
+        for p in manualCardPayments { add(card: primary, charge: p.chargeDate, amount: p.amount) }
+        for (key, g) in groups {
+            let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
+            let card = parts[0]
+            var amount = g.amount
+            if parts.count > 1, parts[1].hasPrefix("m") {
+                guard inRange(g.date), let actual = setting(card: card)?.actualCharges[String(parts[1].dropFirst())] else { continue }
+                amount = actual
+            }
+            guard amount != 0 else { continue }
+            let month = cal.component(.year, from: g.date) * 100 + cal.component(.month, from: g.date)
+            lines.append(LedgerLine(id: "card:" + key, date: g.date, title: "חיוב " + cardName(card), amount: -amount,
+                                    source: .card, cardKey: CardChargeKey(card: card, month: month)))
+        }
+        // Cards without imported statements: what they usually charge, on their day.
+        for s in cardSettings where s.monthlyEstimate > 0 {
+            var yy = cal.component(.year, from: from), mm = cal.component(.month, from: from)
+            let last = cal.component(.year, from: to) * 100 + cal.component(.month, from: to)
+            while yy * 100 + mm <= last {
+                let key = yy * 100 + mm
+                let base = day(s.chargeDay ?? payDay, year: yy, month: mm)
+                let d = cal.date(byAdding: .day, value: s.delayDays, to: base) ?? base
+                if inRange(d) {
+                    let actual = s.actualCharges[String(key)]
+                    lines.append(LedgerLine(id: "cardm:\(s.id):\(key)", date: d,
+                                            title: "חיוב " + s.displayName + (actual == nil ? " (משוער)" : ""),
+                                            amount: -(actual ?? s.monthlyEstimate), source: .card,
+                                            cardKey: CardChargeKey(card: s.key, month: key)))
+                }
+                if mm == 12 { yy += 1; mm = 1 } else { mm += 1 }
+            }
         }
 
         var y = cal.component(.year, from: from), m = cal.component(.month, from: from)
         let endKey = cal.component(.year, from: to) * 100 + cal.component(.month, from: to)
-        let cardDay = usualChargeDay
+        let cardDay = setting(card: primary)?.chargeDay ?? usualChargeDay
+        let cardDelay = setting(card: primary)?.delayDays ?? 0
         let average = averageCardVariable()
         while y * 100 + m <= endKey {
             let key = y * 100 + m
@@ -507,11 +550,15 @@ extension MoneyData {
             let statement = cardTransactions(billingKey: key)
             // A statement that wasn't imported: the usual spending and the planned installments.
             if let cardDay, statement.isEmpty {
-                let d = day(cardDay, year: y, month: m)
+                let charge = day(cardDay, year: y, month: m)
+                let d = cal.date(byAdding: .day, value: cardDelay, to: charge) ?? charge
                 if inRange(d) {
-                    let dayBefore = cal.date(byAdding: .day, value: -1, to: d) ?? d
-                    lines.append(LedgerLine(id: "cardEstimate:\(key)", date: d, title: "חיוב כרטיס אשראי (לפי ממוצע)",
-                                            amount: -(average + projectedInstallments(from: dayBefore, to: d)), source: .card))
+                    let dayBefore = cal.date(byAdding: .day, value: -1, to: charge) ?? charge
+                    let actual = setting(card: primary)?.actualCharges[String(key)]
+                    lines.append(LedgerLine(id: "cardEstimate:\(key)", date: d,
+                                            title: "חיוב " + cardName(primary) + (actual == nil ? " (לפי ממוצע)" : ""),
+                                            amount: -(actual ?? (average + projectedInstallments(from: dayBefore, to: charge))),
+                                            source: .card, cardKey: CardChargeKey(card: primary, month: key)))
                 }
             }
             // Fixed expenses. One paid by card leaves with the statement, so it never counts by itself as well.
@@ -520,7 +567,8 @@ extension MoneyData {
                 guard amount != 0 else { continue }
                 let onCard = cardTransactions.contains { $0.linkedExpenseID == item.id && !$0.ignored }
                 if onCard, statement.contains(where: { $0.linkedExpenseID == item.id && !$0.ignored }) { continue }
-                let d = day(onCard ? (cardDay ?? payDay) : (item.chargeDay ?? payDay), year: y, month: m)
+                var d = day(onCard ? (cardDay ?? payDay) : (item.chargeDay ?? payDay), year: y, month: m)
+                if onCard { d = cal.date(byAdding: .day, value: cardDelay, to: d) ?? d }
                 if inRange(d) {
                     lines.append(LedgerLine(id: "fixed:\(item.id):\(key)", date: d, title: item.name + (onCard ? " (באשראי)" : ""),
                                             amount: -amount, source: .fixed))
@@ -610,6 +658,12 @@ extension MoneyData {
     }
 }
 
+/// A card and the month its charge leaves the checking (yyyymm).
+struct CardChargeKey: Equatable, Hashable {
+    let card: String
+    let month: Int
+}
+
 /// One line of the checking statement.
 struct LedgerLine: Identifiable, Equatable {
     enum Source: Equatable {
@@ -622,6 +676,8 @@ struct LedgerLine: Identifiable, Equatable {
     /// Signed: + came in, − went out.
     let amount: Double
     let source: Source
+    /// For a card charge: which card and month, so the amount the bank actually took can be typed in.
+    var cardKey: CardChargeKey? = nil
     /// The balance after this line.
     var balance: Double = 0
     /// A recorded movement that doesn't touch the checking right now (card, another account): its own amount.

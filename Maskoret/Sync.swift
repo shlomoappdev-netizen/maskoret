@@ -198,6 +198,10 @@ extension Store {
             cardEstimated = true
             cardEstimate = average - known
         }
+        // Cards whose statements aren't imported (e.g. the bank's own card): what they usually charge.
+        for s in money.cardSettings where s.monthlyEstimate > 0 {
+            card.append(.init(title: "💳 " + s.displayName + " (משוער)", amount: s.monthlyEstimate))
+        }
         // A fixed expense paid by card that isn't linked to its charge would count twice — point it out.
         let fixedAmounts = spending.map(\.amount).filter { $0 >= 20 }
         let suspects = bought.filter { t in t.isVariable && fixedAmounts.contains { abs($0 - t.myAmount) < 1 } }

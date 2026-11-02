@@ -84,6 +84,7 @@ struct CardView: View {
                             if !store.money.installmentPlans.isEmpty {
                                 installmentsCard
                             }
+                            CardDaysCard()
                             transactionsCard
                         }
                         .padding(20)
@@ -685,5 +686,92 @@ struct CardTxRow: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+    }
+}
+
+// MARK: - Cards and their charge days
+
+/// Each card: its name, the day the bank takes it and how many days later it leaves the checking; and cards whose
+/// statements aren't imported (e.g. the bank's own card), with what they usually charge.
+struct CardDaysCard: View {
+    @EnvironmentObject private var store: Store
+
+    private var rows: [CardSetting] {
+        let money = store.money
+        let imported = money.importedCards.map { money.setting(card: $0) ?? CardSetting(last4: $0) }
+        let manual = money.cardSettings.filter { $0.last4.isEmpty }
+        return imported + manual
+    }
+
+    var body: some View {
+        Card {
+            Text("כרטיסים וימי חיוב")
+                .font(.headline)
+            Text("כדי שדף העו״ש יוריד כל כרטיס ביום שהבנק באמת מוריד אותו. כרטיס שלא מייבאים לו קובץ (למשל כרטיס של הבנק) — מוסיפים עם סכום משוער לחודש.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(rows) { setting in
+                CardDayRow(setting: setting, usualDay: store.money.usualChargeDay)
+                Divider()
+            }
+            Button {
+                store.upsertCardSetting(CardSetting(name: "כרטיס הבנק", chargeDay: store.money.usualChargeDay ?? 2,
+                                                    monthlyEstimate: 500))
+            } label: {
+                Label("הוסף כרטיס בלי קובץ", systemImage: "plus.circle")
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+}
+
+private struct CardDayRow: View {
+    @EnvironmentObject private var store: Store
+    let setting: CardSetting
+    let usualDay: Int?
+
+    private func update(_ change: (inout CardSetting) -> Void) {
+        var s = setting
+        change(&s)
+        store.upsertCardSetting(s)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("שם", text: Binding(get: { setting.name }, set: { v in update { $0.name = v } }),
+                          prompt: Text(setting.last4.isEmpty ? "שם הכרטיס" : "כרטיס " + setting.last4))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 220)
+                if !setting.last4.isEmpty {
+                    Text(verbatim: "•••• " + setting.last4)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if setting.last4.isEmpty {
+                    Button(role: .destructive) {
+                        store.deleteCardSetting(setting)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            Stepper(value: Binding(get: { setting.chargeDay ?? 0 },
+                                   set: { v in update { $0.chargeDay = v == 0 ? nil : v } }), in: 0...31) {
+                Text(setting.chargeDay.map { "יום החיוב בבנק: ב-\($0) לחודש" }
+                     ?? (setting.last4.isEmpty ? "יום החיוב בבנק: ביום המשכורת" : "יום החיוב בבנק: כמו בקובץ" + (usualDay.map { " (בדרך כלל ב-\($0))" } ?? "")))
+            }
+            Stepper(value: Binding(get: { setting.delayDays }, set: { v in update { $0.delayDays = v } }), in: 0...7) {
+                Text(setting.delayDays == 0 ? "יורד מהעו״ש באותו יום" : "יורד מהעו״ש \(setting.delayDays == 1 ? "יום" : "\(setting.delayDays) ימים") אחרי")
+            }
+            if setting.last4.isEmpty {
+                AmountField(title: "בדרך כלל בחודש", value: Binding(get: { setting.monthlyEstimate },
+                                                                     set: { v in update { $0.monthlyEstimate = v } }))
+            }
+        }
+        .font(.callout)
     }
 }
