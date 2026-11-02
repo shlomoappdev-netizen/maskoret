@@ -353,7 +353,8 @@ void main() {
       expect(status.months.where((x) => x.base != null && x.owed > 0).length, greaterThanOrEqualTo(3));
       expect(status.months.any((x) => x.oneOffs == 1800), isTrue);
       expect(status.months.any((x) => x.deducted > 0), isTrue);
-      expect(status.months.fold(0.0, (s, x) => s + x.paid), greaterThan(400 + 99.9 + 150 * 6 - 0.01));
+      // The donations, plus the card charges marked as maaser (a pending one already charged is dropped as a duplicate).
+      expect(status.months.fold(0.0, (s, x) => s + x.paid), greaterThan(400 + 99.9 + 150 * 5 - 0.01));
       compare(doc);
     }
   }, skip: canRun ? false : 'needs swiftc (macOS)');
