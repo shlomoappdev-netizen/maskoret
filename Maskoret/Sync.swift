@@ -25,6 +25,8 @@ struct MonthPicture {
     var card: [Line] = []
     /// True when `card` includes an estimate of what's still to come, by the average of the last statements.
     var cardEstimated: Bool = false
+    /// The estimate itself (0 when there is none).
+    var cardEstimate: Double = 0
     /// Card purchases priced like a fixed expense but not linked to it: they may be counted twice.
     var fixedInCardSuspects: [String] = []
     /// When this period began and ends.
@@ -83,7 +85,10 @@ struct MonthPicture {
     var cardWithInstallments: Double { cardTotal + installmentsTotal }
     /// Positive = money came in, negative = went out.
     var oneOffTotal: Double { oneOffs.reduce(0) { $0 + $1.amount } }
+    /// Expected to be left once the card charges this period — includes the estimate by the average of the last statements.
     var remaining: Double { net - spendingTotal - periodic - toSavingsTotal - cardWithInstallments + oneOffTotal }
+    /// Left right now: only what actually went out so far, without the estimate.
+    var remainingActual: Double { remaining + cardEstimate }
     var outTotal: Double { spendingTotal + periodic + toSavingsTotal + cardWithInstallments - min(oneOffTotal, 0) }
     var title: String { Fmt.monthTitle(year: year, month: month) }
     /// "10 באוק׳ – 9 בנוב׳", or the month's name when the period is a calendar month.
@@ -185,11 +190,13 @@ extension Store {
         card += manualRegular.map { .init(title: "💳 " + $0.title, amount: $0.amount) }
         // What wasn't imported yet: the rest of the usual spending, by the average of the last statements.
         var cardEstimated = false
+        var cardEstimate = 0.0
         let known = card.reduce(0) { $0 + $1.amount }
         let average = money.averageCardVariable()
         if average > known, monthEnd > now || card.isEmpty {
             card.append(.init(title: "עוד צפוי לפי ממוצע החודשים הקודמים", amount: average - known))
             cardEstimated = true
+            cardEstimate = average - known
         }
         // A fixed expense paid by card that isn't linked to its charge would count twice — point it out.
         let fixedAmounts = spending.map(\.amount).filter { $0 >= 20 }
@@ -255,6 +262,7 @@ extension Store {
             oneOffs: oneOffs,
             card: card,
             cardEstimated: cardEstimated,
+            cardEstimate: cardEstimate,
             fixedInCardSuspects: fixedInCardSuspects,
             periodStart: monthStart,
             periodEnd: monthEnd,

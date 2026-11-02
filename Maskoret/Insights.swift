@@ -630,7 +630,8 @@ extension Store {
         let p = monthPicture
         lines.append("\n## החודש (\(p.title))")
         lines.append("נטו: \(m(p.net))" + (p.isActual ? " (בפועל)" : " (הערכה)"))
-        lines.append("נשאר מההכנסה האחרונה (לפי האפליקציה): \(m(p.remaining)) · ימים עד המשכורת הבאה: \(p.daysLeft)")
+        lines.append("נשאר בפועל מההכנסה האחרונה (מה שכבר ירד): \(m(p.remainingActual)) · ימים עד המשכורת הבאה: \(p.daysLeft)")
+        lines.append("צפוי להישאר אחרי חיוב האשראי (כולל הערכה לפי ממוצע החודשים הקודמים): \(m(p.remaining))")
         for l in p.spending { lines.append("- הוצאה קבועה: \(l.title) \(m(l.amount))") }
         if p.periodic > 0 { lines.append("- רכישות תקופתיות (ממוצע): \(m(p.periodic))") }
         for l in p.toSavings { lines.append("- לחיסכון: \(l.title) \(m(l.amount))") }

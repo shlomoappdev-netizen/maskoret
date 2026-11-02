@@ -82,13 +82,21 @@ struct MoreView: View {
                                 .monospacedDigit()
                         }
                         Spacer()
-                        let remaining = store.monthPicture.remaining
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("נשאר מההכנסה האחרונה").font(.caption).foregroundStyle(.secondary)
-                            Text(verbatim: Fmt.moneyRounded(remaining))
+                        let picture = store.monthPicture
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("נשאר בפועל").font(.caption).foregroundStyle(.secondary)
+                            Text(verbatim: Fmt.moneyRounded(picture.remainingActual))
                                 .font(.title3.weight(.bold))
                                 .monospacedDigit()
-                                .foregroundStyle(remaining >= 0 ? Color.green : Color.red)
+                                .foregroundStyle(picture.remainingActual >= 0 ? Color.green : Color.red)
+                        }
+                        Spacer()
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("צפוי להישאר").font(.caption).foregroundStyle(.secondary)
+                            Text(verbatim: Fmt.moneyRounded(picture.remaining))
+                                .font(.title3.weight(.bold))
+                                .monospacedDigit()
+                                .foregroundStyle(picture.remaining >= 0 ? Color.green : Color.red)
                         }
                     }
                 }

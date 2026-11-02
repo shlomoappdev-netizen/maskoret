@@ -103,15 +103,11 @@ struct SummaryView: View {
 
     private func heroCard(_ p: MonthPicture) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("נשאר לך מההכנסה האחרונה")
-                .font(.headline)
-                .foregroundStyle(Color.white.opacity(0.85))
-            Text(verbatim: Fmt.moneyRounded(p.remaining))
-                .font(.system(size: 52, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(Color.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+            // What actually went out so far, beside what is expected once the card charges — the same size.
+            HStack(alignment: .top, spacing: 16) {
+                heroNumber(title: "נשאר בפועל מהמשכורת האחרונה", value: p.remainingActual, note: "מה שכבר ירד עד עכשיו")
+                heroNumber(title: "צפוי להישאר אחרי חיוב האשראי", value: p.remaining, note: "לפי ממוצע החודשים הקודמים")
+            }
             Spacer(minLength: 0)
             HStack(spacing: 16) {
                 heroMini(title: p.isActual ? "נטו בפועל" : "נטו (משוער)", value: p.net)
@@ -123,7 +119,7 @@ struct SummaryView: View {
         .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
         .background(
             LinearGradient(
-                colors: p.remaining >= 0
+                colors: p.remainingActual >= 0
                     ? [Color(red: 0.05, green: 0.55, blue: 0.47), Color(red: 0.07, green: 0.38, blue: 0.55)]
                     : [Color(red: 0.80, green: 0.25, blue: 0.25), Color(red: 0.55, green: 0.12, blue: 0.30)],
                 startPoint: .topLeading,
@@ -131,6 +127,25 @@ struct SummaryView: View {
             ),
             in: RoundedRectangle(cornerRadius: 18, style: .continuous)
         )
+    }
+
+    private func heroNumber(title: String, value: Double, note: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Color.white.opacity(0.85))
+                .lineLimit(2, reservesSpace: true)
+            Text(verbatim: Fmt.moneyRounded(value))
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+            Text(note)
+                .font(.caption)
+                .foregroundStyle(Color.white.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func heroMini(title: String, value: Double) -> some View {
@@ -301,7 +316,8 @@ struct SummaryView: View {
         for line in p.toSavings { lines.append("  → \(line.title): " + Fmt.money(line.amount)) }
         for line in p.oneOffs { lines.append("  ± \(line.title): " + Fmt.money(line.amount)) }
         lines.append("")
-        lines.append("נשאר מההכנסה האחרונה: " + Fmt.money((p.remaining * 100).rounded() / 100))
+        lines.append("נשאר בפועל מההכנסה האחרונה: " + Fmt.money((p.remainingActual * 100).rounded() / 100))
+        lines.append("צפוי להישאר אחרי חיוב האשראי (לפי ממוצע): " + Fmt.money((p.remaining * 100).rounded() / 100))
         lines.append("עו״ש עכשיו (משוער): " + Fmt.moneyRounded(store.checkingNow))
         lines.append("חיסכון ופיקדונות: " + Fmt.moneyRounded(store.savingsNow))
         return lines.joined(separator: "\n")
@@ -389,8 +405,15 @@ struct MonthBreakdown: View {
             }
 
             Divider()
+            if picture.cardEstimate > 0.005 {
+                BreakdownLine(
+                    title: "נשאר בפועל (בלי ההערכה)",
+                    value: picture.remainingActual,
+                    color: picture.remainingActual >= 0 ? .green : .red
+                )
+            }
             BreakdownLine(
-                title: "נשאר מההכנסה האחרונה",
+                title: picture.cardEstimate > 0.005 ? "צפוי להישאר אחרי חיוב האשראי" : "נשאר מההכנסה האחרונה",
                 value: picture.remaining,
                 color: picture.remaining >= 0 ? .green : .red,
                 emphasized: true
@@ -457,7 +480,7 @@ struct SaveMonthSheet: View {
                 BreakdownLine(title: "נטו", value: store.budget.net)
                 let remaining = store.monthPicture.remaining
                 BreakdownLine(
-                    title: "נשאר מההכנסה האחרונה",
+                    title: "צפוי להישאר מההכנסה האחרונה",
                     value: remaining,
                     color: remaining >= 0 ? .green : .red
                 )

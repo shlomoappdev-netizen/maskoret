@@ -235,6 +235,8 @@ struct SheetContainer<Content: View>: View {
 // MARK: - Cards & rows
 
 struct Card<Content: View>: View {
+    /// Stretch to the height offered — cards in one grid row then share the tallest one's height.
+    var fillHeight = false
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -242,7 +244,7 @@ struct Card<Content: View>: View {
             content
         }
         .padding(18)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
         .background(Palette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -359,9 +361,14 @@ struct StatTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: icon)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            // Two lines are always reserved for the title, so every tile has the same height.
+            Label {
+                Text(title).lineLimit(2, reservesSpace: true)
+            } icon: {
+                Image(systemName: icon)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
             Text(verbatim: value)
                 .font(.title3.weight(.semibold))
                 .monospacedDigit()
@@ -369,7 +376,7 @@ struct StatTile: View {
                 .minimumScaleFactor(0.6)
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Palette.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)

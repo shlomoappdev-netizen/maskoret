@@ -48,9 +48,10 @@ struct AccountsView: View {
                             Button {
                                 detail = account
                             } label: {
-                                AccountCard(account: account)
+                                AccountCard(account: account, fillHeight: true)
                             }
                             .buttonStyle(.plain)
+                            .frame(maxHeight: .infinity)
                             .rowMenu(onEdit: { editing = account }) {
                                 store.deleteAccount(account)
                             }
@@ -96,11 +97,12 @@ struct AccountsView: View {
 struct AccountCard: View {
     @EnvironmentObject private var store: Store
     let account: Account
+    var fillHeight = false
 
     private var now: Double { store.value(of: account) }
 
     var body: some View {
-        Card {
+        Card(fillHeight: fillHeight) {
             HStack(spacing: 10) {
                 Image(systemName: account.kind.icon)
                     .font(.title3)
