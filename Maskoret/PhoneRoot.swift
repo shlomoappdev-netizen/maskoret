@@ -119,6 +119,11 @@ struct MoreView: View {
                         }
                     }
                 }
+                Section {
+                } footer: {
+                    Text(verbatim: "מחשבון שכר · גרסה " + Diagnostics.appVersion)
+                        .frame(maxWidth: .infinity)
+                }
             }
             .navigationTitle("עוד")
         } detail: {

@@ -239,6 +239,10 @@ struct ContentView: View {
                         .font(.title3.weight(.bold))
                         .monospacedDigit()
                         .foregroundStyle(picture.remaining >= 0 ? Color.green : Color.red)
+                    Text(verbatim: "גרסה " + Diagnostics.appVersion)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 8)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
