@@ -6,6 +6,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 
 /// A published version: the shared manifest of every platform (written when a release is published to
@@ -60,6 +61,13 @@ class Updater extends ChangeNotifier {
   DateTime? lastCheck;
   Timer? _timer;
 
+  /// Android: the user was sent to allow installs from this app; back in the app, the install goes on by itself.
+  bool _waitingForPermission = false;
+
+  Updater() {
+    if (Platform.isAndroid) _channel.setMethodCallHandler(_onPlatformCall);
+  }
+
   /// The build the user answered "אחר כך" for — not offered again until the next launch.
   int? _postponedBuild;
   bool _prompting = false;
@@ -94,9 +102,69 @@ class Updater extends ChangeNotifier {
 
   bool get busy => phase == UpdatePhase.checking || phase == UpdatePhase.downloading || phase == UpdatePhase.installing;
 
+  /// Back in the app (see main.dart): if the user just allowed installs from this app, install what was downloaded.
+  Future<void> resumed() async {
+    if (!_waitingForPermission || busy) return;
+    final allowed = await _channel.invokeMethod<bool>('canInstall') ?? false;
+    if (allowed) {
+      await install();
+    } else {
+      // Back without allowing it: the next "עדכן" asks again (the file stays, no new download).
+      _waitingForPermission = false;
+      error = 'ההתקנה לא אושרה. לחץ "עדכן" כדי לנסות שוב — הקובץ כבר ירד.';
+      notifyListeners();
+    }
+  }
+
+  /// The system installer's answer (Android, PackageInstaller): only failures matter — on success the app restarts.
+  Future<dynamic> _onPlatformCall(MethodCall call) async {
+    if (call.method != 'installResult') return null;
+    final args = (call.arguments as Map).cast<String, dynamic>();
+    final status = args['status'] as String? ?? 'failure';
+    if (status == 'success') return null;
+    phase = UpdatePhase.failed;
+    error = installError(status);
+    notifyListeners();
+    return null;
+  }
+
+  /// What went wrong, in Hebrew, by the installer's status.
+  static String installError(String status) => switch (status) {
+        'aborted' => 'ההתקנה בוטלה. אפשר ללחוץ "עדכן" שוב — הקובץ כבר ירד.',
+        'conflict' || 'invalid' =>
+          'ההתקנה לא הושלמה — ייתכן שהגרסה המותקנת נחתמה אחרת. הסר את האפליקציה והתקן מהאתר (הנתונים בשרת לא נמחקים).',
+        'incompatible' => 'הגרסה הזו לא מתאימה למכשיר.',
+        'storage' => 'אין מספיק מקום במכשיר להתקנה.',
+        'blocked' => 'ההתקנה נחסמה במכשיר. נסה להתקין מהאתר.',
+        _ => 'ההתקנה לא הושלמה. נסה שוב, או התקן מהאתר.',
+      };
+
+  /// Where a downloaded update waits until it's installed: one file per build, in the app's cache.
+  static Future<File> _updateFile(int build) async {
+    final dir = Directory('${(await getTemporaryDirectory()).path}/updates');
+    await dir.create(recursive: true);
+    // Older downloads aren't needed any more.
+    for (final f in dir.listSync().whereType<File>()) {
+      if (!f.path.endsWith('-$build.${Platform.isWindows ? 'exe' : 'apk'}')) {
+        try {
+          f.deleteSync();
+        } catch (_) {}
+      }
+    }
+    return File('${dir.path}/maskoret-$build.${Platform.isWindows ? 'exe' : 'apk'}');
+  }
+
+  /// The file is exactly the published one.
+  static Future<bool> _matches(File file, String? sha256) async {
+    if (sha256 == null) return true;
+    final digest = await Sha256().hash(await file.readAsBytes());
+    return digest.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join() == sha256;
+  }
+
   /// Checks for a newer version (quietly; at launch, every 3 hours, on return to the app, and from the updates screen).
   Future<void> check({bool force = false}) async {
-    if (!supported || busy) return;
+    // An install waiting for the permission goes on when the user is back (resumed), not through a new check.
+    if (!supported || busy || _waitingForPermission) return;
     if (!force && lastCheck != null && DateTime.now().difference(lastCheck!) < const Duration(minutes: 10)) return;
     phase = UpdatePhase.checking;
     error = null;
@@ -126,34 +194,38 @@ class Updater extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Downloads the new version and installs it.
+  /// Downloads the new version (unless it already did) and installs it.
   Future<void> install() async {
     final target = latest?.forThisDevice;
-    if (target == null || busy) return;
+    final build = latest?.build;
+    if (target == null || build == null || busy) return;
+    _waitingForPermission = false;
     phase = UpdatePhase.downloading;
     progress = 0;
     error = null;
     notifyListeners();
     try {
-      final dir = await Directory.systemTemp.createTemp('maskoret-update');
-      final file = File('${dir.path}/${Platform.isWindows ? 'maskoret-windows-setup.exe' : 'maskoret.apk'}');
-      await _download(target.url, file);
-      // The file must be exactly the published one.
-      if (target.sha256 != null) {
-        final digest = await Sha256().hash(await file.readAsBytes());
-        final hex = digest.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-        if (hex != target.sha256) throw const _Corrupt();
+      final file = await _updateFile(build);
+      // Downloaded before (e.g. before the user allowed installs from this app): used as is, if it's intact.
+      if (!(await file.exists() && await _matches(file, target.sha256))) {
+        await _download(target.url, file);
+        if (!await _matches(file, target.sha256)) {
+          try {
+            await file.delete();
+          } catch (_) {}
+          throw const _Corrupt();
+        }
       }
+      progress = 1;
       phase = UpdatePhase.installing;
       notifyListeners();
       if (Platform.isAndroid) {
         final result = await _channel.invokeMethod<String>('installApk', {'path': file.path});
-        // "permission": the user was sent to allow installs from this app — they tap "עדכן" again after.
+        phase = UpdatePhase.idle;
+        // "permission": the user was sent to allow installs from this app — back in the app it goes on by itself.
         if (result == 'permission') {
-          phase = UpdatePhase.idle;
-          error = 'אשר "התקנה מהאפליקציה הזו" במסך שנפתח, וחזור ללחוץ "עדכן".';
-        } else {
-          phase = UpdatePhase.idle;
+          _waitingForPermission = true;
+          error = 'אשר "התקנה מהאפליקציה הזו" במסך שנפתח וחזור לאפליקציה — ההתקנה תמשיך לבד.';
         }
       } else {
         await _installWindows(file);
@@ -162,7 +234,7 @@ class Updater extends ChangeNotifier {
       phase = UpdatePhase.failed;
       error = e is _Corrupt
           ? 'הקובץ שהורד פגום. נסה שוב.'
-          : 'העדכון נכשל. נסה שוב בעוד רגע.';
+          : (e is PlatformException && e.code == 'install' ? installError('failure') : 'העדכון נכשל. נסה שוב בעוד רגע.');
     }
     notifyListeners();
   }

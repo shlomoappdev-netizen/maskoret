@@ -146,6 +146,8 @@ class _MaskoretAppState extends State<MaskoretApp> {
     // Back in the app: check the server right away.
     _lifecycle = AppLifecycleListener(onResume: () {
       widget.sync.sync();
+      // Back from allowing installs from this app: the downloaded update installs by itself (before a new check).
+      widget.updater.resumed();
       widget.updater.check();
       widget.announcements.refresh();
     });
