@@ -65,6 +65,9 @@ const payslipD = '''
 1,750.00
 ''';
 
+// Only the label: read, but not verified.
+const payslipE = '5/26\nנטו לתשלום\n3,210.00';
+
 const payslipNone = '''
 תלוש
 אין כאן סכומים
@@ -107,8 +110,16 @@ void main() {
     expect(r.deductions, isNull);
   });
 
+  test('verified only when the totals agree with each other', () {
+    final e = PayslipParser.parse(payslipE);
+    expect(e.netToPay, 3210);
+    expect(e.verified, isFalse);
+    expect(PayslipParser.parse(payslipA).verified, isTrue);
+    expect(PayslipParser.parse(payslipD).verified, isTrue);
+  });
+
   test('the Swift app reads every payslip the same way', () {
-    final texts = [payslipA, payslipB, payslipC, payslipD, payslipNone, payslipA.replaceAll('\n', '\r\n')];
+    final texts = [payslipA, payslipB, payslipC, payslipD, payslipE, payslipNone, payslipA.replaceAll('\n', '\r\n')];
     final p = Process.start('tool/swift_payslip.sh', []);
     return p.then((proc) async {
       proc.stdin.write(jsonEncode(texts));
@@ -121,7 +132,11 @@ void main() {
         final dart = PayslipParser.parse(texts[i]).toJson();
         for (final k in dart.keys) {
           final s = swift[i][k], d = dart[k];
-          expect(s == null ? null : (s as num).toDouble(), d == null ? null : (d as num).toDouble(), reason: 'payslip $i $k');
+          if (d is bool) {
+            expect(s, d, reason: 'payslip $i $k');
+          } else {
+            expect(s == null ? null : (s as num).toDouble(), d == null ? null : (d as num).toDouble(), reason: 'payslip $i $k');
+          }
         }
       }
     });

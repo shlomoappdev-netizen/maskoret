@@ -18,11 +18,17 @@ class PayslipReading {
   double? nationalInsurance;
   double? health;
 
+  /// The totals agree with each other (payments − deductions = net, or the payments add up to the total).
+  bool verified = false;
+
+  /// Read from an image (a scanned payslip) — only its numbers.
+  bool scanned = false;
+
   bool get isUseful => netToPay != null;
 
   Map<String, dynamic> toJson() => {
         'year': year, 'month': month, 'gross': gross, 'deductions': deductions, 'net': net, 'netToPay': netToPay,
-        'incomeTax': incomeTax, 'nationalInsurance': nationalInsurance, 'health': health,
+        'incomeTax': incomeTax, 'nationalInsurance': nationalInsurance, 'health': health, 'verified': verified,
       };
 }
 
@@ -85,6 +91,7 @@ class PayslipParser {
       r.deductions = deductions;
       r.net = net;
       r.netToPay = net;
+      r.verified = true;
       // What follows: the net again (nothing voluntary), or voluntary deductions and the net to pay.
       final rest = amounts.skip(i + 3).take(2).toList();
       if (rest.length == 2 && rest[0] > 0 && rest[1] > 0 && (net - rest[0] - rest[1]).abs() < 0.02) {
@@ -98,6 +105,7 @@ class PayslipParser {
       r.netToPay = pay;
       r.net = pay;
       if (total - pay > 0.005) r.deductions = total - pay;
+      r.verified = true;
     } else {
       // No arithmetic to go by: the amount right after the "net to pay" label.
       r.netToPay = _amountAfter('טו לתשלום', lines);

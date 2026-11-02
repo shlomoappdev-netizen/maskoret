@@ -8,6 +8,6 @@ let out: [[String: Any]] = texts.map { text in
     let r = PayslipReader.parse(text)
     return ["year": value(r.year), "month": value(r.month), "gross": value(r.gross), "deductions": value(r.deductions),
             "net": value(r.net), "netToPay": value(r.netToPay), "incomeTax": value(r.incomeTax),
-            "nationalInsurance": value(r.nationalInsurance), "health": value(r.health)]
+            "nationalInsurance": value(r.nationalInsurance), "health": value(r.health), "verified": r.verified]
 }
 print(String(data: try! JSONSerialization.data(withJSONObject: out), encoding: .utf8)!)

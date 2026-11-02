@@ -127,6 +127,7 @@ class PayslipPdf {
     final doc = await _open(file, password);
     final pages = <String>[];
     var text = '';
+    var scanned = false;
     try {
       for (final page in doc.pages) {
         final t = await page.loadText();
@@ -137,6 +138,7 @@ class PayslipPdf {
       if (!text.contains(RegExp(r'\d'))) {
         try {
           text = await _recognizeNumbers(doc);
+          scanned = true;
         } catch (e) {
           AppLog.add('payslip', 'זיהוי הספרות בתלוש סרוק נכשל: $e');
         }
@@ -145,7 +147,7 @@ class PayslipPdf {
       await doc.dispose();
     }
     if (!text.contains(RegExp(r'\d'))) throw ocrSupported ? PayslipError.noText : PayslipError.noTextLayer;
-    final reading = PayslipParser.parse(text);
+    final reading = PayslipParser.parse(text)..scanned = scanned;
     if (!reading.isUseful) throw PayslipError.notFound;
     return reading;
   }

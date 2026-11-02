@@ -578,6 +578,16 @@ Future<void> showSaveMonth(BuildContext context) async {
                       style: theme.textTheme.titleSmall?.copyWith(color: AppColors.green, fontWeight: FontWeight.w600)),
                 ),
               ]),
+              const SizedBox(height: 2),
+              // Whether the totals checked out against each other (verified / scanned in Payslip.swift).
+              Text(
+                  p.verified
+                      ? (p.scanned
+                          ? '✅ אומת בחשבון — הסכומים מסתדרים זה עם זה. התלוש סרוק, אז נקראו רק המספרים: כדאי להציץ.'
+                          : '✅ אומת בחשבון — ברוטו פחות ניכויים יוצא בדיוק הנטו')
+                      : '⚠️ נקרא חלקית — הסכומים לא אומתו זה מול זה. השווה לתלוש לפני השמירה.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: p.verified ? theme.colorScheme.onSurfaceVariant : Colors.orange.shade800)),
               const SizedBox(height: 4),
               if (p.gross != null) line('סה״כ תשלומים (ברוטו)', p.gross!),
               if (p.incomeTax != null) line('מס הכנסה', -p.incomeTax!),
