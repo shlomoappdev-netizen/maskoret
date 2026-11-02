@@ -174,7 +174,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${{ needs.check.outputs.version }}"
-          files=$(ls out/maskoret-android.apk out/maskoret-windows-setup.exe out/maskoret-windows.zip out/maskoret-mac.dmg 2>/dev/null)
+          files=$(ls out/maskoret-android.apk out/maskoret-windows-setup.exe out/maskoret-windows.zip out/maskoret-mac.dmg 2>/dev/null || true)
           # A retry after a failure further on: the release may already exist — replace its files.
           if gh release view "v$v" >/dev/null 2>&1; then
             gh release upload "v$v" $files --clobber

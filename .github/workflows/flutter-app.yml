@@ -90,6 +90,20 @@ jobs:
             # A release must never ship such an APK.
             if [ "${{ github.event_name }}" = "workflow_call" ] || [ "${{ github.workflow }}" = "Release" ]; then exit 1; fi
           fi
+      # The NDK download on the runner sometimes arrives broken ("Archive is not a ZIP archive") and fails the build:
+      # install it first, and try again with a clean copy if it fails.
+      - name: NDK
+        run: |
+          # The version Flutter's Gradle plugin asks for (flutter.ndkVersion).
+          ndk=$(grep -hoE 'val ndkVersion: String = "[0-9.]+"' "$FLUTTER_ROOT/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt" 2>/dev/null | grep -oE '[0-9]+\.[0-9.]+' || true)
+          [ -z "$ndk" ] && { echo "NDK version not found; the build will install it."; exit 0; }
+          sdkm="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          for i in 1 2 3; do
+            yes | "$sdkm" --install "ndk;$ndk" > /dev/null && [ -f "$ANDROID_HOME/ndk/$ndk/source.properties" ] && { echo "NDK $ndk ready"; exit 0; }
+            echo "NDK $ndk install failed (try $i) — cleaning up and trying again"
+            rm -rf "$ANDROID_HOME/ndk/$ndk" ~/.android/cache; sleep 10
+          done
+          exit 1
       - name: Build
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
