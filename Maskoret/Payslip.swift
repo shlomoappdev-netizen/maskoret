@@ -17,6 +17,10 @@ struct PayslipReading: Equatable {
     var incomeTax: Double?
     var nationalInsurance: Double?
     var health: Double?
+    /// The totals agree with each other (payments − deductions = net, or the payments add up to the total).
+    var verified = false
+    /// Read from an image (a scanned payslip) — only its numbers.
+    var scanned = false
 
     var isUseful: Bool { netToPay != nil }
 }
@@ -45,9 +49,11 @@ enum PayslipReader {
         }
         var text = (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }.joined(separator: "\n")
         // A scanned payslip (an image, no text layer): read its numbers on the device.
-        if !text.contains(where: \.isNumber) { text = recognizeNumbers(doc) }
+        var scanned = false
+        if !text.contains(where: \.isNumber) { text = recognizeNumbers(doc); scanned = true }
         guard text.contains(where: \.isNumber) else { throw PayslipError.noText }
-        let reading = parse(text)
+        var reading = parse(text)
+        reading.scanned = scanned
         guard reading.isUseful else { throw PayslipError.notFound }
         return reading
     }
@@ -85,6 +91,7 @@ enum PayslipReader {
             r.deductions = deductions
             r.net = net
             r.netToPay = net
+            r.verified = true
             // What follows: the net again (nothing voluntary), or voluntary deductions and the net to pay.
             let rest = Array(amounts.dropFirst(i + 3).prefix(2))
             if rest.count == 2, rest[0] > 0, rest[1] > 0, abs(net - rest[0] - rest[1]) < 0.02 {
@@ -93,6 +100,7 @@ enum PayslipReader {
         } else if let (i, total) = sumOfPrevious(amounts) {
             // No deductions: the payments, their total, and later the same amount as the net.
             r.gross = total
+            r.verified = true
             let after = amounts.dropFirst(i + 1).filter { $0 > 0 && $0 <= total + 0.02 }
             let pay = after.last ?? total
             r.netToPay = pay

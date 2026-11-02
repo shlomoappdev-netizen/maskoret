@@ -539,6 +539,19 @@ struct SaveMonthSheet: View {
                         Label("נקרא מהתלוש" + (p.month.map { " של " + Fmt.monthNames[$0 - 1] } ?? "") + (p.year.map { " \($0)" } ?? ""),
                               systemImage: "checkmark.seal.fill")
                             .foregroundStyle(.green)
+                        if p.verified {
+                            Text(p.scanned
+                                 ? "✅ אומת בחשבון — הסכומים מסתדרים זה עם זה. התלוש סרוק, אז נקראו רק המספרים: כדאי להציץ."
+                                 : "✅ אומת בחשבון — ברוטו פחות ניכויים יוצא בדיוק הנטו")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("⚠️ נקרא חלקית — הסכומים לא אומתו זה מול זה. השווה לתלוש לפני השמירה.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         if let v = p.gross { BreakdownLine(title: "סה״כ תשלומים (ברוטו)", value: v) }
                         if let v = p.incomeTax { BreakdownLine(title: "מס הכנסה", value: -v) }
                         if let v = p.nationalInsurance { BreakdownLine(title: "ביטוח לאומי", value: -v) }
