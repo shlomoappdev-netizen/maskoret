@@ -10,7 +10,7 @@ struct PhoneRoot: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab: SidebarItem = .summary
 
-    static let tabs: [SidebarItem] = [.summary, .transactions, .card, .accounts]
+    static let tabs: [SidebarItem] = [.summary, .money, .budget]
 
     var body: some View {
         TabView(selection: $tab) {
@@ -20,7 +20,7 @@ struct PhoneRoot: View {
                     item.screen
                 }
                 .tabItem { Label(item.title, systemImage: item.icon) }
-                .badge(item == .card && store.cardImportDue ? Text(verbatim: "!") : nil)
+                .badge(item == .money && store.cardImportDue ? Text(verbatim: "!") : nil)
                 .tag(item)
             }
             MoreView()
@@ -35,8 +35,9 @@ struct PhoneRoot: View {
         }
         .onChange(of: store.openScreen) { _, item in
             guard let item else { return }
-            if PhoneRoot.tabs.contains(item) {
-                tab = item
+            store.show(item)
+            if PhoneRoot.tabs.contains(item.home) {
+                tab = item.home
                 store.openScreen = nil
             } else {
                 tab = .updates   // "עוד" opens it
@@ -71,9 +72,7 @@ struct MoreView: View {
     @State private var selection: SidebarItem?
 
     private let sections: [(String, [SidebarItem])] = [
-        ("הכנסות", [.incomes, .deductions]),
-        ("הוצאות", [.expenses, .tracked]),
-        ("תכנון", [.forecast, .history, .maaser, .owed, .trends, .insights]),
+        ("תכנון ותובנות", [.forecast, .history, .maaser, .owed, .trends, .insights]),
         ("הגדרות", [.account, .support, .tax, .backup])
     ]
 
@@ -136,10 +135,10 @@ struct MoreView: View {
             }
             .navigationTitle("עוד")
             .onChange(of: store.openScreen) { _, item in
-                if let item, !PhoneRoot.tabs.contains(item) { selection = item; store.openScreen = nil }
+                if let item, !PhoneRoot.tabs.contains(item.home) { selection = item; store.openScreen = nil }
             }
             .onAppear {
-                if let item = store.openScreen, !PhoneRoot.tabs.contains(item) { selection = item; store.openScreen = nil }
+                if let item = store.openScreen, !PhoneRoot.tabs.contains(item.home) { selection = item; store.openScreen = nil }
             }
         } detail: {
             if let selection {

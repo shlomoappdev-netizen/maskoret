@@ -5,6 +5,15 @@ import SwiftUI
 final class Store: ObservableObject {
     /// A screen another screen asked to open (a line in the statement → the screen it comes from).
     @Published var openScreen: SidebarItem?
+    /// The open tab inside "הכסף שלי" and "תקציב".
+    @Published var moneyTab: SidebarItem = .transactions
+    @Published var budgetTab: SidebarItem = .incomes
+
+    /// Selects the tab a screen lives in (when it's inside a group).
+    func show(_ item: SidebarItem) {
+        if SidebarItem.moneyTabs.contains(item) { moneyTab = item }
+        if SidebarItem.budgetTabs.contains(item) { budgetTab = item }
+    }
     /// Where updated tax rates are published. Edit in "נתוני מס" if you host the file elsewhere.
     static let defaultRatesURL = ""
     static let legacyRatesURL = "https://raw.githubusercontent.com/Shlomo116/maskoret-rates/main/tax-rates.json"

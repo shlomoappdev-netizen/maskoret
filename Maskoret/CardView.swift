@@ -190,18 +190,6 @@ struct CardView: View {
                 }
             }
         }
-        let open = monthTxs.filter { $0.isVariable }.count
-        if open > 0, filter != .open {
-            HStack {
-                Image(systemName: "link.badge.plus")
-                Text(verbatim: "\(open) חיובים עוד לא מצומדים. חיוב שהוא בעצם הוצאה קבועה (חשמל, טלפון, מנוי) — צמד אותו כדי שלא ייספר פעמיים.")
-                Spacer()
-                Button("הצג אותם") { filter = .open }
-            }
-            .font(.callout)
-            .padding(12)
-            .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-        }
     }
 
     // MARK: Tiles
@@ -464,6 +452,7 @@ struct CardTxRow: View {
     let tx: CardTransaction
     @State private var newTrend = false
     @State private var owedSheet = false
+    @State private var classifying = false
     @Environment(\.isCompactWidth) private var compact
 
     private var linkedName: (String, String)? {
@@ -504,6 +493,12 @@ struct CardTxRow: View {
         .sheet(isPresented: $owedSheet) {
             OwedQuickSheet(tx: tx).environmentObject(store)
         }
+        .sheet(isPresented: $classifying) {
+            ClassifyCardSheet(txID: tx.id,
+                              onOwed: { after { owedSheet = true } },
+                              onNewTrend: { after { newTrend = true } })
+                .environmentObject(store)
+        }
         .sheet(isPresented: $newTrend) {
             NewTrendSheet { trend in
                 var trend = trend
@@ -511,6 +506,11 @@ struct CardTxRow: View {
                 store.upsertTrend(trend)
             }
         }
+    }
+
+    /// Opens a second sheet once the first one has closed.
+    private func after(_ open: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: open)
     }
 
     private var amountText: some View {
@@ -608,83 +608,12 @@ struct CardTxRow: View {
     }
 
     private var linkMenu: some View {
-        Menu {
-            Section("הוצאה קבועה — כל החיובים מבית העסק הזה") {
-                ForEach(store.budget.expenses) { e in
-                    Button {
-                        store.linkCard(tx.id, toExpense: e.id)
-                    } label: {
-                        if tx.linkedExpenseID == e.id {
-                            Label(e.name, systemImage: "checkmark")
-                        } else {
-                            Text(e.name)
-                        }
-                    }
-                }
-                if store.budget.expenses.isEmpty {
-                    Text("אין הוצאות קבועות")
-                }
-            }
-            if !store.budget.trackedItems.isEmpty {
-                Section("מעקב רכישות — נרשם כרכישה") {
-                    ForEach(store.budget.trackedItems) { t in
-                        Button {
-                            store.linkCard(tx.id, toTracked: t.id)
-                        } label: {
-                            if tx.linkedTrackedID == t.id {
-                                Label(t.emoji + " " + t.name, systemImage: "checkmark")
-                            } else {
-                                Text(t.emoji + " " + t.name)
-                            }
-                        }
-                    }
-                }
-            }
-            Section("חייבים לי") {
-                if tx.owedPortion > 0 {
-                    Button("ביטול — לא צריך להחזיר") { store.removeCardFromReceivables(tx.id) }
-                } else if tx.amount > 0 {
-                    Button("מישהו צריך להחזיר לי…") { owedSheet = true }
-                }
-            }
-            if store.money.maaser.enabled {
-                Section("מעשרות") {
-                    if store.money.maaser.isMaaser(tx) {
-                        Button("בטל סימון מעשרות") { store.setCardMaaser(tx, on: false, merchant: false) }
-                    } else {
-                        Button("החיוב הזה הוא מעשרות") { store.setCardMaaser(tx, on: true, merchant: false) }
-                        Button("כל החיובים מבית העסק הזה הם מעשרות") { store.setCardMaaser(tx, on: true, merchant: true) }
-                    }
-                }
-            }
-            Section("מגמות — לניתוח, לא משנה את התקציב") {
-                ForEach(store.money.trends) { t in
-                    Button {
-                        store.toggleCard(tx.id, in: t.id)
-                    } label: {
-                        if t.cardIDs.contains(tx.id) {
-                            Label(t.emoji + " " + t.name, systemImage: "checkmark")
-                        } else {
-                            Text(t.emoji + " " + t.name)
-                        }
-                    }
-                }
-                Button("מגמה חדשה…") { newTrend = true }
-            }
-            Divider()
-            if tx.linkedExpenseID != nil {
-                Button("בטל צימוד (הוצאה משתנה)") { store.linkCard(tx.id, toExpense: nil) }
-            }
-            if tx.linkedTrackedID != nil {
-                Button("בטל צימוד למעקב") { store.linkCard(tx.id, toTracked: nil) }
-            }
-            Button(tx.ignored ? "החזר לחישוב" : "הסתר מהחישוב (כבר נרשם / כפול)") {
-                store.setCardIgnored(tx.id, !tx.ignored)
-            }
+        Button {
+            classifying = true
         } label: {
-            Label(tx.linkedExpenseID == nil && tx.linkedTrackedID == nil ? "צמד ל…" : "שנה", systemImage: "link")
+            Label(hasTags || tx.ignored ? "שנה" : "מה זה?", systemImage: "questionmark.circle")
         }
-        .menuStyle(.borderlessButton)
+        .buttonStyle(.borderless)
         .fixedSize()
     }
 }
@@ -773,5 +702,119 @@ private struct CardDayRow: View {
             }
         }
         .font(.callout)
+    }
+}
+
+// MARK: - "מה זה?"
+
+/// One place to say what a card charge is: how it counts in the budget (one choice), which trends it belongs to,
+/// whether someone owes you for it, and maaser.
+struct ClassifyCardSheet: View {
+    @EnvironmentObject private var store: Store
+    @Environment(\.dismiss) private var dismiss
+    let txID: String
+    let onOwed: () -> Void
+    let onNewTrend: () -> Void
+
+    private var tx: CardTransaction? { store.money.cardTransactions.first { $0.id == txID } }
+
+    private enum Kind: Hashable { case regular, fixed(UUID), tracked(UUID), ignored }
+
+    private func kind(_ tx: CardTransaction) -> Kind {
+        if tx.ignored { return .ignored }
+        if let id = tx.linkedExpenseID { return .fixed(id) }
+        if let id = tx.linkedTrackedID { return .tracked(id) }
+        return .regular
+    }
+
+    private func set(_ kind: Kind, _ tx: CardTransaction) {
+        if tx.ignored, kind != .ignored { store.setCardIgnored(tx.id, false) }
+        switch kind {
+        case .regular:
+            if tx.linkedExpenseID != nil { store.linkCard(tx.id, toExpense: nil) }
+            if tx.linkedTrackedID != nil { store.linkCard(tx.id, toTracked: nil) }
+        case .fixed(let id): store.linkCard(tx.id, toExpense: id)
+        case .tracked(let id): store.linkCard(tx.id, toTracked: id)
+        case .ignored: store.setCardIgnored(tx.id, true)
+        }
+    }
+
+    var body: some View {
+        SheetContainer(title: "מה זה?", width: 480, onSave: nil) {
+            if let tx {
+                Section {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tx.merchant).font(.headline)
+                            Text(verbatim: Fmt.date(tx.date) + (tx.category.isEmpty ? "" : " · " + tx.category))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(verbatim: Fmt.money(tx.amount)).monospacedDigit().font(.headline)
+                    }
+                }
+                Section {
+                    choice("קנייה רגילה", detail: "נספרת בהוצאות המשתנות של החודש", selected: kind(tx) == .regular) {
+                        set(.regular, tx)
+                    }
+                    ForEach(store.budget.expenses) { e in
+                        choice("חלק מ״" + e.name + "״", detail: "הוצאה קבועה — כבר בתקציב, לא תיספר שוב. גם החיובים הבאים מבית העסק הזה",
+                               selected: kind(tx) == .fixed(e.id)) { set(.fixed(e.id), tx) }
+                    }
+                    ForEach(store.budget.trackedItems) { t in
+                        choice(t.emoji + " " + t.name, detail: "רכישה במעקב רכישות", selected: kind(tx) == .tracked(t.id)) {
+                            set(.tracked(t.id), tx)
+                        }
+                    }
+                    choice("לא לספור", detail: "כפול, או שכבר נרשם במקום אחר", selected: kind(tx) == .ignored) { set(.ignored, tx) }
+                } header: {
+                    Text("איך זה נספר בתקציב")
+                }
+                Section {
+                    ForEach(store.money.trends) { t in
+                        Toggle(t.emoji + " " + t.name, isOn: Binding(
+                            get: { t.cardIDs.contains(tx.id) },
+                            set: { _ in store.toggleCard(tx.id, in: t.id) }))
+                    }
+                    Button("מגמה חדשה…") { dismiss(); onNewTrend() }
+                } header: {
+                    Text("מגמות — לניתוח בלבד, לא משנה את התקציב")
+                }
+                Section("חייבים לי") {
+                    if tx.owedPortion > 0 {
+                        Text(verbatim: "מישהו צריך להחזיר " + Fmt.money(tx.owedPortion))
+                        Button("ביטול — לא צריך להחזיר", role: .destructive) { store.removeCardFromReceivables(tx.id) }
+                    } else if tx.amount > 0 {
+                        Button("מישהו צריך להחזיר לי חלק מזה…") { dismiss(); onOwed() }
+                    }
+                }
+                if store.money.maaser.enabled {
+                    Section("מעשרות") {
+                        Toggle("החיוב הזה הוא מעשרות", isOn: Binding(
+                            get: { store.money.maaser.isMaaser(tx) },
+                            set: { store.setCardMaaser(tx, on: $0, merchant: false) }))
+                        if !store.money.maaser.isMaaser(tx) {
+                            Button("כל החיובים מבית העסק הזה הם מעשרות") { store.setCardMaaser(tx, on: true, merchant: true) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func choice(_ title: String, detail: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

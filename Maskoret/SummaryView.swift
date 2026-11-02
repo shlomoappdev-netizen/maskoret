@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct SummaryView: View {
     @EnvironmentObject private var store: Store
     @State private var showSaveMonth = false
+    @AppStorage("summaryShowDetails") private var showDetails = false
 
     /// The member in view, or the family members in view merged together.
     private var budget: Budget { store.dashboard.budget }
@@ -40,7 +41,9 @@ struct SummaryView: View {
                             chartCard(picture)
                         }
                     }
+                    todoCard(picture)
                     moneyStrip
+                    DisclosureGroup(isExpanded: $showDetails) {
                     AdaptiveStack {
                         VStack(spacing: 16) {
                             Card {
@@ -69,6 +72,13 @@ struct SummaryView: View {
                         statsGrid(picture)
                             .frame(maxWidth: 360)
                     }
+                    .padding(.top, 8)
+                    } label: {
+                        Text("פרטים נוספים — מהנטו ועד מה שנשאר, ומספרים על החודש")
+                            .font(.headline)
+                            .contentShape(Rectangle())
+                            .onTapGesture { withAnimation { showDetails.toggle() } }
+                    }
                 }
                 .padding(20)
                 .frame(maxWidth: 1100)
@@ -79,6 +89,76 @@ struct SummaryView: View {
             .sheet(isPresented: $showSaveMonth) {
                 SaveMonthSheet()
                     .environmentObject(store)
+            }
+        }
+    }
+
+    // MARK: What's waiting
+
+    private struct Todo: Identifiable {
+        let id: String
+        let icon: String
+        let text: String
+        let action: () -> Void
+    }
+
+    private func todos(_ p: MonthPicture) -> [Todo] {
+        var list: [Todo] = []
+        let money = store.dashboard.money
+        if store.cardImportDue {
+            list.append(Todo(id: "card", icon: "square.and.arrow.down", text: "לייבא את קובץ האשראי של החודש מ-Max") {
+                store.openScreen = .card
+            })
+        }
+        if !p.isActual {
+            list.append(Todo(id: "net", icon: "doc.text.viewfinder",
+                             text: "לרשום כמה נכנס בפועל החודש (אפשר מקובץ התלוש)") { showSaveMonth = true })
+        }
+        if let checking = money.checking, let last = checking.latestBalance {
+            let days = Int(Date().timeIntervalSince(last.date) / MoneyCalc.day)
+            if days > 30 {
+                list.append(Todo(id: "balance", icon: "building.columns",
+                                 text: "לעדכן את יתרת העו״ש — עברו \(days) ימים מהעדכון האחרון") { store.openScreen = .accounts })
+            }
+        } else {
+            list.append(Todo(id: "balance", icon: "building.columns", text: "להקליד את יתרת העו״ש — ממנה הכול מחושב") {
+                store.openScreen = .accounts
+            })
+        }
+        if !p.fixedInCardSuspects.isEmpty {
+            list.append(Todo(id: "twice", icon: "exclamationmark.triangle",
+                             text: "ייתכן שנספר פעמיים: " + p.fixedInCardSuspects.joined(separator: ", ")) { store.openScreen = .card })
+        }
+        return list
+    }
+
+    @ViewBuilder
+    private func todoCard(_ p: MonthPicture) -> some View {
+        let list = todos(p)
+        Card {
+            if list.isEmpty {
+                Label("הכול מעודכן — אין מה לעשות כרגע", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Text("מה מחכה לך")
+                    .font(.headline)
+                ForEach(list) { todo in
+                    Button(action: todo.action) {
+                        HStack {
+                            Image(systemName: todo.icon)
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 24)
+                            Text(todo.text)
+                                .multilineTextAlignment(.leading)
+                            Spacer()
+                            Image(systemName: "chevron.left")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }

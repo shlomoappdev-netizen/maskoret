@@ -58,13 +58,41 @@ struct MaskoretApp: App {
 }
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case summary, incomes, deductions, expenses, card, accounts, transactions, forecast, history, maaser, owed, tracked, trends, insights, tax, account, support, admin, backup, updates
+    case summary, money, budget
+    case incomes, deductions, expenses, card, accounts, transactions, forecast, history, maaser, owed, tracked, trends, insights, tax, account, support, admin, backup, updates
+
+    /// The screens grouped under "הכסף שלי" and "תקציב", as tabs inside them.
+    static let moneyTabs: [SidebarItem] = [.transactions, .card, .accounts]
+    static let budgetTabs: [SidebarItem] = [.incomes, .deductions, .expenses, .tracked]
+
+    /// The sidebar / tab item that shows this screen.
+    var home: SidebarItem {
+        if SidebarItem.moneyTabs.contains(self) { return .money }
+        if SidebarItem.budgetTabs.contains(self) { return .budget }
+        return self
+    }
+
+    /// The short name inside a group's tabs.
+    var tabTitle: String {
+        switch self {
+        case .transactions: return "עו״ש"
+        case .card: return "אשראי"
+        case .accounts: return "חיסכון"
+        case .incomes: return "הכנסות"
+        case .deductions: return "ניכויים"
+        case .expenses: return "קבועות"
+        case .tracked: return "מעקב רכישות"
+        default: return title
+        }
+    }
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .summary: return "סיכום"
+        case .summary: return "בית"
+        case .money: return "הכסף שלי"
+        case .budget: return "תקציב"
         case .incomes: return "הכנסות"
         case .deductions: return "ניכויים"
         case .expenses: return "הוצאות קבועות"
@@ -89,7 +117,9 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
 
     var icon: String {
         switch self {
-        case .summary: return "chart.pie.fill"
+        case .summary: return "house.fill"
+        case .money: return "creditcard.fill"
+        case .budget: return "list.bullet.rectangle.fill"
         case .incomes: return "banknote.fill"
         case .deductions: return "building.columns.fill"
         case .expenses: return "cart.fill"
@@ -118,6 +148,8 @@ extension SidebarItem {
     @ViewBuilder var screen: some View {
         switch self {
         case .summary: SummaryView()
+        case .money: GroupScreen(tabs: SidebarItem.moneyTabs, keyPath: \.moneyTab)
+        case .budget: GroupScreen(tabs: SidebarItem.budgetTabs, keyPath: \.budgetTab)
         case .incomes: IncomesView()
         case .deductions: CostsView(section: .deductions)
         case .expenses: CostsView(section: .expenses)
@@ -146,6 +178,32 @@ extension SidebarItem {
     }
 }
 
+/// A few related screens behind one menu item, with tabs on top.
+struct GroupScreen: View {
+    @EnvironmentObject private var store: Store
+    let tabs: [SidebarItem]
+    let keyPath: ReferenceWritableKeyPath<Store, SidebarItem>
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("", selection: Binding(get: { store[keyPath: keyPath] }, set: { store[keyPath: keyPath] = $0 })) {
+                ForEach(tabs) { item in
+                    Text(item.tabTitle).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+            .frame(maxWidth: 560)
+            store[keyPath: keyPath].screen
+                .id(store[keyPath: keyPath])
+        }
+        .background(Palette.window)
+    }
+}
+
 #if os(macOS)
 struct ContentView: View {
     @EnvironmentObject private var store: Store
@@ -166,22 +224,11 @@ struct ContentView: View {
             }
             List(selection: $selection) {
                 Label(SidebarItem.summary.title, systemImage: SidebarItem.summary.icon).tag(SidebarItem.summary)
-                Section("הכנסות") {
-                    ForEach([SidebarItem.incomes, .deductions]) { item in
-                        Label(item.title, systemImage: item.icon).tag(item)
-                    }
-                }
-                Section("הוצאות") {
-                    ForEach([SidebarItem.expenses, .card, .transactions, .tracked]) { item in
-                        Label(item.title, systemImage: item.icon)
-                            .badge(item == .card && store.cardImportDue ? Text(verbatim: "ייבוא") : nil)
-                            .tag(item)
-                    }
-                }
-                Section("חיסכון") {
-                    Label(SidebarItem.accounts.title, systemImage: SidebarItem.accounts.icon).tag(SidebarItem.accounts)
-                }
-                Section("תכנון") {
+                Label(SidebarItem.money.title, systemImage: SidebarItem.money.icon)
+                    .badge(store.cardImportDue ? Text(verbatim: "ייבוא") : nil)
+                    .tag(SidebarItem.money)
+                Label(SidebarItem.budget.title, systemImage: SidebarItem.budget.icon).tag(SidebarItem.budget)
+                Section("תכנון ותובנות") {
                     ForEach([SidebarItem.forecast, .history, .maaser, .owed, .trends, .insights]) { item in
                         Label(item.title, systemImage: item.icon).tag(item)
                     }
@@ -255,7 +302,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: store.openScreen) { _, item in
-            if let item { selection = item; store.openScreen = nil }
+            if let item { store.show(item); selection = item.home; store.openScreen = nil }
         }
         .task {
             updater.check()
