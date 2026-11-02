@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Writes what a release publishes, from version.json, CHANGELOG.md and the built files (used by release.yml).
 
-  release_manifest.py <out-dir> <repo> <tag>
+  release_manifest.py <out-dir> <repo> <tag> [previous latest.json]
 
-<out-dir> holds maskoret-android.apk, maskoret-windows.zip, maskoret-windows-setup.exe and maskoret-mac.dmg. Writes there:
+<out-dir> holds the files that were built this time: maskoret-android.apk, maskoret-windows.zip +
+maskoret-windows-setup.exe, maskoret-mac.dmg — any of them may be missing (each platform goes out as soon as its own
+build is ready). A missing one keeps its entry from the previous latest.json. Every platform entry carries its own
+version and build; the top-level version/build are the oldest of them, so a copy that only reads those is never offered
+a file that isn't newer than itself. Writes there:
   latest.json     what the apps read to offer an update (url, sha256 and size per platform)
   changelog.json  every version, newest first, for the "מה חדש" screen after an update
   notes.md        the release notes on GitHub
@@ -16,26 +20,46 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 out, repo, tag = sys.argv[1:4]
+previous = {}
+if len(sys.argv) > 4 and os.path.exists(sys.argv[4]):
+    try:
+        previous = json.load(open(sys.argv[4], encoding="utf-8"))
+    except ValueError:
+        previous = {}
 version = json.load(open(os.path.join(ROOT, "version.json"), encoding="utf-8"))
 base = f"https://github.com/{repo}/releases/download/{tag}/"
 
 
-def asset(name):
+def asset(key, name):
+    """This build's file, or — when it wasn't built this time — the platform's previous entry."""
     path = os.path.join(out, name)
+    if not os.path.exists(path):
+        old = dict(previous.get("platforms", {}).get(key) or {})
+        if old:
+            old.setdefault("version", previous.get("version"))
+            old.setdefault("build", previous.get("build"))
+        return old or None
     data = open(path, "rb").read()
-    return {"url": base + name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+    return {"url": base + name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data),
+            "version": version["version"], "build": version["build"]}
 
 
+platforms = {
+    "android": asset("android", "maskoret-android.apk"),
+    # The ZIP only updates copies of 4.1.x (they unpack it); everything newer installs with the setup.
+    "windows": asset("windows", "maskoret-windows.zip"),
+    "windows_setup": asset("windows_setup", "maskoret-windows-setup.exe"),
+    "mac": asset("mac", "maskoret-mac.dmg"),
+}
+platforms = {k: v for k, v in platforms.items() if v}
+built = [k for k, v in platforms.items() if v.get("build") == version["build"]]
+if not built:
+    sys.exit("Nothing new was built — no platform has this version's file.")
+oldest = min(platforms.values(), key=lambda v: v.get("build") or 0)
 latest = {
-    "version": version["version"], "build": version["build"], "date": version.get("date"),
-    "notes": version.get("notes", []),
-    "platforms": {
-        "android": asset("maskoret-android.apk"),
-        # The ZIP only updates copies of 4.1.x (they unpack it); everything newer installs with the setup.
-        "windows": asset("maskoret-windows.zip"),
-        "windows_setup": asset("maskoret-windows-setup.exe"),
-        "mac": asset("maskoret-mac.dmg"),
-    },
+    "version": oldest.get("version") or version["version"], "build": oldest.get("build") or version["build"],
+    "date": version.get("date"), "notes": version.get("notes", []),
+    "platforms": platforms,
 }
 json.dump(latest, open(os.path.join(out, "latest.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
@@ -54,7 +78,10 @@ if not any(e["build"] == version["build"] for e in entries):
 json.dump(entries, open(os.path.join(out, "changelog.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
 notes = f"## מחשבון שכר {version['version']}\n\n" + "\n".join("- " + n for n in version.get("notes", []))
-notes += ("\n\n**התקנה:** Windows — maskoret-windows-setup.exe · אנדרואיד — maskoret-android.apk · "
-          "Mac — maskoret-mac.dmg\n\nאו מהאתר: https://maskoret.vercel.app\n")
+names = {"windows_setup": "Windows — maskoret-windows-setup.exe", "android": "אנדרואיד — maskoret-android.apk",
+         "mac": "Mac — maskoret-mac.dmg"}
+notes += "\n\n**התקנה:** " + " · ".join(names[k] for k in names if k in built) + "\n\nאו מהאתר: https://maskoret.vercel.app\n"
 open(os.path.join(out, "notes.md"), "w", encoding="utf-8").write(notes)
-print(f"{version['version']} ({version['build']}): latest.json, changelog.json ({len(entries)} versions), notes.md")
+print(f"{version['version']} ({version['build']}): built {', '.join(built)}; latest.json, changelog.json "
+      f"({len(entries)} versions), notes.md")
+open(os.path.join(out, "built.txt"), "w").write(" ".join(built))

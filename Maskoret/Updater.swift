@@ -69,7 +69,9 @@ final class Updater: ObservableObject {
     static let releasesManifest = URL(string: "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json")!
 
     private struct Manifest: Decodable {
-        struct Asset: Decodable { let url: URL; let sha256: String; let size: Int? }
+        /// Each platform goes out as soon as its build is ready, so it carries its own version and build
+        /// (the top-level ones are the oldest of them).
+        struct Asset: Decodable { let url: URL; let sha256: String; let size: Int?; let version: String?; let build: Int? }
         let version: String
         let build: Int
         let date: String?
@@ -128,7 +130,8 @@ final class Updater: ObservableObject {
                     return
                 }
                 self.remoteMac = mac
-                self.latest = ReleaseInfo(version: manifest.version, build: manifest.build, date: manifest.date, notes: manifest.notes)
+                self.latest = ReleaseInfo(version: mac.version ?? manifest.version, build: mac.build ?? manifest.build,
+                                          date: manifest.date, notes: manifest.notes)
                 self.message = self.updateAvailable ? "גרסה \(manifest.version) זמינה להורדה" : "יש לך את הגרסה העדכנית"
             }
         }.resume()

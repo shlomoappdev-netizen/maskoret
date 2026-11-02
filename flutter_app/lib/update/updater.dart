@@ -11,18 +11,22 @@ import 'package:path_provider/path_provider.dart';
 
 /// A published version: the shared manifest of every platform (written when a release is published to
 /// github.com/shlomoappdev-netizen/maskoret-releases). `build` is one counter for all the apps (version.json).
+/// Each platform goes out as soon as its own build is ready, so its file carries its own version and build; the
+/// top-level ones are the oldest of them (for copies that don't read the per-platform ones).
 class Release {
   Release(Map<String, dynamic> j)
-      : version = j['version'] as String? ?? '',
-        build = (j['build'] as num?)?.toInt() ?? 0,
+      : _version = j['version'] as String? ?? '',
+        _build = (j['build'] as num?)?.toInt() ?? 0,
         date = j['date'] as String?,
         notes = ((j['notes'] as List?) ?? const []).whereType<String>().toList(),
         platforms = ((j['platforms'] as Map?) ?? const {})
             .map((k, v) => MapEntry(k as String, v is Map ? ReleaseFile(v.cast<String, dynamic>()) : null))
           ..removeWhere((k, v) => v == null);
 
-  final String version;
-  final int build;
+  final String _version;
+  final int _build;
+  String get version => forThisDevice?.version ?? _version;
+  int get build => forThisDevice?.build ?? _build;
   final String? date;
   final List<String> notes;
   final Map<String, ReleaseFile?> platforms;
@@ -35,10 +39,15 @@ class ReleaseFile {
   ReleaseFile(Map<String, dynamic> j)
       : url = j['url'] as String? ?? '',
         sha256 = (j['sha256'] as String?)?.toLowerCase(),
-        size = (j['size'] as num?)?.toInt();
+        size = (j['size'] as num?)?.toInt(),
+        version = j['version'] as String?,
+        build = (j['build'] as num?)?.toInt();
   final String url;
   final String? sha256;
   final int? size;
+  /// This platform's own version (missing in manifests from before platforms were published separately).
+  final String? version;
+  final int? build;
 }
 
 enum UpdatePhase { idle, checking, downloading, installing, failed }

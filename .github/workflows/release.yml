@@ -5,6 +5,8 @@
 #   takes that one instead of waiting for a macOS runner —
 #   creates the GitHub release in this repo with the files, and updates latest.json + changelog.json on the
 #   download site (shlomoappdev-netizen/maskoret-releases), which every app checks for updates.
+#   Each platform goes out as soon as its own build is ready: if one fails, the others are published anyway (the
+#   failed one keeps its previous file on the site, an issue is opened, and the scheduled run tries it again).
 #
 # Secrets (set once with tools/setup_cloud_release.sh):
 #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD  the permanent Android signing key
@@ -41,6 +43,7 @@ jobs:
       go: ${{ steps.v.outputs.go }}
       version: ${{ steps.v.outputs.version }}
       local_mac: ${{ steps.v.outputs.local_mac }}
+      need_mac: ${{ steps.v.outputs.need_mac }}
     steps:
       - uses: actions/checkout@v4
       - id: v
@@ -48,8 +51,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(jq -r .version version.json); build=$(jq -r .build version.json); ready=$(jq -r '.ready // false' version.json)
-          site=$(curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)" | jq -r .build)
+          manifest=$(curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)")
+          # The oldest platform on the site (each platform carries its own build; older manifests only the top one).
+          site=$(echo "$manifest" | jq -r '[.platforms[]?.build // empty] + [.build] | min')
+          site_mac=$(echo "$manifest" | jq -r '.platforms.mac.build // .build')
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          # The Mac is built again only if the site doesn't have this build for it yet.
+          if [ "$build" -gt "$site_mac" ]; then echo "need_mac=true" >> "$GITHUB_OUTPUT"; else echo "need_mac=false" >> "$GITHUB_OUTPUT"; fi
           # A Mac build uploaded from the Mac (tools/upload_mac_build.sh) for this build number.
           if gh release view "mac-build-$build" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx maskoret-mac.dmg; then
             echo "local_mac=true" >> "$GITHUB_OUTPUT"; echo "Using the Mac build uploaded from the Mac (mac-build-$build)."
@@ -73,7 +81,7 @@ jobs:
   # The Mac build uploaded from the Mac: passed on as the same artifact the cloud build makes.
   mac_local:
     needs: check
-    if: needs.check.outputs.go == 'true' && needs.check.outputs.local_mac == 'true'
+    if: needs.check.outputs.go == 'true' && needs.check.outputs.need_mac == 'true' && needs.check.outputs.local_mac == 'true'
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -89,7 +97,7 @@ jobs:
 
   mac:
     needs: check
-    if: needs.check.outputs.go == 'true' && needs.check.outputs.local_mac != 'true'
+    if: needs.check.outputs.go == 'true' && needs.check.outputs.need_mac == 'true' && needs.check.outputs.local_mac != 'true'
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -142,9 +150,9 @@ jobs:
 
   publish:
     needs: [check, apps, mac, mac_local]
-    if: >-
-      !cancelled() && inputs.dry_run != true && needs.check.outputs.go == 'true' && needs.apps.result == 'success'
-      && (needs.mac.result == 'success' || needs.mac_local.result == 'success')
+    # Publishes whatever was built, even if another platform failed.
+    # (release_manifest.py stops it when no platform built anything new).
+    if: "!cancelled() && inputs.dry_run != true && needs.check.outputs.go == 'true'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,17 +162,19 @@ jobs:
       - name: Collect the files
         run: |
           mkdir out
-          cp dl/maskoret-android/app-release.apk out/maskoret-android.apk
-          cp dl/maskoret-windows/maskoret-windows.zip dl/maskoret-windows/maskoret-windows-setup.exe out/
-          cp dl/maskoret-mac/maskoret-mac.dmg out/
-          python3 tools/release_manifest.py out "$GITHUB_REPOSITORY" "v${{ needs.check.outputs.version }}"
+          # Whichever platforms built; a missing one keeps its previous file on the site.
+          [ -f dl/maskoret-android/app-release.apk ] && cp dl/maskoret-android/app-release.apk out/maskoret-android.apk || true
+          [ -f dl/maskoret-windows/maskoret-windows-setup.exe ] && cp dl/maskoret-windows/maskoret-windows.zip dl/maskoret-windows/maskoret-windows-setup.exe out/ || true
+          [ -f dl/maskoret-mac/maskoret-mac.dmg ] && cp dl/maskoret-mac/maskoret-mac.dmg out/ || true
+          curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)" -o previous.json || echo '{}' > previous.json
+          python3 tools/release_manifest.py out "$GITHUB_REPOSITORY" "v${{ needs.check.outputs.version }}" previous.json
           ls -la out
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${{ needs.check.outputs.version }}"
-          files="out/maskoret-android.apk out/maskoret-windows-setup.exe out/maskoret-windows.zip out/maskoret-mac.dmg"
+          files=$(ls out/maskoret-android.apk out/maskoret-windows-setup.exe out/maskoret-windows.zip out/maskoret-mac.dmg 2>/dev/null)
           # A retry after a failure further on: the release may already exist — replace its files.
           if gh release view "v$v" >/dev/null 2>&1; then
             gh release upload "v$v" $files --clobber
@@ -181,10 +191,11 @@ jobs:
           cp out/latest.json out/changelog.json site/
           cd site
           git add latest.json changelog.json
-          git -c user.name="maskoret-release" -c user.email="shlomoappdev@gmail.com" commit -q -m "גרסה ${{ needs.check.outputs.version }}"
+          git -c user.name="maskoret-release" -c user.email="shlomoappdev@gmail.com" commit -q -m "גרסה ${{ needs.check.outputs.version }} ($(cat ../out/built.txt))"
           git push -q
           echo "Published ${{ needs.check.outputs.version }} — the apps offer it on their next check."
       - name: Remove the uploaded Mac build
+        if: hashFiles('out/maskoret-mac.dmg') != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -212,7 +223,7 @@ jobs:
 
   # A successful release closes the failure issue of that version, if one was opened.
   resolved:
-    needs: [check, publish]
+    needs: [check, apps, mac, mac_local, publish]
     if: success() && inputs.dry_run != true && needs.check.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
