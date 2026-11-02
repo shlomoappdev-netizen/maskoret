@@ -29,6 +29,14 @@ class AppColors {
   static const sky = Color(0xFF007AFF);
   static const orange = Color(0xFFFF9500);
   static const green = Color(0xFF34C759);
+
+  /// The card categories in "לאן הולך הנטו", apart from the other slices' colors (SummaryView.categoryColors):
+  /// teal, cyan, mint, yellow, brown, orange (0.95, 0.55, 0.35) and olive (0.55, 0.70, 0.30).
+  static const cardCategories = [
+    Color(0xFF30B0C7), Color(0xFF32ADE6), Color(0xFF00C7BE), Color(0xFFFFCC00), Color(0xFFA2845E),
+    Color(0xFFF28C59), Color(0xFF8CB34D),
+  ];
+  static const gray = Color(0xFF8E8E93);
 }
 
 /// Numbers: tabular figures, so columns of amounts line up (like `.monospacedDigit()` in SwiftUI).

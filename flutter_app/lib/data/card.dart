@@ -241,12 +241,26 @@ class CardData {
     return keys.toList()..sort((a, b) => b.compareTo(a));
   }();
 
-  /// Average variable card spending per month, from the last (up to) 3 full statements.
-  double averageCardVariable() {
-    // A statement that wasn't charged yet may still be open and pull the average down: it counts only when there's no other.
+  /// The last (up to 3) statements the average is taken from. A statement that wasn't charged yet may still be open
+  /// (only some of its purchases) and pull the average down, so it counts only when there's no other.
+  List<int> get _averageStatementKeys {
     final now = DateTime.now();
     final charged = cardStatementKeys.where((k) => chargedIn(k).any((t) => !t.chargeEstimated && t.chargeDate != null && !t.chargeDate!.isAfter(now))).toList();
-    final keys = (charged.isEmpty ? cardStatementKeys : charged).take(3).toList();
+    return (charged.isEmpty ? cardStatementKeys : charged).take(3).toList();
+  }
+
+  /// Each category's share (0...1) of the variable spending in the statements the average is taken from.
+  Map<String, double> averageCardCategoryShares() {
+    final txs = [for (final k in _averageStatementKeys) ...chargedIn(k)];
+    final byCategory = CardMonthSummary.of(txs).byCategory.where((c) => c.amount > 0).toList();
+    final total = byCategory.fold(0.0, (s, c) => s + c.amount);
+    if (total <= 0) return {};
+    return {for (final c in byCategory) c.name: c.amount / total};
+  }
+
+  /// Average variable card spending per month, from the last (up to) 3 full statements.
+  double averageCardVariable() {
+    final keys = _averageStatementKeys;
     if (keys.isEmpty) return 0;
     var total = 0.0;
     for (final k in keys) {

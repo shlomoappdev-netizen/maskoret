@@ -40,7 +40,7 @@ class SummaryScreen extends StatelessWidget {
       final last = forecast.last;
 
       final hero = _Hero(pic: pic);
-      final donut = pic.net > 0 ? _NetDonut(pic: pic) : null;
+      final donut = pic.net > 0 ? _NetDonut(pic: pic, cards: CardData(d.money)) : null;
       final breakdown = SectionCard(title: 'החודש — מהנטו ועד מה שנשאר', children: monthBreakdown(context, pic));
       final payslip = b.gross > 0
           ? SectionCard(title: 'מהברוטו לנטו (הערכה לפי התלוש)', children: payslipBreakdown(context, b))
@@ -224,8 +224,37 @@ class _Hero extends StatelessWidget {
 
 /// "לאן הולך הנטו": a donut with its legend beside it (under it on a phone).
 class _NetDonut extends StatelessWidget {
-  const _NetDonut({required this.pic});
+  const _NetDonut({required this.pic, required this.cards});
   final MonthPicture pic;
+  final CardData cards;
+
+  /// Card spending by category, biggest first; the small ones are folded into one slice (cardSlices in SummaryView.swift).
+  static List<(String, double, Color)> cardSlices(MonthPicture p, CardData cards) {
+    const estimateTitle = 'עוד צפוי לפי ממוצע החודשים הקודמים';
+    final merged = <String, double>{};
+    var estimate = 0.0;
+    for (final line in p.card.where((l) => l.amount > 0)) {
+      if (line.title == estimateTitle) {
+        estimate += line.amount;
+      } else {
+        // Purchases recorded by hand ("💳 …") are one category of their own.
+        final name = line.title.startsWith('💳') ? 'קניות שנרשמו ידנית' : line.title;
+        merged[name] = (merged[name] ?? 0) + line.amount;
+      }
+    }
+    // The estimate is spread over the categories by their share in the last statements.
+    final shares = estimate > 0 ? cards.averageCardCategoryShares() : const <String, double>{};
+    shares.forEach((name, share) => merged[name] = (merged[name] ?? 0) + estimate * share);
+    if (shares.isNotEmpty) estimate = 0;
+    final sorted = merged.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    const colors = AppColors.cardCategories;
+    final shown = sorted.take(colors.length - 1).toList();
+    final result = [for (var i = 0; i < shown.length; i++) ('💳 ${shown[i].key}', shown[i].value, colors[i])];
+    final rest = sorted.skip(shown.length).fold(0.0, (s, e) => s + e.value);
+    if (rest > 0) result.add(('💳 קטגוריות אחרות', rest, colors.last));
+    if (estimate > 0) result.add(('💳 עוד צפוי (הערכה)', estimate, AppColors.gray));
+    return result;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -233,7 +262,7 @@ class _NetDonut extends StatelessWidget {
     final items = [
       ('הוצאות קבועות', pic.spendingTotal, AppColors.pink),
       ('רכישות תקופתיות', pic.periodic, AppColors.purple),
-      ('כרטיס אשראי (משתנות)', pic.cardTotal, AppColors.tealChart),
+      ...cardSlices(pic, cards),
       ('תשלומים (החלק של החודש)', pic.installmentsTotal, AppColors.indigo),
       ('לחיסכון', pic.toSavingsTotal, AppColors.sky),
       ('הוצאות חריגות', pic.oneOffTotal < 0 ? -pic.oneOffTotal : 0.0, AppColors.orange),
@@ -282,6 +311,9 @@ class _NetDonut extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('לאן הולך הנטו', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+        if (pic.cardEstimated)
+          Text('💳 קטגוריות האשראי כוללות הערכה לפי ממוצע החודשים הקודמים',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         const SizedBox(height: 12),
         LayoutBuilder(
           builder: (context, c) => c.maxWidth >= 420
