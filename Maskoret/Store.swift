@@ -465,8 +465,10 @@ final class Store: ObservableObject {
         money.transactions.removeAll { $0.id == transaction.id }
     }
 
+    /// Deletes a saved month, and the salary that saving it recorded in the checking account.
     func deleteRecord(_ record: MonthRecord) {
         history.removeAll { $0.id == record.id }
+        money.transactions.removeAll { $0.salaryKey == record.year * 100 + record.month }
     }
 
     /// Restores incomes, deductions and expenses from a saved month,

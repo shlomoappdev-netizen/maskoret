@@ -278,7 +278,7 @@ struct RecordDetailView: View {
             }
             Button("ביטול", role: .cancel) {}
         }
-        .confirmationDialog("למחוק את החודש?", isPresented: $confirmDelete) {
+        .confirmationDialog("למחוק את החודש? גם המשכורת שנרשמה לו בעו״ש תימחק.", isPresented: $confirmDelete) {
             Button("מחק", role: .destructive) {
                 store.deleteRecord(record)
                 dismiss()

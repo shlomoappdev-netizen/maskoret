@@ -141,6 +141,15 @@ struct TransactionsView: View {
                     ForEach(months[key] ?? []) { line in ledgerRow(line, expected: false) }
                 }
             }
+            let first = lines.last?.date ?? now
+            let older = done.filter { $0.date < first }
+            if !older.isEmpty {
+                Section {
+                    ForEach(older) { t in row(t) }
+                } header: {
+                    Text("תנועות קודמות שרשמת — לפני היתרה הראשונה בדף")
+                }
+            }
             Section {
             } footer: {
                 Text("📌 מהוצאות קבועות · 💳 מכרטיס אשראי · → לחיסכון · ✔︎ יתרה שהקלדת (ממנה החישוב מתחיל מחדש). לחיצה על חיוב אשראי מאפשרת לרשום כמה ירד בפועל; שורה אחרת שנוצרה לבד פותחת את המסך שלה; שורה שרשמת כאן נפתחת לעריכה.")
