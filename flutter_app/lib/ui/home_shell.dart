@@ -26,6 +26,7 @@ import '../data/models.dart';
 import '../data/money_calc.dart';
 import '../data/month_picture.dart';
 import '../state/store.dart';
+import '../support/support.dart';
 import '../update/updater.dart';
 
 /// Every screen of the app, grouped like the Mac sidebar (SidebarItem in MaskoretApp.swift).
@@ -348,6 +349,20 @@ Widget? _badgeFor(BuildContext context, Dest d) {
   return null;
 }
 
+/// "מחשבון שכר · גרסה 4.10.0 (46)" — the installed version, small and grey, at the bottom of the menu.
+/// Diagnostics.init() runs before the app starts, so the number is already there.
+class AppVersionLabel extends StatelessWidget {
+  const AppVersionLabel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text('מחשבון שכר · גרסה ${Diagnostics.appVersion}',
+        textAlign: TextAlign.center,
+        style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant));
+  }
+}
+
 /// The wide-screen sidebar: sections, and the month's numbers at the bottom.
 class Sidebar extends StatelessWidget {
   const Sidebar({super.key, required this.selected, required this.onSelect});
@@ -386,6 +401,7 @@ class Sidebar extends StatelessWidget {
       ),
       Divider(height: 1, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08)),
       const MonthNumbers(),
+      const Padding(padding: EdgeInsets.only(bottom: 10), child: AppVersionLabel()),
     ]);
   }
 }
@@ -420,6 +436,7 @@ class MoreScreen extends StatelessWidget {
                 ),
               ),
           ]),
+      const Padding(padding: EdgeInsets.only(top: 4), child: AppVersionLabel()),
     ].map((w) => w is SectionCard ? Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: w) : w).toList());
   }
 }

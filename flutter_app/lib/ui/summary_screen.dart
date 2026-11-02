@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:fl_chart/fl_chart.dart';
@@ -13,6 +14,8 @@ import '../data/receivables.dart';
 import '../data/models.dart';
 import '../data/money_calc.dart';
 import '../data/month_picture.dart';
+import '../data/payslip.dart';
+import '../support/payslip_pdf.dart';
 import 'app_prompts.dart';
 import 'common.dart';
 import 'family_screen.dart';
@@ -449,6 +452,9 @@ Future<void> showSaveMonth(BuildContext context) async {
   double actual = existing()?.actualNet ?? 0;
   var addToChecking = true;
   var version = 0; // rebuilds the fields when another month is chosen
+  PayslipReading? payslip;
+  String? payslipError;
+  var reading = false;
   await showEditor(
     context,
     title: 'שמירת חודש בהיסטוריה${store.members.length > 1 ? ' — ${store.activeMember?.title ?? ''}' : ''}',
@@ -460,6 +466,130 @@ Future<void> showSaveMonth(BuildContext context) async {
             actual = existing()?.actualNet ?? 0;
             version++;
           });
+
+      /// What the payslip said: its month, the net to pay, and a note (port of readPayslip in SummaryView.swift).
+      void apply(PayslipReading r) => setState(() {
+            payslip = r;
+            payslipError = null;
+            if (r.month != null && r.year != null && r.year! >= now.year - 5 && r.year! <= now.year + 1) {
+              year = r.year!;
+              month = r.month!;
+            }
+            if (r.netToPay != null) actual = r.netToPay!;
+            // The month keeps what the payslip said, in its note.
+            final parts = [
+              if (r.gross != null) 'ברוטו ${Fmt.money(r.gross!)}',
+              if (r.deductions != null) 'ניכויים ${Fmt.money(r.deductions!)}',
+              if (r.netToPay != null) 'נטו לתשלום ${Fmt.money(r.netToPay!)}',
+            ];
+            if (parts.isNotEmpty && (note.isEmpty || note.startsWith('מתלוש:'))) note = 'מתלוש: ${parts.join(' · ')}';
+            version++;
+          });
+
+      /// Picks the PDF and reads it — with the saved password, or one the user types, when it's locked.
+      Future<void> readPayslip() async {
+        setState(() => payslipError = null);
+        File? file;
+        try {
+          file = await PayslipPdf.pick();
+          if (file == null) return;
+          setState(() => reading = true);
+          String? password;
+          if (await PayslipPdf.isLocked(file)) {
+            final saved = await PayslipPdf.savedPassword();
+            if (saved != null && saved.isNotEmpty) {
+              try {
+                apply(await PayslipPdf.read(file, saved));
+                return;
+              } on PayslipError catch (e) {
+                if (e != PayslipError.wrongPassword) rethrow;
+              }
+            }
+            while (true) {
+              if (!ctx.mounted) return;
+              final answer = await _askPayslipPassword(ctx, error: payslipError);
+              if (answer == null) return;
+              password = answer.$1;
+              try {
+                final r = await PayslipPdf.read(file, password);
+                if (answer.$2) await PayslipPdf.savePassword(password);
+                apply(r);
+                return;
+              } on PayslipError catch (e) {
+                if (e != PayslipError.wrongPassword) rethrow;
+                setState(() => payslipError = e.message);
+              }
+            }
+          }
+          apply(await PayslipPdf.read(file, null));
+        } on PayslipError catch (e) {
+          setState(() => payslipError = e.message);
+        } catch (e) {
+          setState(() => payslipError = 'לא ניתן לפתוח את הקובץ: $e');
+        } finally {
+          await PayslipPdf.discard(file);
+          if (ctx.mounted) setState(() => reading = false);
+        }
+      }
+
+      final theme = Theme.of(ctx);
+      final p = payslip;
+      Widget line(String title, double value) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 1),
+            child: Row(children: [
+              Expanded(child: Text(title, style: theme.textTheme.bodyMedium)),
+              Text(Fmt.money(value), textDirection: TextDirection.rtl, style: theme.textTheme.bodyMedium?.copyWith(fontFeatures: tabular)),
+            ]),
+          );
+      final payslipBox = [
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: OutlinedButton.icon(
+            icon: reading
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.document_scanner_outlined),
+            label: const Text('קרא מתלוש PDF…'),
+            onPressed: reading ? null : readPayslip,
+          ),
+        ),
+        if (payslipError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange.shade700),
+              const SizedBox(width: 6),
+              Expanded(child: Text(payslipError!, style: theme.textTheme.bodyMedium?.copyWith(color: Colors.orange.shade800))),
+            ]),
+          ),
+        if (p != null)
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppColors.green.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(children: [
+                const Icon(Icons.verified, size: 18, color: AppColors.green),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                      'נקרא מהתלוש${p.month != null ? ' של ${Fmt.monthNames[p.month! - 1]}' : ''}${p.year != null ? ' ${p.year}' : ''}',
+                      style: theme.textTheme.titleSmall?.copyWith(color: AppColors.green, fontWeight: FontWeight.w600)),
+                ),
+              ]),
+              const SizedBox(height: 4),
+              if (p.gross != null) line('סה״כ תשלומים (ברוטו)', p.gross!),
+              if (p.incomeTax != null) line('מס הכנסה', -p.incomeTax!),
+              if (p.nationalInsurance != null) line('ביטוח לאומי', -p.nationalInsurance!),
+              if (p.health != null) line('מס בריאות', -p.health!),
+              if (p.deductions != null) line('ניכויי חובה וגמל (סה״כ)', -p.deductions!),
+              if (p.net != null && p.netToPay != null && (p.net! - p.netToPay!).abs() > 0.005) ...[
+                line('שכר נטו', p.net!),
+                line('ניכויי רשות', p.netToPay! - p.net!),
+              ],
+            ]),
+          ),
+        gap,
+      ];
       return Column(key: ValueKey(version), crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
           Expanded(
@@ -483,11 +613,12 @@ Future<void> showSaveMonth(BuildContext context) async {
         gap,
         TextInput(label: 'הערה (לא חובה)', initial: note, onChanged: (v) => note = v),
         gap,
+        ...payslipBox,
         NumberField(
           label: 'משכורת בפועל',
           value: actual,
           suffix: '₪',
-          helper: 'הסכום ״נטו לתשלום״ מהתלוש. התחזית משתמשת בממוצע של החודשים האחרונים. ההוספה לעו״ש מעדכנת את היתרה '
+          helper: 'הסכום ״נטו לתשלום״ מהתלוש — אפשר לבחור את קובץ התלוש וזה ימולא לבד (בדוק לפני השמירה). התחזית משתמשת בממוצע של החודשים האחרונים. ההוספה לעו״ש מעדכנת את היתרה '
               'המשוערת עד שתעדכן יתרה ידנית.',
           onChanged: (v) => actual = v,
         ),
@@ -531,6 +662,47 @@ Future<void> showSaveMonth(BuildContext context) async {
       }
     }),
   );
+}
+
+/// "התלוש נעול בסיסמה": the password, and whether to remember it on this device; null when cancelled.
+/// [error]: "הסיסמה לא נכונה." after a wrong try, shown in the dialog too (the sheet behind it is covered).
+Future<(String, bool)?> _askPayslipPassword(BuildContext context, {String? error}) {
+  final controller = TextEditingController();
+  return showDialog<(String, bool)>(
+    context: context,
+    builder: (ctx) {
+      void done(bool remember) {
+        if (controller.text.isNotEmpty) Navigator.pop(ctx, (controller.text, remember));
+      }
+      return AlertDialog(
+        title: const Text('התלוש נעול בסיסמה'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('בדרך כלל זו תעודת הזהות. ״זכור״ שומר אותה בצורה מוצפנת במכשיר הזה בלבד, כדי שהתלוש הבא ייפתח לבד.'),
+          gap,
+          TextField(
+            controller: controller,
+            obscureText: true,
+            autofocus: true,
+            enableSuggestions: false,
+            autocorrect: false,
+            decoration: const InputDecoration(labelText: 'סיסמה', border: OutlineInputBorder()),
+            onSubmitted: (_) => done(false),
+          ),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(error, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+            ),
+        ]),
+        actionsOverflowDirection: VerticalDirection.up,
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ביטול')),
+          TextButton(onPressed: () => done(false), child: const Text('פתח רק הפעם')),
+          FilledButton(onPressed: () => done(true), child: const Text('פתח וזכור במכשיר')),
+        ],
+      );
+    },
+  ).whenComplete(controller.dispose);
 }
 
 /// A sub-heading inside the month breakdown, with its total.
