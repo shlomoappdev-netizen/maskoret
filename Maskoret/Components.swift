@@ -82,6 +82,55 @@ extension View {
     }
 }
 
+// MARK: - Hiding the keyboard (iPhone)
+
+#if os(iOS)
+/// While the keyboard is up, a "הסתר מקלדת" button floats right above it, and scrolling pulls the keyboard down —
+/// number pads have no return key, so without this there was no way to close the keyboard.
+private struct KeyboardDismiss: ViewModifier {
+    @State private var visible = false
+
+    func body(content: Content) -> some View {
+        content
+            .scrollDismissesKeyboard(.interactively)
+            .overlay(alignment: .bottomLeading) {
+                if visible {
+                    Button {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    } label: {
+                        Label("הסתר מקלדת", systemImage: "keyboard.chevron.compact.down")
+                            .font(.callout.weight(.medium))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.regularMaterial, in: Capsule())
+                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(10)
+                    .transition(.opacity)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                withAnimation(.easeOut(duration: 0.15)) { visible = true }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                withAnimation(.easeOut(duration: 0.15)) { visible = false }
+            }
+    }
+}
+#endif
+
+extension View {
+    /// iPhone: a way to close the keyboard everywhere it can open. Does nothing on the Mac.
+    @ViewBuilder func keyboardDismissable() -> some View {
+        #if os(iOS)
+        modifier(KeyboardDismiss())
+        #else
+        self
+        #endif
+    }
+}
+
 // MARK: - Amount input
 
 /// A numeric text field that updates a Double binding on every keystroke.
@@ -170,6 +219,7 @@ struct SheetContainer<Content: View>: View {
             Form {
                 content
             }
+            .keyboardDismissable()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

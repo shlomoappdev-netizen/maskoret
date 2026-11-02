@@ -19,6 +19,7 @@ struct PhoneRoot: View {
                     FamilyContextBar()
                     item.screen
                 }
+                .keyboardDismissable()
                 .tabItem { Label(item.title, systemImage: item.icon) }
                 .badge(item == .money && store.cardImportDue ? Text(verbatim: "!") : nil)
                 .tag(item)
@@ -146,6 +147,7 @@ struct MoreView: View {
                     FamilyContextBar()
                     selection.screen
                 }
+                .keyboardDismissable()
             } else {
                 ContentUnavailableView("בחר מסך", systemImage: "sidebar.left")
             }
