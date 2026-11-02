@@ -647,6 +647,14 @@ struct SaveMonthSheet: View {
                 year = y
             }
             if let pay = reading.netToPay { actualNet = pay }
+            // The month keeps what the payslip said, in its note.
+            var parts: [String] = []
+            if let v = reading.gross { parts.append("ברוטו " + Fmt.money(v)) }
+            if let v = reading.deductions { parts.append("ניכויים " + Fmt.money(v)) }
+            if let v = reading.netToPay { parts.append("נטו לתשלום " + Fmt.money(v)) }
+            if !parts.isEmpty, note.isEmpty || note.hasPrefix("מתלוש:") {
+                note = "מתלוש: " + parts.joined(separator: " · ")
+            }
             netFieldID = UUID()
         } catch PayslipError.wrongPassword {
             payslipError = PayslipError.wrongPassword.errorDescription
