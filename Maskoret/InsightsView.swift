@@ -23,7 +23,7 @@ struct InsightsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: "תובנות AI", subtitle: subtitle) {
+                PageBar(title: SidebarItem.insights.title, subtitle: subtitle, guide: .insights) {
                     if !ai.activeModelName.isEmpty {
                         Label(ai.activeModelName, systemImage: ai.canSend ? "star.fill" : "exclamationmark.triangle.fill")
                             .font(.callout)

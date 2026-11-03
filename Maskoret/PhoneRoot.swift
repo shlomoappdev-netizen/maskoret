@@ -71,6 +71,7 @@ struct MoreView: View {
     @EnvironmentObject private var account: UserAccount
     @EnvironmentObject private var support: SupportCenter
     @State private var selection: SidebarItem?
+    @State private var query = ""
 
     private let sections: [(String, [SidebarItem])] = [
         ("תכנון ותובנות", [.forecast, .history, .maaser, .owed, .trends, .insights]),
@@ -80,6 +81,14 @@ struct MoreView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
+                if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Section("מסכים") {
+                        ScreenSearchResults(query: query) { item in
+                            query = ""
+                            store.openScreen = item
+                        }
+                    }
+                } else {
                 Section {
                     HouseholdSwitcher { selection = .account }
                     FamilySwitcher()
@@ -133,7 +142,9 @@ struct MoreView: View {
                     Text(verbatim: "מחשבון שכר · גרסה " + Diagnostics.appVersion)
                         .frame(maxWidth: .infinity)
                 }
+                }
             }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "חיפוש מסך — משכורת, אשראי, מעשר…")
             .navigationTitle("עוד")
             .onChange(of: store.openScreen) { _, item in
                 if let item, !PhoneRoot.tabs.contains(item.home) { selection = item; store.openScreen = nil }

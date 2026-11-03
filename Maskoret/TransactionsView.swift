@@ -33,7 +33,7 @@ struct TransactionsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: "תנועות בעו״ש", subtitle: "כל מה שנכנס ויוצא מהעו״ש, עם היתרה אחרי כל שורה — משכורת, הוצאות קבועות ואשראי מתעדכנים לבד") {
+                PageBar(title: SidebarItem.transactions.title, guide: .transactions) {
                     Menu {
                         Button("הוצאה גדולה…") { editing = newTransaction(.expense) }
                         Button("הכנסה (מענק, בונוס, מתנה)…") { editing = newTransaction(.income) }
@@ -51,7 +51,7 @@ struct TransactionsView: View {
                     statementList
                 }
             }
-            .navigationTitle("תנועות")
+            .navigationTitle(SidebarItem.transactions.title)
             .sheet(item: $actualFor) { line in
                 ActualChargeSheet(line: line).environmentObject(store)
             }
@@ -582,7 +582,7 @@ struct ActualChargeSheet: View {
                 }
             }
             Section {
-                Button("פתח את מסך כרטיס האשראי") {
+                Button("פתח את מסך ״אשראי״") {
                     store.openScreen = .card
                     dismiss()
                 }

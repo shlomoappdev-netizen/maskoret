@@ -15,7 +15,7 @@ struct ForecastView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    PageBar(title: "תחזית", subtitle: "לאן הכסף שלך הולך בחודשים הקרובים") {
+                    PageBar(title: SidebarItem.forecast.title, guide: .forecast) {
                         Picker("טווח", selection: $store.money.forecast.months) {
                             Text(verbatim: "3 חודשים").tag(3)
                             Text(verbatim: "6 חודשים").tag(6)

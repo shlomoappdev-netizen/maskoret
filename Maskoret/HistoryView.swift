@@ -45,7 +45,7 @@ struct HistoryView: View {
                     let results = self.results
                     ScrollView {
                         VStack(spacing: 16) {
-                            PageBar(title: "חודשים", subtitle: "הנטו שנכנס בפועל בכל חודש, מול ההערכה") {
+                            PageBar(title: SidebarItem.history.title, guide: .history) {
                                 Button {
                                     showSaveMonth = true
                                 } label: {

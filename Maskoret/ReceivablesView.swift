@@ -12,7 +12,7 @@ struct ReceivablesView: View {
         let settled = money.receivables.filter { money.outstanding($0) <= 0.005 }
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: "חייבים לי", subtitle: "סה״כ פתוח: " + Fmt.money(money.totalOwedToMe)) {
+                PageBar(title: SidebarItem.owed.title, subtitle: "סה״כ פתוח: " + Fmt.money(money.totalOwedToMe), guide: .owed) {
                     Button {
                         open = Receivable()
                     } label: {
@@ -25,7 +25,7 @@ struct ReceivablesView: View {
                     ContentUnavailableView {
                         Label("אף אחד לא חייב לך", systemImage: "arrow.uturn.backward.circle")
                     } description: {
-                        Text("קנית למישהו משהו והוא יחזיר לך? בעמוד ״כרטיס אשראי״ ← ״צמד ל…״ ← ״מישהו צריך להחזיר לי…״, או ״חוב חדש״ כאן.\nמה ששילמת בשביל אחרים לא נספר כהוצאה שלך, וההחזר (למשל בביט) לא נספר כהכנסה — ורואים בדיוק מי חייב כמה.")
+                        Text("קנית למישהו משהו והוא יחזיר לך? במסך ״אשראי״ ← ״מה זה?״ ליד החיוב ← ״מישהו צריך להחזיר לי חלק מזה…״, או ״חוב חדש״ כאן.\nמה ששילמת בשביל אחרים לא נספר כהוצאה שלך, וההחזר (למשל בביט) לא נספר כהכנסה — ורואים בדיוק מי חייב כמה.")
                     } actions: {
                         Button("חוב חדש") { open = Receivable() }
                     }

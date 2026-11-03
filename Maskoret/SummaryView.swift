@@ -16,8 +16,9 @@ struct SummaryView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     AnnouncementBanner()
-                    PageBar(title: "סיכום — " + picture.periodTitle,
-                            subtitle: picture.isActual ? "לפי הנטו שנכנס בפועל החודש" : "לפי הערכת הנטו — רשום את הנטו בפועל כשמגיע התלוש") {
+                    PageBar(title: SidebarItem.summary.title + " — " + picture.periodTitle,
+                            subtitle: picture.isActual ? "לפי הנטו שנכנס בפועל החודש" : "לפי הערכת הנטו — רשום את הנטו בפועל כשמגיע התלוש",
+                            guide: .summary) {
                         Button {
                             showSaveMonth = true
                         } label: {
@@ -85,7 +86,7 @@ struct SummaryView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Palette.window)
-            .navigationTitle("סיכום")
+            .navigationTitle(SidebarItem.summary.title)
             .sheet(isPresented: $showSaveMonth) {
                 SaveMonthSheet()
                     .environmentObject(store)
@@ -522,7 +523,7 @@ struct MonthBreakdown: View {
             if !picture.fixedInCardSuspects.isEmpty {
                 Label {
                     Text(verbatim: "ייתכן שנספר פעמיים: " + picture.fixedInCardSuspects.joined(separator: ", ")
-                         + " — הסכום דומה להוצאה קבועה. כדי שלא ייספר שוב, קשר את החיוב להוצאה במסך כרטיס אשראי.")
+                         + " — הסכום דומה להוצאה קבועה. כדי שלא ייספר שוב, קשר את החיוב להוצאה במסך ״אשראי״.")
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")

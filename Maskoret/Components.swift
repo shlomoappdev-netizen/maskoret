@@ -455,6 +455,8 @@ struct RateLine: View {
 struct PageBar<Actions: View>: View {
     let title: String
     var subtitle: String? = nil
+    /// The screen this bar heads; its explanation line shows under the title until the user hides it.
+    var guide: SidebarItem? = nil
     @ViewBuilder var actions: Actions
 
     #if os(iOS)
@@ -478,6 +480,7 @@ struct PageBar<Actions: View>: View {
         if sizeClass == .compact {
             // iPhone: the title is in the navigation bar; the subtitle, then the buttons in a row that scrolls sideways.
             VStack(alignment: .leading, spacing: 10) {
+                if let guide { ScreenIntro(item: guide) }
                 if let subtitle {
                     Text(subtitle)
                         .font(.callout)
@@ -503,13 +506,54 @@ struct PageBar<Actions: View>: View {
     }
 
     private var wide: some View {
-        HStack(alignment: .center, spacing: 10) {
-            titleBlock
-            Spacer()
-            actions
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                titleBlock
+                Spacer()
+                actions
+            }
+            if let guide { ScreenIntro(item: guide) }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
+    }
+}
+
+/// A one-line "what's on this screen" note, hidden for good once the user closes it.
+struct ScreenIntro: View {
+    let item: SidebarItem
+    @AppStorage(ScreenIntro.storageKey) private var hidden = ""
+
+    static let storageKey = "hiddenScreenIntros"
+
+    private var isHidden: Bool { hidden.split(separator: ",").contains(Substring(item.rawValue)) }
+
+    var body: some View {
+        if let intro = item.intro, !isHidden {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.tint)
+                Text(intro)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    withAnimation { hidden = (hidden.isEmpty ? "" : hidden + ",") + item.rawValue }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("הסתר את ההסבר")
+                .accessibilityLabel("הסתר את ההסבר")
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        }
     }
 }
 

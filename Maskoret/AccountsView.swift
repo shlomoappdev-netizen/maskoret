@@ -13,7 +13,7 @@ struct AccountsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    PageBar(title: "חשבונות וחיסכון", subtitle: "כמה כסף יש לך עכשיו, ואיפה") {
+                    PageBar(title: SidebarItem.accounts.title, guide: .accounts) {
                         Button {
                             showUpdateAll = true
                         } label: {
@@ -68,7 +68,7 @@ struct AccountsView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Palette.window)
-            .navigationTitle("חשבונות וחיסכון")
+            .navigationTitle(SidebarItem.accounts.title)
             .sheet(item: $editing) { account in
                 AccountEditor(
                     account: account,

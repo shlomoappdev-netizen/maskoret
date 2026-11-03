@@ -8,7 +8,7 @@ struct TrendsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: "מגמות", subtitle: "כמה באמת הולך על דברים שאין להם קטגוריה — דייטים, מתנות, יציאות") {
+                PageBar(title: SidebarItem.trends.title, guide: .trends) {
                     Button {
                         creating = true
                     } label: {
@@ -63,7 +63,7 @@ struct TrendsView: View {
         ContentUnavailableView {
             Label("אין עדיין מגמות", systemImage: "tag")
         } description: {
-            Text("מגמה מרכזת הוצאות שמפוזרות בין בתי עסק וקטגוריות. למשל ״דייטים״: מסעדה, קולנוע, פרחים ומונית.\nאחרי שיוצרים מגמה משייכים אליה חיובים מעמוד ״כרטיס אשראי״ (בתפריט ״צמד ל…״), תנועות, או הוצאות במזומן — ורואים כמה זה יוצא בחודש.\nמגמות הן לניתוח בלבד — הן לא משנות את התקציב ולא נספרות פעמיים.")
+            Text("מגמה מרכזת הוצאות שמפוזרות בין בתי עסק וקטגוריות. למשל ״דייטים״: מסעדה, קולנוע, פרחים ומונית.\nאחרי שיוצרים מגמה משייכים אליה חיובים ממסך ״אשראי״ (בכפתור ״מה זה?״), תנועות, או הוצאות במזומן — ורואים כמה זה יוצא בחודש.\nמגמות הן לניתוח בלבד — הן לא משנות את התקציב ולא נספרות פעמיים.")
         } actions: {
             Button("מגמה חדשה") { creating = true }
                 .buttonStyle(.borderedProminent)
@@ -184,7 +184,7 @@ struct NewTrendSheet: View {
                 FormTextField("אימוג׳י", text: $trend.emoji)
                 AmountField(title: "תקרה חודשית (לא חובה)", value: $trend.monthlyLimit)
             } footer: {
-                Text("אחרי היצירה משייכים חיובים מעמוד ״כרטיס אשראי״ או מתוך המגמה עצמה.")
+                Text("אחרי היצירה משייכים חיובים ממסך ״אשראי״ או מתוך המגמה עצמה.")
             }
             Section("הצעות") {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], spacing: 8) {
@@ -399,7 +399,7 @@ struct TrendPickerSheet: View {
             }
             Section("חיובי אשראי") {
                 if cards.isEmpty {
-                    Text("אין חיובים. מייבאים אותם בעמוד ״כרטיס אשראי״.")
+                    Text("אין חיובים. מייבאים אותם במסך ״אשראי״.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(cards) { tx in

@@ -7,6 +7,7 @@ struct SupportView: View {
     @EnvironmentObject private var support: SupportCenter
     @State private var composing = false
     @State private var openThread: UUID?
+    @AppStorage(ScreenIntro.storageKey) private var hiddenIntros = ""
 
     var body: some View {
         NavigationStack {
@@ -20,6 +21,16 @@ struct SupportView: View {
                     }
                 } footer: {
                     Text("כותבים לנו כאן על תקלה, שאלה או רעיון, ומקבלים תשובה בתוך האפליקציה. כדאי לצרף את היומן הטכני כשמשהו לא עובד — הוא עוזר לנו להבין מה קרה.")
+                }
+
+                if !hiddenIntros.isEmpty {
+                    Section {
+                        Button {
+                            hiddenIntros = ""
+                        } label: {
+                            Label("הצג שוב את ההסברים בראש המסכים", systemImage: "info.circle")
+                        }
+                    }
                 }
 
                 Section("הפניות שלי") {

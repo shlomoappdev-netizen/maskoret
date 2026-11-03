@@ -11,7 +11,7 @@ struct MaaserView: View {
         let status = store.maaserStatus
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: "מעשרות", subtitle: s.enabled ? Fmt.percent(s.percent) + " · " + s.base.title : "מעקב אחרי מה שצריך לתת ומה שכבר ניתן") {
+                PageBar(title: SidebarItem.maaser.title, subtitle: s.enabled ? Fmt.percent(s.percent) + " · " + s.base.title : nil, guide: .maaser) {
                     if s.enabled {
                         Button { showSettings = true } label: { Label("הגדרות", systemImage: "slider.horizontal.3") }
                         Button { showDonation = true } label: { Label("נתתי מעשרות", systemImage: "plus") }
@@ -267,7 +267,7 @@ struct MaaserView: View {
                     }
                 }
             }
-            Text("סימון חיוב אשראי כמעשרות: בעמוד ״כרטיס אשראי״ ← ״צמד ל…״ ← מעשרות. הוראת קבע: בהגדרות המעשרות. קליק ימני על תרומה למחיקה.")
+            Text("סימון חיוב אשראי כמעשרות: במסך ״אשראי״ ← ״מה זה?״ ליד החיוב ← מעשרות. הוראת קבע: בהגדרות המעשרות. קליק ימני על תרומה למחיקה.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -333,7 +333,7 @@ struct MaaserSettingsSheet: View {
 
             Section("מה נכנס לבסיס") {
                 Toggle("ריבית מחיסכונות ופיקדונות", isOn: $store.money.maaser.includeInterest)
-                Toggle("הכנסות חד-פעמיות מ״תנועות״ (מתנות, בונוסים)", isOn: $store.money.maaser.includeOneOffs)
+                Toggle("הכנסות חד-פעמיות מ״עו״ש״ (מתנות, בונוסים)", isOn: $store.money.maaser.includeOneOffs)
                 if store.money.maaser.includeOneOffs && !oneOffIncomes.isEmpty {
                     ForEach(oneOffIncomes) { t in
                         Toggle(isOn: Binding(

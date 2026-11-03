@@ -12,7 +12,7 @@ struct TrackedItemsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-            PageBar(title: "מעקב רכישות", subtitle: "רכישות מחוץ לתלוש שחוזרות מדי פעם") {
+            PageBar(title: SidebarItem.tracked.title, guide: .tracked) {
                 Menu {
                     Button("פריט חדש…") {
                         newItem = TrackedItem()

@@ -55,7 +55,7 @@ struct CardView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: "כרטיס אשראי", subtitle: subtitle) {
+                PageBar(title: SidebarItem.card.title, subtitle: subtitle, guide: .card) {
                     if keys.count > 1 {
                         Picker("חודש חיוב", selection: Binding(get: { key ?? 0 }, set: { selectedKey = $0 })) {
                             ForEach(keys, id: \.self) { k in
@@ -94,7 +94,7 @@ struct CardView: View {
                     .background(Palette.window)
                 }
             }
-            .navigationTitle("כרטיס אשראי")
+            .navigationTitle(SidebarItem.card.title)
             .fileImporter(isPresented: $importing, allowedContentTypes: [UTType(filenameExtension: "xlsx") ?? .data],
                           allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result { for url in urls { runImport(url) } }
@@ -275,7 +275,7 @@ struct CardView: View {
             Text("הוצאות קבועות — מתוכנן מול אשראי")
                 .font(.headline)
             if expenses.isEmpty {
-                Text("עוד לא צימדת חיובים להוצאות קבועות. בחר ״צמד ל…״ ליד חיוב ברשימה למטה.")
+                Text("עוד לא צימדת חיובים להוצאות קבועות. בחר ״מה זה?״ ליד חיוב ברשימה למטה.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {

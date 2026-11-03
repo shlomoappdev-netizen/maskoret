@@ -9,7 +9,7 @@ struct IncomesView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-            PageBar(title: "הכנסות", subtitle: subtitle) {
+            PageBar(title: SidebarItem.incomes.title, subtitle: subtitle, guide: .incomes) {
                 Menu {
                     Button("הכנסה רגילה (ברוטו)…") { editing = IncomeItem() }
                     Button("משכורת צה״לית / הכנסה נטו…") {
