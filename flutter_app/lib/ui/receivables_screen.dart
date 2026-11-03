@@ -51,7 +51,7 @@ class _ReceivablesScreenState extends State<ReceivablesScreen> {
                 Text('אף אחד לא חייב לך', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 8),
                 const Text(
-                  'קנית למישהו משהו והוא יחזיר לך? בעמוד ״כרטיס אשראי״ ← ״צמד ל…״ ← ״מישהו צריך להחזיר לי…״, או ״חוב חדש״ כאן.\n'
+                  'קנית למישהו משהו והוא יחזיר לך? במסך ״אשראי״ ← ״מה זה?״ ליד החיוב ← ״מישהו צריך להחזיר לי חלק מזה…״, או ״חוב חדש״ כאן.\n'
                   'מה ששילמת בשביל אחרים לא נספר כהוצאה שלך, וההחזר (למשל בביט) לא נספר כהכנסה — ורואים בדיוק מי חייב כמה.',
                   textAlign: TextAlign.center,
                 ),

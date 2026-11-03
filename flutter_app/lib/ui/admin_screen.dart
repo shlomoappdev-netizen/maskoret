@@ -155,7 +155,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
               ),
               gap,
               Text(
-                  'ההודעה תופיע מיד לכל המשתמשים (גם בלי חשבון) בראש מסך הסיכום, עם איקס לסגירה. '
+                  'ההודעה תופיע מיד לכל המשתמשים (גם בלי חשבון) בראש מסך ״בית״, עם איקס לסגירה. '
                   'מי שסגר אותה לא יראה אותה שוב באותו מכשיר.',
                   style: muted),
             ]),

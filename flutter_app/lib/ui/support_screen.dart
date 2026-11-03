@@ -5,6 +5,7 @@ import '../data/fmt.dart';
 import '../support/support.dart';
 import '../sync/account.dart';
 import 'common.dart';
+import 'home_shell.dart';
 
 String _when(DateTime? d) =>
     d == null ? '' : '${Fmt.date(d)} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
@@ -101,6 +102,23 @@ class _SupportScreenState extends State<SupportScreen> {
             padding: EdgeInsets.fromLTRB(4, 0, 4, 12),
             child: Text('כותבים לנו כאן על תקלה, שאלה או רעיון, ומקבלים תשובה בתוך האפליקציה. כדאי לצרף את היומן הטכני '
                 'כשמשהו לא עובד — הוא עוזר לנו להבין מה קרה.'),
+          ),
+          // Brings back the explanation lines the user closed at the top of the screens.
+          ListenableBuilder(
+            listenable: screenIntros..attach(context.scope.prefs),
+            builder: (context, _) => screenIntros.hidden.isEmpty
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.info_outline),
+                        label: const Text('הצג שוב את ההסברים בראש המסכים'),
+                        onPressed: screenIntros.showAll,
+                      ),
+                    ),
+                  ),
           ),
           SectionCard(title: 'הפניות שלי', children: [
             if (!support.loaded) const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator()),

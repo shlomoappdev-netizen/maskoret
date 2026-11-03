@@ -67,7 +67,7 @@ class MaaserScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'החובה של חודש נכנסת לחשבון רק אחרי שרושמים את הנטו בפועל (בסיכום ← ״רשום נטו בפועל״, או בעמוד '
+                      'החובה של חודש נכנסת לחשבון רק אחרי שרושמים את הנטו בפועל (ב״בית״ ← ״רשום נטו בפועל״, או במסך '
                       '״חודשים״). התרומות של החודש כבר נספרות.',
                       style: theme.textTheme.bodySmall,
                     ),
@@ -220,7 +220,7 @@ class _Giving extends StatelessWidget {
             },
           ),
       ],
-      const EmptyHint('סימון חיוב אשראי כמעשרות: בעמוד ״כרטיס אשראי״ ← ״צמד ל…״ ← מעשרות. הוראת קבע: בהגדרות המעשרות. '
+      const EmptyHint('סימון חיוב אשראי כמעשרות: במסך ״אשראי״ ← ״מה זה?״ ליד החיוב ← מעשרות. הוראת קבע: בהגדרות המעשרות. '
           'לחיצה על תרומה מוחקת אותה.'),
     ]);
   }
@@ -307,7 +307,7 @@ class MaaserSettingsScreen extends StatelessWidget {
               onChanged: (v) => edit((m) => m.includeInterest = v),
             ),
             SwitchListTile(
-              title: const Text('הכנסות חד-פעמיות מ״תנועות״ (מתנות, בונוסים)'),
+              title: const Text('הכנסות חד-פעמיות מ״עו״ש״ (מתנות, בונוסים)'),
               value: s.includeOneOffs,
               onChanged: (v) => edit((m) => m.includeOneOffs = v),
             ),

@@ -32,7 +32,7 @@ class TrendsScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 const Text(
                   'מגמה מרכזת הוצאות שמפוזרות בין בתי עסק וקטגוריות. למשל ״דייטים״: מסעדה, קולנוע, פרחים ומונית.\n'
-                  'אחרי שיוצרים מגמה משייכים אליה חיובים מעמוד ״כרטיס אשראי״ (בתפריט ״צמד ל…״), תנועות, או הוצאות במזומן — '
+                  'אחרי שיוצרים מגמה משייכים אליה חיובים ממסך ״אשראי״ (בכפתור ״מה זה?״), תנועות, או הוצאות במזומן — '
                   'ורואים כמה זה יוצא בחודש.\nמגמות הן לניתוח בלבד — הן לא משנות את התקציב ולא נספרות פעמיים.',
                   textAlign: TextAlign.center,
                 ),
@@ -203,7 +203,7 @@ Future<void> newTrend(BuildContext context, {String? withCard}) async {
         label: 'תקרה חודשית (לא חובה)',
         suffix: '₪',
         value: 0,
-        helper: 'אחרי היצירה משייכים חיובים מעמוד ״כרטיס אשראי״ או מתוך המגמה עצמה.',
+        helper: 'אחרי היצירה משייכים חיובים ממסך ״אשראי״ או מתוך המגמה עצמה.',
         onChanged: (v) => limit = v,
       ),
       const SizedBox(height: 12),
@@ -451,7 +451,7 @@ class _TrendPickerState extends State<_TrendPicker> {
             ),
           ]),
           SectionCard(title: 'חיובי אשראי', children: [
-            if (cards.isEmpty) const EmptyHint('אין חיובים. מייבאים אותם בעמוד ״כרטיס אשראי״.'),
+            if (cards.isEmpty) const EmptyHint('אין חיובים. מייבאים אותם במסך ״אשראי״.'),
             for (final t in cards)
               CheckboxListTile(
                 controlAffinity: ListTileControlAffinity.leading,

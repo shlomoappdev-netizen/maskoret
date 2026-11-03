@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/card.dart';
 import '../data/max_import.dart';
@@ -37,9 +39,9 @@ enum Dest {
   incomes('הכנסות', Icons.payments_outlined),
   deductions('ניכויים', Icons.account_balance_outlined),
   expenses('הוצאות קבועות', Icons.shopping_cart_outlined),
-  accounts('חיסכון וחשבונות', Icons.savings_outlined),
-  card('כרטיס אשראי', Icons.credit_card),
-  transactions('תנועות', Icons.swap_horiz),
+  accounts('חיסכון', Icons.savings_outlined),
+  card('אשראי', Icons.credit_card),
+  transactions('עו״ש', Icons.swap_horiz),
   forecast('תחזית', Icons.show_chart),
   history('חודשים', Icons.calendar_month),
   maaser('מעשרות', Icons.volunteer_activism_outlined),
@@ -69,14 +71,78 @@ enum Dest {
   /// The menu item that shows this screen.
   Dest get home => moneyTabs.contains(this) ? money : (budgetTabs.contains(this) ? budget : this);
 
-  /// The short name inside a group's tabs, and on the phone's bottom tabs.
-  String get tabTitle => switch (this) {
-        transactions => 'עו״ש',
-        card => 'אשראי',
-        accounts => 'חיסכון',
-        expenses => 'קבועות',
-        _ => title,
+  /// One name for every screen, in the menu, the tabs and the titles (4.15.0).
+  String get tabTitle => title;
+
+  /// One line at the top of the screen: what's here and what you do with it (SidebarItem.intro in MaskoretApp.swift).
+  /// Null where the title says it all.
+  String? get intro => switch (this) {
+        summary => 'התמונה של החודש: כמה נכנס, כמה כבר יצא, כמה צפוי להישאר ומה מחכה לטיפול.',
+        transactions => 'כמו דף הבנק: כל מה שנכנס ויוצא מהעו״ש, עם היתרה אחרי כל שורה. משכורת, הוצאות קבועות וחיובי אשראי נכנסים לבד.',
+        card => 'העסקאות בכרטיסי האשראי. כאן מייבאים את קובץ הפירוט מ-Max או מ-CAL ומשייכים עסקאות למגמות.',
+        accounts => 'כמה כסף יש לך עכשיו ואיפה: עו״ש, חסכונות, פיקדונות והשקעות.',
+        incomes => 'המשכורת וההכנסות הנוספות. מכאן מחושב הנטו הצפוי בכל חודש.',
+        deductions => 'מה שיורד מהמשכורת לפני שהיא מגיעה לבנק, מעבר למס ולביטוח הלאומי.',
+        expenses => 'הוצאות שחוזרות כל חודש, כמו שכירות, חשמל ומנויים. הן יורדות מהעו״ש לבד בתאריך שלהן.',
+        tracked => 'רכישות שחוזרות מדי פעם ולא כל חודש, כדי לדעת כמה הן עולות בממוצע.',
+        forecast => 'לאן הכסף שלך הולך בחודשים הקרובים, לפי ההכנסות וההוצאות.',
+        history => 'כל חודש שנשמר: הנטו שנכנס בפועל מול ההערכה. מכאן מתקנים או מוחקים חודש.',
+        maaser => 'כמה צריך לתת לפי מה שנכנס, כמה כבר נתת וכמה נשאר.',
+        owed => 'כסף שאחרים חייבים לך, ומה כבר הוחזר.',
+        trends => 'תגיות לדברים שאין להם קטגוריה, כמו דייטים, מתנות ויציאות, כדי לראות כמה באמת הולך עליהם.',
+        insights => 'שאלות ותובנות על הכסף שלך, בעזרת מודל AI.',
+        _ => null,
       };
+
+  /// Other words people use for what's on this screen, for the screen search (SidebarItem.keywords).
+  List<String> get keywords => switch (this) {
+        summary => const ['סיכום', 'ראשי', 'נשאר', 'עוגה', 'לאן הולך הנטו', 'שמור חודש', 'תלוש', 'תלוש שכר'],
+        transactions => const ['תנועות', 'בנק', 'יתרה', 'דף חשבון', 'חשבון עובר ושב'],
+        card => const ['כרטיס אשראי', 'מקס', 'Max', 'כאל', 'CAL', 'ייבוא', 'פירוט עסקאות', 'חיוב'],
+        accounts => const ['חסכונות', 'חשבונות', 'פיקדון', 'השקעות', 'קופת גמל', 'קרן השתלמות'],
+        incomes => const ['משכורת', 'שכר', 'ברוטו', 'נטו', 'הכנסה'],
+        deductions => const ['ניכוי', 'פנסיה', 'קרן השתלמות', 'קופת חולים'],
+        expenses => const ['קבועות', 'הוצאות', 'שכירות', 'חשמל', 'מנויים', 'הוראת קבע'],
+        tracked => const ['רכישות', 'דלק', 'ביגוד', 'קניות'],
+        forecast => const ['עתיד', 'חודשים הבאים', 'צפי'],
+        history => const ['היסטוריה', 'חודשים קודמים', 'מחיקת חודש', 'תלוש'],
+        maaser => const ['מעשר', 'צדקה', 'תרומות', 'חומש'],
+        owed => const ['חובות', 'הלוואה', 'החזר', 'חייבים'],
+        trends => const ['תגיות', 'קטגוריות', 'דייטים', 'מתנות'],
+        insights => const ['AI', 'בינה מלאכותית', 'שאלות', 'Claude', 'LM Studio'],
+        family => const ['משפחה', 'בן זוג', 'בת זוג', 'בני בית'],
+        tax => const ['מס', 'מס הכנסה', 'נקודות זיכוי', 'ביטוח לאומי', 'מדרגות'],
+        account => const ['חשבון', 'משק בית', 'שיתוף', 'התחברות', 'Google', 'סנכרון', 'יציאה', 'מחיקת חשבון'],
+        support => const ['עזרה', 'תקלה', 'באג', 'פנייה', 'צור קשר'],
+        adminAnnouncements => const ['מנויים', 'משתמשים', 'הודעות לכולם', 'ניהול'],
+        versions => const ['גיבוי', 'שחזור', 'גרסה קודמת'],
+        updates => const ['עדכון', 'גרסה', 'הורדה', 'מה חדש'],
+        _ => const [],
+      };
+
+  /// The screens a search can open, in the order of the menu.
+  static List<Dest> searchable({bool admin = false}) => [
+        summary, ...moneyTabs, ...budgetTabs,
+        forecast, history, maaser, owed, trends, insights, family, tax, account, support,
+        if (admin) adminAnnouncements, versions, if (Updater.supported) updates,
+      ];
+
+  /// Where the screen sits, for the search results ("הכסף שלי ← עו״ש").
+  String get path => home == this ? title : '${home.title} ← $title';
+
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return [title, home.title, intro ?? '', ...keywords].any((f) => f.toLowerCase().contains(q));
+  }
+
+  /// The screen with its explanation line on top (hidden for good once closed).
+  Widget get screen => intro == null
+      ? page
+      : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          ScreenIntro(dest: this),
+          Expanded(child: page),
+        ]);
 
   Widget get page => switch (this) {
         summary => const SummaryScreen(),
@@ -144,6 +210,156 @@ class Nav extends ChangeNotifier {
 
 final nav = Nav();
 
+/// Which screens' explanation lines the user closed, on this device ("hiddenScreenIntros", like the Mac).
+class ScreenIntros extends ChangeNotifier {
+  static const key = 'hiddenScreenIntros';
+  SharedPreferences? _prefs;
+
+  void attach(SharedPreferences prefs) => _prefs ??= prefs;
+
+  Set<String> get hidden => {...?_prefs?.getString(key)?.split(',').where((s) => s.isNotEmpty)};
+  bool isHidden(Dest d) => hidden.contains(d.name);
+
+  void hide(Dest d) {
+    _prefs?.setString(key, {...hidden, d.name}.join(','));
+    notifyListeners();
+  }
+
+  void showAll() {
+    _prefs?.remove(key);
+    notifyListeners();
+  }
+}
+
+final screenIntros = ScreenIntros();
+
+/// "What's on this screen" in one line, with an ✕ that hides it for good (ScreenIntro in Components.swift).
+class ScreenIntro extends StatelessWidget {
+  const ScreenIntro({super.key, required this.dest});
+  final Dest dest;
+
+  @override
+  Widget build(BuildContext context) {
+    screenIntros.attach(context.scope.prefs);
+    return ListenableBuilder(
+      listenable: screenIntros,
+      builder: (context, _) {
+        final intro = dest.intro;
+        if (intro == null || screenIntros.isHidden(dest)) return const SizedBox.shrink();
+        final theme = Theme.of(context);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1060),
+              child: Container(
+                padding: const EdgeInsetsDirectional.fromSTEB(10, 8, 4, 8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(Icons.info_outline, size: 18, color: theme.colorScheme.primary),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(intro,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  ),
+                  IconButton(
+                    tooltip: 'הסתר את ההסבר',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 16,
+                    icon: Icon(Icons.close, color: theme.colorScheme.onSurfaceVariant),
+                    onPressed: () => screenIntros.hide(dest),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The screens whose name, place, explanation or common words match the query (ScreenSearchResults).
+class ScreenSearchResults extends StatelessWidget {
+  const ScreenSearchResults({super.key, required this.query, required this.onOpen});
+  final String query;
+  final ValueChanged<Dest> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final results = Dest.searchable(admin: context.scope.support.isAdmin).where((d) => d.matches(query)).toList();
+    if (results.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text('לא נמצא מסך כזה. נסה מילה אחרת, למשל ״משכורת״, ״אשראי״ או ״מעשר״.',
+            style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+      );
+    }
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      for (final d in results)
+        ListTile(
+          leading: Icon(d.icon, color: theme.colorScheme.primary),
+          title: Text(d.path),
+          subtitle: d.intro == null ? null : Text(d.intro!, maxLines: 2, overflow: TextOverflow.ellipsis),
+          onTap: () => onOpen(d),
+        ),
+    ]);
+  }
+}
+
+/// Ctrl+K on Windows (⌘K on the Mac): type what you're looking for and jump to its screen.
+Future<void> showScreenSearch(BuildContext context) async {
+  final picked = await showDialog<Dest>(
+    context: context,
+    builder: (ctx) {
+      var query = '';
+      return StatefulBuilder(
+        builder: (ctx, setState) => Dialog(
+          child: SizedBox(
+            width: 520,
+            height: 440,
+            child: Column(children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: TextField(
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'איזה מסך לפתוח? למשל ״משכורת״, ״אשראי״, ״מעשר״',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (v) => setState(() => query = v),
+                  onSubmitted: (_) {
+                    final first = Dest.searchable(admin: ctx.scope.support.isAdmin).where((d) => d.matches(query)).firstOrNull;
+                    if (first != null) Navigator.pop(ctx, first);
+                  },
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: ScreenSearchResults(query: query, onOpen: (d) => Navigator.pop(ctx, d)),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      );
+    },
+  );
+  if (picked != null && context.mounted) openDest(context, picked);
+}
+
 /// A few related screens behind one menu item, with tabs on top (GroupScreen in MaskoretApp.swift).
 class GroupScreen extends StatelessWidget {
   const GroupScreen({super.key, required this.tabs});
@@ -179,7 +395,7 @@ class GroupScreen extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(child: KeyedSubtree(key: ValueKey(selected), child: selected.page)),
+          Expanded(child: KeyedSubtree(key: ValueKey(selected), child: selected.screen)),
         ]);
       },
     );
@@ -233,9 +449,13 @@ class _HomeShellState extends State<HomeShell> {
             const SupportIconButton(),
           ],
         );
-        Widget content(Dest d) => d.page;
+        Widget content(Dest d) => d.screen;
         if (wide) {
-          return Scaffold(
+          return CallbackShortcuts(
+            bindings: {const SingleActivator(LogicalKeyboardKey.keyK, control: true): () => showScreenSearch(context)},
+            child: Focus(
+              autofocus: true,
+              child: Scaffold(
             appBar: appBar,
             body: Row(children: [
               Padding(
@@ -255,6 +475,8 @@ class _HomeShellState extends State<HomeShell> {
                 ]),
               ),
             ]),
+              ),
+            ),
           );
         }
         final tabIndex = more ? Dest.tabs.length : Dest.tabs.indexOf(current).clamp(0, Dest.tabs.length - 1);
@@ -469,6 +691,26 @@ class Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => showScreenSearch(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(children: [
+              Icon(Icons.search, size: 18, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Expanded(child: Text('חיפוש מסך', style: TextStyle(color: theme.colorScheme.onSurfaceVariant))),
+              Text('Ctrl+K', style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ]),
+          ),
+        ),
+      ),
       Expanded(
         child: ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
           for (final (title, items) in Dest.sections(admin: context.scope.support.isAdmin)) ...[
@@ -502,7 +744,7 @@ class Sidebar extends StatelessWidget {
   }
 }
 
-Widget _pageWithBar(Dest d) => d.ownScaffold ? d.page : Scaffold(appBar: AppBar(title: Text(d.title)), body: d.page);
+Widget _pageWithBar(Dest d) => d.ownScaffold ? d.screen : Scaffold(appBar: AppBar(title: Text(d.title)), body: d.screen);
 
 /// Opens one of the app's screens from another (a line in the checking statement, "מה מחכה לך"): back to the main
 /// screen, then its group and tab in the menu (store.openScreen in Swift).
@@ -512,8 +754,21 @@ void openDest(BuildContext context, Dest d) {
 }
 
 /// Phone: every screen that isn't a bottom tab, grouped like the Mac sidebar (MoreView in PhoneRoot.swift).
-class MoreScreen extends StatelessWidget {
+class MoreScreen extends StatefulWidget {
   const MoreScreen({super.key});
+
+  @override
+  State<MoreScreen> createState() => _MoreScreenState();
+}
+
+class _MoreScreenState extends State<MoreScreen> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -522,7 +777,38 @@ class MoreScreen extends StatelessWidget {
   }
 
   Widget _list(BuildContext context, bool admin) {
+    final query = _search.text.trim();
     return ListView(padding: const EdgeInsets.only(bottom: 110), children: [
+      // The screen search (the iPhone's search field in "עוד").
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+        child: TextField(
+          controller: _search,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            isDense: true,
+            prefixIcon: const Icon(Icons.search),
+            hintText: 'חיפוש מסך — משכורת, אשראי, מעשר…',
+            border: const OutlineInputBorder(),
+            suffixIcon: query.isEmpty
+                ? null
+                : IconButton(icon: const Icon(Icons.close), onPressed: () => setState(_search.clear)),
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+      ),
+      if (query.isNotEmpty)
+        SectionCard(title: 'מסכים', children: [
+          ScreenSearchResults(
+            query: query,
+            onOpen: (d) {
+              setState(_search.clear);
+              FocusScope.of(context).unfocus();
+              openDest(context, d);
+            },
+          ),
+        ])
+      else ...[
       const MonthNumbers(),
       const Divider(height: 1),
       for (final (title, items) in Dest.sections(admin: admin))
@@ -540,6 +826,7 @@ class MoreScreen extends StatelessWidget {
               ),
           ]),
       const Padding(padding: EdgeInsets.only(top: 4), child: AppVersionLabel()),
+      ],
     ].map((w) => w is SectionCard ? Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: w) : w).toList());
   }
 }

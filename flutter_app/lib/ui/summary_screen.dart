@@ -59,7 +59,7 @@ class SummaryScreen extends StatelessWidget {
         const FamilyContextLine(),
         Padding(
           padding: const EdgeInsets.only(bottom: 10),
-          child: Text('סיכום — ${pic.periodTitle}', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          child: Text('בית — ${pic.periodTitle}', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         ),
         Wrap(spacing: 8, runSpacing: 8, children: [
           FilledButton.icon(
@@ -528,7 +528,7 @@ List<Widget> monthBreakdown(BuildContext context, MonthPicture pic) {
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              'ייתכן שנספר פעמיים: ${pic.fixedInCardSuspects.join(', ')} — הסכום דומה להוצאה קבועה. כדי שלא ייספר שוב, קשר את החיוב להוצאה במסך כרטיס אשראי.',
+              'ייתכן שנספר פעמיים: ${pic.fixedInCardSuspects.join(', ')} — הסכום דומה להוצאה קבועה. כדי שלא ייספר שוב, קשר את החיוב להוצאה במסך ״אשראי״.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orange.shade800),
             ),
           ),

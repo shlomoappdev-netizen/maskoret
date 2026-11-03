@@ -95,7 +95,7 @@ class _CardScreenState extends State<CardScreen> {
       final wide = isWide(context);
       final cats = _categories(context, cards, monthTxs);
       final fixed = _fixed(context, store, cards, key);
-      // The import button sits in the header, not floating: a floating one covered the "צמד ל…" of a charge.
+      // The import button sits in the header, not floating: a floating one covered the "מה זה?" of a charge.
       return Scaffold(
         body: PageList(children: [
           Row(children: [
@@ -269,7 +269,7 @@ class _CardScreenState extends State<CardScreen> {
     final expenses = budget.expenses.where((e) => actuals.containsKey(e.id)).toList();
     final theme = Theme.of(context);
     return SectionCard(title: 'הוצאות קבועות — מתוכנן מול אשראי', children: [
-      if (expenses.isEmpty) const EmptyHint('עוד לא צימדת חיובים להוצאות קבועות. בחר ״צמד ל…״ ליד חיוב ברשימה למטה.'),
+      if (expenses.isEmpty) const EmptyHint('עוד לא צימדת חיובים להוצאות קבועות. בחר ״מה זה?״ ליד חיוב ברשימה למטה.'),
       for (final e in expenses)
         () {
           final planned = e.amount(budget.expenseBase);
@@ -398,7 +398,7 @@ class _Banner extends StatelessWidget {
   }
 }
 
-/// One charge, with its details, tags and the "צמד ל…" menu.
+/// One charge, with its details, tags and its "מה זה?" button.
 class CardTxRow extends StatelessWidget {
   const CardTxRow({super.key, required this.tx, required this.cards});
   final CardTransaction tx;

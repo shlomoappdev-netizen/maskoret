@@ -400,7 +400,7 @@ class _QuickEntryState extends State<_QuickEntry> {
           final header = Row(
             children: [
               Expanded(
-                child: Text('תנועות בעו״ש', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                child: Text('עו״ש', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
               ),
               detailed,
             ],
@@ -658,7 +658,7 @@ Future<void> showActualCharge(BuildContext context, LedgerLine line) async {
             Navigator.pop(ctx, false);
             openDest(context, Dest.card);
           },
-          child: const Text('פתח את מסך כרטיס האשראי'),
+          child: const Text('פתח את מסך ״אשראי״'),
         ),
       ),
     ]),
