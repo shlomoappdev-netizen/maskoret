@@ -71,8 +71,10 @@ class AppStore extends ChangeNotifier {
   bool _adoptSavingsTransfers() {
     final f = file;
     final adopted = f.money.adoptSavingsTransfers(f.budget);
+    // Foreign-currency card charges with no ₪ amount yet, at the saved rates (convertForeignCharges in Store.swift).
+    final converted = f.money.convertForeignCharges() > 0;
     // A pending purchase that already shows up as a charge is the same charge (dropConfirmedPending in Card.swift).
-    return f.money.dropConfirmedPending() > 0 || adopted;
+    return f.money.dropConfirmedPending() > 0 || adopted || converted;
   }
 
   FamilyMember? get activeMember {

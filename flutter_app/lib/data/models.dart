@@ -683,6 +683,89 @@ class MoneyData {
     }
   }
 
+  /// Until the first check with the Bank of Israel (November 2026), like MoneyData.fallbackRates.
+  static const fallbackRates = {'USD': 3.157, 'EUR': 3.5306, 'GBP': 4.235};
+
+  /// Bank of Israel representative rates: ₪ for one unit of each currency ("USD": 3.157), for card charges in a
+  /// foreign currency that the statement doesn't show in ₪ yet. Synced with the Mac and iPhone, so always kept.
+  Map<String, double> get exchangeRates {
+    final m = _o.raw('exchangeRates');
+    if (m is! Map) return Map.of(fallbackRates);
+    return {for (final e in m.entries) if (e.value is num) '${e.key}': (e.value as num).toDouble()};
+  }
+
+  set exchangeRates(Map<String, double> v) => _o.set('exchangeRates', {for (final e in v.entries) e.key: jsonNumber(e.value)});
+
+  DateTime? get exchangeRatesAt => _o.date('exchangeRatesAt');
+  set exchangeRatesAt(DateTime? v) => _o.set('exchangeRatesAt', v);
+
+  /// The rates of each day the app saw them ("2026-11-03" → rates), so a charge is converted at the rate of the day
+  /// it was made. The Bank of Israel API gives only today's rates, so the days fill in as the app is used.
+  Map<String, Map<String, double>> get exchangeRateHistory {
+    final m = _o.raw('exchangeRateHistory');
+    if (m is! Map) return {};
+    return {
+      for (final e in m.entries)
+        if (e.value is Map)
+          '${e.key}': {for (final r in (e.value as Map).entries) if (r.value is num) '${r.key}': (r.value as num).toDouble()},
+    };
+  }
+
+  set exchangeRateHistory(Map<String, Map<String, double>> v) => _o.set('exchangeRateHistory', {
+        for (final e in v.entries) e.key: {for (final r in e.value.entries) r.key: jsonNumber(r.value)},
+      });
+
+  /// "2026-11-03": the day a rate belongs to (rateDayFormat in Card.swift; the device's day here).
+  static String rateDay(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// The rate of the day `date` was in, or of the last day before it the app has; today's rate when it has none that
+  /// old. `day` is the day the rate is from (null: the current rate).
+  ({double rate, String? day})? exchangeRate(String code, DateTime date) {
+    final day = rateDay(date);
+    final history = exchangeRateHistory;
+    String? best;
+    for (final k in history.keys) {
+      if (k.compareTo(day) <= 0 && history[k]![code] != null && (best == null || k.compareTo(best) > 0)) best = k;
+    }
+    if (best != null) return (rate: history[best]![code]!, day: best);
+    final now = exchangeRates[code];
+    return now == null ? null : (rate: now, day: null);
+  }
+
+  /// Saves the rates the Bank of Israel published (for the day they were published) and keeps half a year of them.
+  void recordExchangeRates(Map<String, double> rates, DateTime publishedAt) {
+    exchangeRates = {...exchangeRates, ...rates};
+    final day = rateDay(publishedAt);
+    final history = exchangeRateHistory;
+    history[day] = {...?history[day], ...rates};
+    final oldest = rateDay(publishedAt.subtract(const Duration(days: 183)));
+    history.removeWhere((k, _) => k.compareTo(oldest) < 0);
+    exchangeRateHistory = history;
+    exchangeRatesAt = DateTime.now();
+  }
+
+  /// Puts foreign-currency charges that have no ₪ amount yet in shekels, at the saved rates. Also fixes charges saved
+  /// before this existed, whose ₪ amount was just the foreign number. Returns how many changed (convertForeignCharges).
+  int convertForeignCharges() {
+    var changed = 0;
+    for (final j in _o.objects('cardTransactions')) {
+      final tx = CardTransaction(j);
+      final code = tx.foreignCurrency;
+      if (code == null || tx.originalAmount == 0) continue;
+      final unconverted = !tx.amountEstimated && (tx.amount - tx.originalAmount).abs() < 0.005;
+      final rate = exchangeRate(code, tx.date)?.rate;
+      if (!(tx.amountEstimated || unconverted) || rate == null || rate <= 0) continue;
+      final amount = (tx.originalAmount * rate * 100).round() / 100;
+      if (!tx.amountEstimated || (tx.amount - amount).abs() > 0.005) {
+        j['amount'] = jsonNumber(amount);
+        j['amountEstimated'] = true;
+        changed++;
+      }
+    }
+    return changed;
+  }
+
   /// Saves one card's settings (upsertCardSetting in Store.swift). A null `chargeDay` isn't written, like Swift.
   void upsertCardSetting(Json setting) {
     if (setting['chargeDay'] == null) setting.remove('chargeDay');

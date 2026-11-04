@@ -40,6 +40,7 @@ void main() {
             reason: 'row $i chargeDate');
       }
       expect(d.status, s['status']);
+      expect(d.amountEstimated, s['amountEstimated'], reason: 'row $i amountEstimated');
       expect(d.category, s['category']);
       final inst = d.installment;
       expect(inst == null ? '' : '${inst.number}/${inst.of}', s['installment']);

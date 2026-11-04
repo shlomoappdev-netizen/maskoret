@@ -18,7 +18,7 @@ class Dashboard {
     final accounts = <dynamic>[], transactions = <dynamic>[], cards = <dynamic>[], rules = <dynamic>[];
     final receivables = <dynamic>[], imports = <dynamic>[], trends = <dynamic>[];
     final money = <String, dynamic>{
-      for (final k in ['forecast', 'payDay', 'primeRate', 'primeAuto', 'boiRate', 'primeCheckedAt', 'nextRateDecision', 'rateLastChanged'])
+      for (final k in ['forecast', 'payDay', 'primeRate', 'primeAuto', 'boiRate', 'primeCheckedAt', 'nextRateDecision', 'rateLastChanged', 'exchangeRates', 'exchangeRatesAt'])
         if (baseMoney[k] != null) k: deepCopy(baseMoney[k]),
       'accounts': accounts,
       'transactions': transactions,

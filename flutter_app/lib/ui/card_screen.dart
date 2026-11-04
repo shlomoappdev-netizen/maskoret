@@ -418,8 +418,18 @@ class CardTxRow extends StatelessWidget {
       parts.add('נקנה יותר מפעם אחת באותו יום');
     }
     final currency = JObj(tx.json).s('originalCurrency', '₪');
-    if (currency != '₪' && currency.isNotEmpty) {
-      parts.add('${Fmt.number(tx.originalAmount)} $currency');
+    final code = tx.foreignCurrency;
+    if (code != null) {
+      // An estimate in ₪ says at which rate (Bank of Israel), until the statement brings the real charge.
+      var foreign = '${Fmt.number(tx.originalAmount)} $currency';
+      final r = tx.amountEstimated ? context.store.money.exchangeRate(code, tx.date) : null;
+      if (r != null) {
+        foreign += ' · לפי שער ${Fmt.number((r.rate * 1000).round() / 1000)}';
+        // The day the rate is from, or "(היום)" when it's today's (no rate saved from that day or before).
+        final day = r.day == null ? null : DateTime.tryParse(r.day!);
+        foreign += day == null ? ' (היום)' : ' מ-${day.day}.${day.month.toString().padLeft(2, '0')}';
+      }
+      parts.add(foreign);
     } else if ((tx.originalAmount - tx.amount).abs() > 0.01 && tx.originalAmount != 0) {
       parts.add('עסקה מקורית ${Fmt.money(tx.originalAmount)}');
     }
@@ -466,9 +476,13 @@ class CardTxRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(Fmt.money(_r(tx.amount)),
-                textDirection: TextDirection.rtl,
-                style: TextStyle(fontWeight: FontWeight.w600, color: amountColor)),
+            () {
+              final text = Text('${tx.amountEstimated ? '≈ ' : ''}${Fmt.money(_r(tx.amount))}',
+                  textDirection: TextDirection.rtl, style: TextStyle(fontWeight: FontWeight.w600, color: amountColor));
+              return tx.amountEstimated
+                  ? Tooltip(message: 'הערכה לפי השער היציג של בנק ישראל, עד שהחיוב בשקלים יופיע בפירוט', child: text)
+                  : text;
+            }(),
             _ClassifyButton(tx: tx),
           ]),
         ]),
@@ -564,7 +578,7 @@ Future<void> showClassify(BuildContext context, String txID) {
                     style: theme.textTheme.bodySmall?.copyWith(color: muted)),
               ]),
             ),
-            Text(Fmt.money(tx.amount),
+            Text('${tx.amountEstimated ? '≈ ' : ''}${Fmt.money(tx.amount)}',
                 textDirection: TextDirection.rtl, style: theme.textTheme.titleMedium?.copyWith(fontFeatures: tabular)),
           ]),
           header('איך זה נספר בתקציב'),

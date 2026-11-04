@@ -18,7 +18,8 @@ if CommandLine.arguments[1] == "max" {
     let rows: [[String: Any]] = result.transactions.map { t in
         ["id": t.id, "amount": t.amount, "originalAmount": t.originalAmount, "date": t.date.timeIntervalSinceReferenceDate,
          "chargeDate": t.chargeDate?.timeIntervalSinceReferenceDate ?? 0, "status": t.status.rawValue,
-         "category": t.category, "merchant": t.merchant, "note": t.note, "installment": t.installment.map { "\($0.number)/\($0.of)" } ?? ""]
+         "category": t.category, "merchant": t.merchant, "note": t.note, "installment": t.installment.map { "\($0.number)/\($0.of)" } ?? "",
+         "amountEstimated": t.amountEstimated]
     }
     print(String(data: try JSONSerialization.data(withJSONObject: ["label": result.billingLabel, "rows": rows], options: [.sortedKeys]), encoding: .utf8)!)
     exit(0)
@@ -35,6 +36,25 @@ if CommandLine.arguments[1] == "adopt" {
         let changed = money.adoptSavingsTransfers(from: &budget)
         out[id] = ["changed": changed, "expenses": budget.expenses.map { $0.id.uuidString },
                    "contributions": money.accounts.map { $0.monthlyContribution }, "days": money.accounts.map { $0.contributionDay }]
+    }
+    print(String(data: try JSONSerialization.data(withJSONObject: out, options: [.sortedKeys]), encoding: .utf8)!)
+    exit(0)
+}
+
+// "convert <household.json>": convertForeignCharges on every member's card charges, twice (Card.swift).
+if CommandLine.arguments[1] == "convert" {
+    let family = try JSONDecoder().decode(FamilyBackup.self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2])))
+    var out: [String: Any] = [:]
+    for (id, f) in family.files {
+        var money = f.money ?? MoneyData()
+        let first = money.convertForeignCharges()
+        let second = money.convertForeignCharges()
+        // Encoded and read back: the flag and the rates survive.
+        let again = try JSONDecoder().decode(MoneyData.self, from: JSONEncoder().encode(money))
+        out[id] = ["first": first, "second": second,
+                   "amounts": money.cardTransactions.map(\.amount), "estimated": money.cardTransactions.map(\.amountEstimated),
+                   "roundTrip": again.cardTransactions.map(\.amountEstimated) == money.cardTransactions.map(\.amountEstimated),
+                   "rates": money.exchangeRates]
     }
     print(String(data: try JSONSerialization.data(withJSONObject: out, options: [.sortedKeys]), encoding: .utf8)!)
     exit(0)

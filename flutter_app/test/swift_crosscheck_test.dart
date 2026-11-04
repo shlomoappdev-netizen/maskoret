@@ -706,6 +706,74 @@ void main() {
     expect(file.money.dropConfirmedPending(), 0, reason: 'runs once');
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 
+  test('foreign-currency charges with no ₪ amount go to shekels at the saved rates, exactly like Swift', () {
+    final doc = loadFixture();
+    final family = FamilyBackup(doc);
+    final file = family.fileForEditing(family.state.activeID);
+    final cards = JObj.lazy(file.json, 'money').writeList('cardTransactions');
+    final template = (cards.first as Map).cast<String, dynamic>();
+    Json charge(String id, double amount, double original, String currency, DateTime date, {bool estimated = false}) => {
+          ...deepCopy(template) as Json,
+          'id': id,
+          'date': dateTimeToSwift(date),
+          'amount': amount,
+          'originalAmount': original,
+          'originalCurrency': currency,
+          if (estimated) 'amountEstimated': true,
+        }..remove('linkedExpenseID')..remove('linkedTrackedID');
+    final d = DateTime(2026, 11, 2, 12), oct = DateTime(2026, 10, 15, 12), aug = DateTime(2026, 8, 1, 12);
+    cards.addAll([
+      charge('fx-pending', 10, 10, r'$', d), // pending in dollars: the foreign number was taken as shekels
+      charge('fx-stale', 50, 20, 'EUR', d, estimated: true), // estimated at an old rate
+      charge('fx-real', 37.2, 10, 'USD', d), // the statement already brought the ₪ charge: untouched
+      charge('fx-yen', 1500, 1500, 'JPY', d), // a currency the rates know only after a check
+      charge('fx-october', 10, 10, 'USD', oct), // the rate of its own day (the last saved one before it)
+      charge('fx-august', 10, 10, 'USD', aug), // older than every saved day: today's rate
+      charge('ils', 99.9, 99.9, '₪', d),
+    ]);
+    file.money.exchangeRates = {...MoneyData.fallbackRates, 'JPY': 0.019957};
+    file.money.exchangeRateHistory = {
+      '2026-10-01': {'USD': 3.7},
+      '2026-10-20': {'USD': 3.9},
+    };
+
+    final dir = Directory.systemTemp.createTempSync('convert');
+    final path = '${dir.path}/h.json';
+    File(path).writeAsStringSync(jsonEncode(doc));
+    final out = Process.runSync('zsh', ['tool/swift_check.sh', 'convert', path], stdoutEncoding: utf8);
+    dir.deleteSync(recursive: true);
+    expect(out.exitCode, 0, reason: '${out.stderr}');
+    final s = (jsonDecode(out.stdout as String) as Map)[family.state.activeID] as Map;
+
+    final first = file.money.convertForeignCharges();
+    expect(first, s['first']);
+    expect(file.money.convertForeignCharges(), 0, reason: 'runs once');
+    expect(s['second'], 0);
+    expect(s['roundTrip'], isTrue, reason: 'Swift keeps the flag when it saves');
+    final txs = CardData(file.money).cardTransactions;
+    deepClose([for (final t in txs) t.amount], s['amounts'], 'amounts');
+    expect([for (final t in txs) t.amountEstimated], s['estimated']);
+    final byId = {for (final t in txs) t.id: t};
+    expect(byId['fx-stale']!.amount, 70.61);
+    expect(byId['fx-real']!.amount, 37.2);
+    expect(byId['fx-real']!.amountEstimated, isFalse);
+    expect(byId['fx-yen']!.amount, 29.94);
+    expect(byId['fx-october']!.amount, 37.0);
+    expect(byId['fx-august']!.amount, 31.57);
+    expect(byId['fx-pending']!.amount, 39.0, reason: 'the last saved day before November 2 is October 20');
+    expect(byId['ils']!.amount, 99.9);
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
+  test('saved rates by day: the day it was published, half a year kept', () {
+    final family = FamilyBackup(loadFixture());
+    final money = family.fileForEditing(family.state.activeID).money..exchangeRateHistory = {'2026-01-01': {'USD': 3.5}, '2026-10-01': {'USD': 3.7}};
+    money.recordExchangeRates({'USD': 3.2, 'EUR': 3.6}, DateTime(2026, 11, 3));
+    expect(money.exchangeRates['USD'], 3.2);
+    expect(money.exchangeRateHistory.keys.toSet(), {'2026-10-01', '2026-11-03'});
+    expect(money.exchangeRate('USD', DateTime(2026, 11, 2, 12))?.day, '2026-10-01');
+    expect(money.exchangeRate('EUR', DateTime(2026, 10, 2, 12))?.day, isNull, reason: 'no EUR rate that old: today\'s');
+  });
+
   test('a new household made by this app is read by Swift', () {
     final doc = Starter.family();
     final f = FamilyBackup(doc).file(FamilyBackup(doc).state.primaryID)!;

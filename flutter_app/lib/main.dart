@@ -28,6 +28,7 @@ import 'support/announcements.dart';
 import 'support/app_log.dart';
 import 'support/support.dart';
 import 'update/updater.dart';
+import 'data/exchange_rates.dart';
 import 'update/whats_new.dart';
 
 /// --dart-define=DEMO=true: open straight into the app with demo data (for checking screens).
@@ -52,6 +53,8 @@ Future<void> main() async {
   if (demo) store.replace((jsonDecode(await rootBundle.loadString('assets/demo_household.json')) as Map).cast<String, dynamic>());
   // The rates file (if the household set one): twice a day at most, like Store.refreshRates.
   if (!demo) _checkRates(store);
+  // Bank of Israel rates, for card charges in a foreign currency (like the prime rate on the Mac).
+  if (!demo) ExchangeRatesUpdate.refresh(store);
   final account = UserAccount(prefs);
   final deviceName = await _deviceName();
   final sync = ServerSync(
@@ -149,6 +152,7 @@ class _MaskoretAppState extends State<MaskoretApp> {
       // Back from allowing installs from this app: the downloaded update installs by itself (before a new check).
       widget.updater.resumed();
       widget.updater.check();
+      if (!demo) ExchangeRatesUpdate.refresh(widget.store);
       widget.announcements.refresh();
     });
     widget.updater.addListener(_offerUpdate);

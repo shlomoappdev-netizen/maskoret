@@ -20,6 +20,28 @@ class CardTransaction {
   String get cardLast4 => _o.s('cardLast4');
   double get amount => _o.d('amount');
   double get originalAmount => _o.d('originalAmount');
+
+  /// A foreign-currency charge the statement doesn't show in ₪ yet: `amount` is `originalAmount` at the Bank of
+  /// Israel rate, until a later statement brings the real charge.
+  bool get amountEstimated => _o.b('amountEstimated');
+
+  /// The ISO code of a foreign original currency ("$" → "USD"), null for shekels (currencyCode in Card.swift).
+  static String? currencyCode(String raw) {
+    final s = raw.trim().toUpperCase();
+    switch (s) {
+      case '' || '₪' || 'ILS' || 'NIS' || 'ש"ח' || 'ש״ח' || 'שח' || 'שקל':
+        return null;
+      case r'$' || 'USD' || r'US$' || 'דולר':
+        return 'USD';
+      case '€' || 'EUR' || 'יורו':
+        return 'EUR';
+      case '£' || 'GBP' || 'ליש"ט' || 'ליש״ט' || 'לישט':
+        return 'GBP';
+    }
+    return RegExp(r'^\p{L}{3}$', unicode: true).hasMatch(s) ? s : null;
+  }
+
+  String? get foreignCurrency => currencyCode(_o.s('originalCurrency'));
   DateTime? get chargeDate => _o.date('chargeDate');
   bool get chargeEstimated => _o.b('chargeEstimated');
   String get note => _o.s('note');

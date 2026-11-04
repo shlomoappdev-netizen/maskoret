@@ -213,6 +213,7 @@ class MaxParser {
       final cAmount = col('סכום חיוב');
       final cOriginal = col('סכום עסקה מקורי');
       final cOrigCurrency = col('מטבע עסקה מקורי');
+      final cChargeCurrency = col('מטבע חיוב');
       final cCharge = col('תאריך חיוב');
       final cNote = col('הערות');
       final cMethod = colContaining('אופן ביצוע');
@@ -237,6 +238,9 @@ class MaxParser {
           'amount': jsonNumber(charged ?? original),
           'originalAmount': jsonNumber(original),
           'originalCurrency': currency.isEmpty ? '₪' : currency,
+          // No ₪ amount yet (pending), or charged in a foreign currency (the "חו״ל ומט״ח" sheet): converted later.
+          'amountEstimated': CardTransaction.currencyCode(currency) != null &&
+              (charged == null || CardTransaction.currencyCode(cell(cChargeCurrency)) != null),
           if (chargeDate != null) 'chargeDate': dateTimeToSwift(chargeDate),
           'chargeEstimated': chargeDate == null,
           'note': cell(cNote),
@@ -354,6 +358,7 @@ class CalParser {
             'amount': jsonNumber(amount),
             'originalAmount': jsonNumber(amount),
             'originalCurrency': '₪',
+            'amountEstimated': false,
             if (chargeDate != null) 'chargeDate': dateTimeToSwift(chargeDate),
             'chargeEstimated': chargeDate == null,
             'note': pending ? '' : note,
@@ -610,6 +615,8 @@ class CardActions {
     all.addAll([...fresh, ...kept]);
 
     file.money.renameCardIDs(renamed);
+    // Foreign-currency charges with no ₪ amount yet, at the saved Bank of Israel rates.
+    file.money.convertForeignCharges();
     // Pending items kept from before that this file shows as charged under a slightly different name.
     file.money.dropConfirmedPending();
 
