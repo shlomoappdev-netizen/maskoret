@@ -427,7 +427,9 @@ class CardTxRow extends StatelessWidget {
         foreign += ' · לפי שער ${Fmt.number((r.rate * 1000).round() / 1000)}';
         // The day the rate is from, or "(היום)" when it's today's (no rate saved from that day or before).
         final day = r.day == null ? null : DateTime.tryParse(r.day!);
-        foreign += day == null ? ' (היום)' : ' מ-${day.day}.${day.month.toString().padLeft(2, '0')}';
+        foreign += day == null
+            ? ' (היום)'
+            : ' מ-${day.day.toString().padLeft(2, '0')}.${day.month.toString().padLeft(2, '0')}';
       }
       parts.add(foreign);
     } else if ((tx.originalAmount - tx.amount).abs() > 0.01 && tx.originalAmount != 0) {

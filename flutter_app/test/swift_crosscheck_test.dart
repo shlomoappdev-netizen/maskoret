@@ -764,6 +764,26 @@ void main() {
     expect(byId['ils']!.amount, 99.9);
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 
+  test('the rate of the transaction day: 01.11 → 3.10, 02.11 (no rate) → 01.11, 03.11 → 3.157, 20.10 → today', () {
+    final family = FamilyBackup(loadFixture());
+    final file = family.fileForEditing(family.state.activeID);
+    final money = file.money
+      ..exchangeRates = {'USD': 3.2}
+      ..exchangeRateHistory = {'2026-11-01': {'USD': 3.10}, '2026-11-03': {'USD': 3.157}};
+    final cards = JObj.lazy(file.json, 'money').writeList('cardTransactions');
+    final template = (cards.first as Map).cast<String, dynamic>();
+    for (final (id, day) in [('nov1', DateTime(2026, 11, 1, 12)), ('nov2', DateTime(2026, 11, 2, 12)),
+      ('nov3', DateTime(2026, 11, 3, 12)), ('oct20', DateTime(2026, 10, 20, 12))]) {
+      cards.add({...deepCopy(template) as Json, 'id': id, 'date': dateTimeToSwift(day), 'amount': 10, 'originalAmount': 10,
+        'originalCurrency': 'USD'}..remove('linkedExpenseID')..remove('linkedTrackedID'));
+    }
+    expect(money.convertForeignCharges(), 4);
+    final byId = {for (final t in CardData(file.money).cardTransactions) t.id: t.amount};
+    expect([byId['nov1'], byId['nov2'], byId['nov3'], byId['oct20']], [31.0, 31.0, 31.57, 32.0]);
+    expect(money.exchangeRate('USD', DateTime(2026, 11, 2, 12))?.day, '2026-11-01');
+    expect(money.exchangeRate('USD', DateTime(2026, 10, 20, 12))?.day, isNull);
+  });
+
   test('saved rates by day: the day it was published, half a year kept', () {
     final family = FamilyBackup(loadFixture());
     final money = family.fileForEditing(family.state.activeID).money..exchangeRateHistory = {'2026-01-01': {'USD': 3.5}, '2026-10-01': {'USD': 3.7}};
