@@ -120,6 +120,7 @@ final class Store: ObservableObject {
             money = file.money ?? MoneyData()
             migrated = money.adoptSavingsTransfers(from: &budget)
             if money.dropConfirmedPending() > 0 { migrated = true }
+            if money.convertForeignCharges() > 0 { migrated = true }
             MoneyCalc.prime = money.primeRate
         } else {
             budget = .starter
@@ -162,6 +163,7 @@ final class Store: ObservableObject {
         money = file.money ?? MoneyData()
         _ = money.adoptSavingsTransfers(from: &budget)
         money.dropConfirmedPending()
+        money.convertForeignCharges()
     }
 
     var currentFile: SaveFile {
@@ -186,6 +188,34 @@ final class Store: ObservableObject {
         if let d = f.date(from: string) { return d }
         f.formatOptions = [.withInternetDateTime]
         return f.date(from: string)
+    }
+
+    /// Bank of Israel representative exchange rates, for card charges in a foreign currency. Checked a few times a day.
+    @MainActor
+    func refreshExchangeRates() async {
+        if let last = money.exchangeRatesAt, Date().timeIntervalSince(last) < 6 * 3600 { return }
+        guard let url = URL(string: "https://www.boi.org.il/PublicApi/GetExchangeRates?asJson=true") else { return }
+        struct Reply: Decodable {
+            struct Rate: Decodable { let key: String; let currentExchangeRate: Double; let unit: Double }
+            let exchangeRates: [Rate]
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.timeoutInterval = 15
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 { throw URLError(.badServerResponse) }
+            let reply = try JSONDecoder().decode(Reply.self, from: data)
+            var updated = money
+            for r in reply.exchangeRates where r.unit > 0 && r.currentExchangeRate > 0 {
+                updated.exchangeRates[r.key.uppercased()] = r.currentExchangeRate / r.unit
+            }
+            updated.exchangeRatesAt = Date()
+            updated.convertForeignCharges()
+            money = updated
+        } catch {
+            // Offline: the saved rates stay.
+        }
     }
 
     /// Prime = Bank of Israel rate + 1.5%. Checked a few times a day, and right after a rate decision.

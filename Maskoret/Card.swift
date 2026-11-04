@@ -28,6 +28,9 @@ struct CardTransaction: Identifiable, Codable, Equatable, Hashable {
     var amount: Double = 0
     var originalAmount: Double = 0
     var originalCurrency: String = "₪"
+    /// A foreign-currency charge the statement doesn't show in ₪ yet: `amount` is `originalAmount` at the Bank of
+    /// Israel rate, until a later statement brings the real charge.
+    var amountEstimated: Bool = false
     var chargeDate: Date? = nil
     var chargeEstimated: Bool = false
     var note: String = ""
@@ -41,7 +44,7 @@ struct CardTransaction: Identifiable, Codable, Equatable, Hashable {
     var owedPortion: Double = 0
 
     private enum CodingKeys: String, CodingKey {
-        case id, date, merchant, category, cardLast4, type, amount, originalAmount, originalCurrency
+        case id, date, merchant, category, cardLast4, type, amount, originalAmount, originalCurrency, amountEstimated
         case chargeDate, chargeEstimated, note, method, status, linkedExpenseID, linkedTrackedID, ignored, importedAt, owedPortion
     }
 
@@ -61,6 +64,20 @@ struct CardTransaction: Identifiable, Codable, Equatable, Hashable {
 
     /// 1 for the first identical purchase (same day, merchant, card, amount) in the statement, 2 for the second…
     var occurrence: Int { Int(id.split(separator: "#").last ?? "1") ?? 1 }
+
+    /// The ISO code of a foreign original currency ("$" → "USD"), nil for shekels.
+    static func currencyCode(_ raw: String) -> String? {
+        let s = raw.trimmingCharacters(in: .whitespaces).uppercased()
+        switch s {
+        case "", "₪", "ILS", "NIS", "ש\"ח", "ש״ח", "שח", "שקל": return nil
+        case "$", "USD", "US$", "דולר": return "USD"
+        case "€", "EUR", "יורו": return "EUR"
+        case "£", "GBP", "ליש\"ט", "ליש״ט", "לישט": return "GBP"
+        default: return s.count == 3 && s.allSatisfy(\.isLetter) ? s : nil
+        }
+    }
+
+    var foreignCurrency: String? { CardTransaction.currencyCode(originalCurrency) }
 
     /// The id without the occurrence suffix — shared by identical purchases.
     var baseID: String {
@@ -109,6 +126,26 @@ extension MoneyData {
         }
     }
 
+    /// Puts foreign-currency charges that have no ₪ amount yet in shekels, at the saved rates. Also fixes charges
+    /// saved before this existed, whose ₪ amount was just the foreign number. Returns how many changed.
+    @discardableResult
+    mutating func convertForeignCharges() -> Int {
+        var changed = 0
+        for i in cardTransactions.indices {
+            let tx = cardTransactions[i]
+            guard let code = tx.foreignCurrency, tx.originalAmount != 0 else { continue }
+            let unconverted = !tx.amountEstimated && abs(tx.amount - tx.originalAmount) < 0.005
+            guard tx.amountEstimated || unconverted, let rate = exchangeRates[code], rate > 0 else { continue }
+            let amount = (tx.originalAmount * rate * 100).rounded() / 100
+            if !tx.amountEstimated || abs(tx.amount - amount) > 0.005 {
+                cardTransactions[i].amount = amount
+                cardTransactions[i].amountEstimated = true
+                changed += 1
+            }
+        }
+        return changed
+    }
+
     /// A pending purchase that already shows up as a charge (same card and amount, a few days apart, the same merchant
     /// even if named a little differently) is that charge counted twice: it goes, and its links move to the charge.
     @discardableResult
@@ -154,6 +191,7 @@ extension CardTransaction {
         amount = try c.decodeIfPresent(Double.self, forKey: .amount) ?? 0
         originalAmount = try c.decodeIfPresent(Double.self, forKey: .originalAmount) ?? 0
         originalCurrency = try c.decodeIfPresent(String.self, forKey: .originalCurrency) ?? "₪"
+        amountEstimated = (try? c.decodeIfPresent(Bool.self, forKey: .amountEstimated)) ?? false
         chargeDate = try c.decodeIfPresent(Date.self, forKey: .chargeDate)
         chargeEstimated = try c.decodeIfPresent(Bool.self, forKey: .chargeEstimated) ?? false
         note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
@@ -577,6 +615,7 @@ enum MaxParser {
             let cAmount = col("סכום חיוב")
             let cOriginal = col("סכום עסקה מקורי")
             let cOrigCurrency = col("מטבע עסקה מקורי")
+            let cChargeCurrency = col("מטבע חיוב")
             let cCharge = col("תאריך חיוב")
             let cNote = col("הערות")
             let cMethod = colContaining("אופן ביצוע")
@@ -602,6 +641,9 @@ enum MaxParser {
                     amount: charged ?? original,
                     originalAmount: original,
                     originalCurrency: cell(cOrigCurrency).isEmpty ? "₪" : cell(cOrigCurrency),
+                    // No ₪ amount yet (pending), or charged in a foreign currency (the "חו״ל ומט״ח" sheet).
+                    amountEstimated: CardTransaction.currencyCode(cell(cOrigCurrency)) != nil
+                        && (charged == nil || CardTransaction.currencyCode(cell(cChargeCurrency)) != nil),
                     chargeDate: chargeDate,
                     chargeEstimated: chargeDate == nil,
                     note: cell(cNote),
@@ -887,6 +929,7 @@ extension Store {
         m.cardTransactions += freshPending + kept
         m.renameCardIDs(renamed)
         // Pending items kept from before that this file shows as charged under a slightly different name.
+        m.convertForeignCharges()
         m.dropConfirmedPending()
 
         let repeats = result.transactions.filter { $0.occurrence > 1 }.count

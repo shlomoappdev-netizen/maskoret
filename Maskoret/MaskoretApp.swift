@@ -387,11 +387,12 @@ struct ContentView: View {
             updater.check()
             await store.refreshRates()
             await store.refreshPrime()
+            await store.refreshExchangeRates()
         }
         .onReceive(NotificationCenter.default.publisher(for: Platform.didBecomeActive)) { _ in
             updater.check()
             Task { await sync.sync() }
-            Task { await store.refreshPrime() }
+            Task { await store.refreshPrime(); await store.refreshExchangeRates() }
         }
     }
 }

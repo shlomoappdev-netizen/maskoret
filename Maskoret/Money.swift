@@ -382,10 +382,18 @@ struct MoneyData: Codable, Equatable {
     var autoBalanceSince: Date? = nil
     /// Per card: name, the day the bank takes it, and cards whose statements aren't imported.
     var cardSettings: [CardSetting] = []
+    /// Bank of Israel representative rates: ₪ for one unit of each currency ("USD": 3.157). Used for card charges
+    /// in a foreign currency that the statement doesn't show in ₪ yet.
+    var exchangeRates: [String: Double] = MoneyData.fallbackRates
+    var exchangeRatesAt: Date? = nil
+
+    /// Until the first check with the Bank of Israel (November 2026).
+    static let fallbackRates: [String: Double] = ["USD": 3.157, "EUR": 3.5306, "GBP": 4.235]
 
     private enum CodingKeys: String, CodingKey {
         case accounts, transactions, forecast, primeRate, primeAuto, boiRate, primeCheckedAt, nextRateDecision, rateLastChanged
         case cardTransactions, merchantRules, cardImports, trends, maaser, receivables, payDay, autoBalanceSince, cardSettings
+        case exchangeRates, exchangeRatesAt
     }
 
     var checking: Account? { accounts.first { $0.kind == .checking } }
@@ -417,6 +425,8 @@ extension MoneyData {
         payDay = (try? c.decodeIfPresent(Int.self, forKey: .payDay)) ?? 1
         autoBalanceSince = try? c.decodeIfPresent(Date.self, forKey: .autoBalanceSince)
         cardSettings = (try? c.decodeIfPresent([CardSetting].self, forKey: .cardSettings)) ?? []
+        exchangeRates = (try? c.decodeIfPresent([String: Double].self, forKey: .exchangeRates)) ?? MoneyData.fallbackRates
+        exchangeRatesAt = try? c.decodeIfPresent(Date.self, forKey: .exchangeRatesAt)
         if !accounts.contains(where: { $0.kind == .checking }) {
             accounts.insert(Account(name: "עו״ש", kind: .checking), at: 0)
         }

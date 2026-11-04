@@ -33,6 +33,7 @@ struct PhoneRoot: View {
         .task {
             await store.refreshRates()
             await store.refreshPrime()
+            await store.refreshExchangeRates()
         }
         .onChange(of: store.openScreen) { _, item in
             guard let item else { return }
@@ -48,7 +49,7 @@ struct PhoneRoot: View {
             switch phase {
             case .active:
                     Task { await sync.sync() }
-                Task { await store.refreshPrime() }
+                Task { await store.refreshPrime(); await store.refreshExchangeRates() }
                 Task { await support.refresh(isAdmin: account.isAdmin) }
             case .background:
                 // Push the last changes before iOS suspends the app.

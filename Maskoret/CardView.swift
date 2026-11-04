@@ -480,8 +480,12 @@ struct CardTxRow: View {
         } else if store.money.cardTransactions.contains(where: { $0.id == tx.baseID + "#2" }) {
             parts.append("נקנה יותר מפעם אחת באותו יום")
         }
-        if tx.originalCurrency != "₪" && !tx.originalCurrency.isEmpty {
-            parts.append(Fmt.number(tx.originalAmount) + " " + tx.originalCurrency)
+        if let code = tx.foreignCurrency {
+            var foreign = Fmt.number(tx.originalAmount) + " " + tx.originalCurrency
+            if tx.amountEstimated, let rate = store.money.exchangeRates[code] {
+                foreign += " · לפי שער " + Fmt.number((rate * 1000).rounded() / 1000)
+            }
+            parts.append(foreign)
         } else if abs(tx.originalAmount - tx.amount) > 0.01 && tx.originalAmount != 0 {
             parts.append("עסקה מקורית " + Fmt.money(tx.originalAmount))
         }
@@ -518,8 +522,9 @@ struct CardTxRow: View {
     }
 
     private var amountText: some View {
-        Text(verbatim: Fmt.money((tx.amount * 100).rounded() / 100))
+        Text(verbatim: (tx.amountEstimated ? "≈ " : "") + Fmt.money((tx.amount * 100).rounded() / 100))
             .monospacedDigit()
+            .help(tx.amountEstimated ? "הערכה לפי השער היציג של בנק ישראל, עד שהחיוב בשקלים יופיע בפירוט" : "")
             .foregroundStyle(tx.amount < 0 ? Color.green : (tx.ignored ? Color.secondary : Color.primary))
     }
 
@@ -754,7 +759,7 @@ struct ClassifyCardSheet: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(verbatim: Fmt.money(tx.amount)).monospacedDigit().font(.headline)
+                        Text(verbatim: (tx.amountEstimated ? "≈ " : "") + Fmt.money(tx.amount)).monospacedDigit().font(.headline)
                     }
                 }
                 Section {
