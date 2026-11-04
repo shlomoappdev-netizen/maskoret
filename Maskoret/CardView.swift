@@ -482,8 +482,13 @@ struct CardTxRow: View {
         }
         if let code = tx.foreignCurrency {
             var foreign = Fmt.number(tx.originalAmount) + " " + tx.originalCurrency
-            if tx.amountEstimated, let rate = store.money.exchangeRates[code] {
+            if tx.amountEstimated, let (rate, day) = store.money.exchangeRate(code, on: tx.date) {
                 foreign += " · לפי שער " + Fmt.number((rate * 1000).rounded() / 1000)
+                if let day, let date = MoneyData.rateDayFormat.date(from: day) {
+                    foreign += " מ-" + date.formatted(.dateTime.day().month(.twoDigits).locale(Fmt.locale))
+                } else {
+                    foreign += " (היום)"
+                }
             }
             parts.append(foreign)
         } else if abs(tx.originalAmount - tx.amount) > 0.01 && tx.originalAmount != 0 {

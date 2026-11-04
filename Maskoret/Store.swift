@@ -196,7 +196,7 @@ final class Store: ObservableObject {
         if let last = money.exchangeRatesAt, Date().timeIntervalSince(last) < 6 * 3600 { return }
         guard let url = URL(string: "https://www.boi.org.il/PublicApi/GetExchangeRates?asJson=true") else { return }
         struct Reply: Decodable {
-            struct Rate: Decodable { let key: String; let currentExchangeRate: Double; let unit: Double }
+            struct Rate: Decodable { let key: String; let currentExchangeRate: Double; let unit: Double; let lastUpdate: String? }
             let exchangeRates: [Rate]
         }
         do {
@@ -207,10 +207,14 @@ final class Store: ObservableObject {
             if let http = response as? HTTPURLResponse, http.statusCode != 200 { throw URLError(.badServerResponse) }
             let reply = try JSONDecoder().decode(Reply.self, from: data)
             var updated = money
+            var rates: [String: Double] = [:]
             for r in reply.exchangeRates where r.unit > 0 && r.currentExchangeRate > 0 {
-                updated.exchangeRates[r.key.uppercased()] = r.currentExchangeRate / r.unit
+                rates[r.key.uppercased()] = r.currentExchangeRate / r.unit
             }
-            updated.exchangeRatesAt = Date()
+            // "2026-11-03T13:21:05.8665609Z": the day the rates were published.
+            let published = reply.exchangeRates.compactMap { $0.lastUpdate.flatMap { MoneyData.rateDayFormat.date(from: String($0.prefix(10))) } }
+                .max() ?? Date()
+            updated.recordExchangeRates(rates, publishedAt: published)
             updated.convertForeignCharges()
             money = updated
         } catch {

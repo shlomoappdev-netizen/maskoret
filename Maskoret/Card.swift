@@ -135,7 +135,7 @@ extension MoneyData {
             let tx = cardTransactions[i]
             guard let code = tx.foreignCurrency, tx.originalAmount != 0 else { continue }
             let unconverted = !tx.amountEstimated && abs(tx.amount - tx.originalAmount) < 0.005
-            guard tx.amountEstimated || unconverted, let rate = exchangeRates[code], rate > 0 else { continue }
+            guard tx.amountEstimated || unconverted, let rate = exchangeRate(code, on: tx.date)?.rate, rate > 0 else { continue }
             let amount = (tx.originalAmount * rate * 100).rounded() / 100
             if !tx.amountEstimated || abs(tx.amount - amount) > 0.005 {
                 cardTransactions[i].amount = amount
@@ -144,6 +144,36 @@ extension MoneyData {
             }
         }
         return changed
+    }
+
+    static let rateDayFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "Asia/Jerusalem")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// The rate of the day `date` was in, or of the last day before it the app has; today's rate when it has none
+    /// that old. `day` is the day the rate is from (nil: the current rate).
+    func exchangeRate(_ code: String, on date: Date) -> (rate: Double, day: String?)? {
+        let day = MoneyData.rateDayFormat.string(from: date)
+        if let best = exchangeRateHistory.keys.filter({ $0 <= day && exchangeRateHistory[$0]?[code] != nil }).max(),
+           let rate = exchangeRateHistory[best]?[code] {
+            return (rate, best)
+        }
+        return exchangeRates[code].map { ($0, nil) }
+    }
+
+    /// Saves the rates the Bank of Israel published (for the day they were published) and keeps half a year of them.
+    mutating func recordExchangeRates(_ rates: [String: Double], publishedAt: Date) {
+        for (code, rate) in rates { exchangeRates[code] = rate }
+        let day = MoneyData.rateDayFormat.string(from: publishedAt)
+        exchangeRateHistory[day, default: [:]].merge(rates) { _, new in new }
+        let oldest = MoneyData.rateDayFormat.string(from: publishedAt.addingTimeInterval(-183 * 86400))
+        exchangeRateHistory = exchangeRateHistory.filter { $0.key >= oldest }
+        exchangeRatesAt = Date()
     }
 
     /// A pending purchase that already shows up as a charge (same card and amount, a few days apart, the same merchant
