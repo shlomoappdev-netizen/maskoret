@@ -212,6 +212,9 @@ class _MaskoretAppState extends State<MaskoretApp> {
         navigatorKey: _navigator,
         title: 'מחשבון שכר',
         debugShowCheckedModeBanner: false,
+        // No stretch at the end of a list (Android 12+): stretching the content under the glass cards' blur
+        // made the page shimmer. Scrolling itself is unchanged.
+        scrollBehavior: const MaterialScrollBehavior().copyWith(overscroll: false),
         locale: const Locale('he', 'IL'),
         supportedLocales: const [Locale('he', 'IL')],
         localizationsDelegates: const [
