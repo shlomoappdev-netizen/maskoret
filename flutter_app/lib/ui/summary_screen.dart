@@ -54,7 +54,7 @@ class SummaryScreen extends StatelessWidget {
           : null;
       final stats = _StatsGrid(pic: pic, budget: b);
 
-      return PageList(children: [
+      return PageList(lazy: false, children: [
         const AnnouncementCard(),
         const FamilyContextLine(),
         Padding(

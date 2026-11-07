@@ -67,9 +67,13 @@ bool isWide(BuildContext context) => MediaQuery.sizeOf(context).width >= wideBre
 
 /// A list page with a max width on desktop.
 class PageList extends StatelessWidget {
-  const PageList({super.key, required this.children, this.padding = const EdgeInsets.fromLTRB(20, 12, 20, 110)});
+  const PageList({super.key, required this.children, this.padding = const EdgeInsets.fromLTRB(20, 12, 20, 110), this.lazy = true});
   final List<Widget> children;
   final EdgeInsets padding;
+
+  /// False for a short page of big, uneven cards (the home screen): everything is laid out once, so cards that
+  /// scroll away and come back don't change the scroll position — in a lazy list the page jumped while scrolling.
+  final bool lazy;
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +81,12 @@ class PageList extends StatelessWidget {
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1100),
-        child: ListView(padding: padding, children: children),
+        child: lazy
+            ? ListView(padding: padding, children: children)
+            : SingleChildScrollView(
+                padding: padding,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+              ),
       ),
     );
   }
