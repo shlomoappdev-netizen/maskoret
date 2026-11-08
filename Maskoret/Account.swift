@@ -112,12 +112,30 @@ final class UserAccount: ObservableObject {
         for key in ["display_name", "full_name", "name"] {
             if case .string(let name)? = user.userMetadata[key], !name.isEmpty { displayName = name; break }
         }
+        await reportSeen()
         if changed {
             await refreshHouseholds()
             isAdmin = (try? await supabase.rpc("am_i_admin").decoded(Bool.self)) ?? false
             struct Profile: Decodable { let member_no: Int64? }
             memberNo = (try? await supabase.rpc("my_profile").decoded(Profile.self))?.member_no
         }
+    }
+
+    private var lastSeenReport: Date?
+
+    /// Tells the server this app is in use and which version it runs (shown to the admin), at most once an hour.
+    private func reportSeen() async {
+        if let last = lastSeenReport, Date().timeIntervalSince(last) < 3600 { return }
+        lastSeenReport = Date()
+        let info = Bundle.main.infoDictionary
+        let version = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+        #if os(macOS)
+        let platform = "Mac"
+        #else
+        let platform = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        #endif
+        struct Params: Encodable { let p_version: String; let p_platform: String }
+        _ = try? await supabase.rpc("report_app_seen", params: Params(p_version: version, p_platform: platform)).execute()
     }
 
     private func clearUser() {

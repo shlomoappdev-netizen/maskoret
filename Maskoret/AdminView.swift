@@ -165,8 +165,9 @@ private struct AdminUserRowView: View {
             if !user.display_name.isEmpty, let email = user.email {
                 Text(verbatim: email).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
-            Text(verbatim: "🏠 \(user.owned) בבעלות · \(user.shared) מורשה גישה · כניסה אחרונה "
-                 + (user.last_sign_in_at.map(AdminAPI.date) ?? "—"))
+            Text(verbatim: "🏠 \(user.owned) בבעלות · \(user.shared) מורשה גישה · פעילות אחרונה "
+                 + (user.last_sign_in_at.map(AdminAPI.date) ?? "—")
+                 + (user.app_version.map { " · גרסה " + $0 + (user.app_platform.map { " ב" + $0 } ?? "") } ?? ""))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
         .padding(.vertical, 2)
@@ -573,7 +574,9 @@ private struct AdminUserCard: View {
                 }
             }
             LabeledContent("נרשם", value: AdminAPI.date(user.created_at))
-            LabeledContent("כניסה אחרונה", value: user.last_sign_in_at.map(AdminAPI.date) ?? "—")
+            LabeledContent("פעילות אחרונה", value: user.last_sign_in_at.map(AdminAPI.date) ?? "—")
+            LabeledContent("גרסה מותקנת", value: user.app_version.map { $0 + (user.app_platform.map { " · " + $0 } ?? "") }
+                           ?? "לא ידוע (גרסה ישנה מ-4.17.0)")
             LabeledContent("מכשירים מחוברים", value: "\(user.sessions)")
         }
     }
@@ -740,6 +743,8 @@ enum AdminAPI {
         let display_name: String
         let created_at: String
         let last_sign_in_at: String?
+        var app_version: String? = nil
+        var app_platform: String? = nil
         let confirmed: Bool
         let blocked: Bool
         let owned: Int
@@ -792,6 +797,8 @@ enum AdminAPI {
         let display_name: String
         let created_at: String
         let last_sign_in_at: String?
+        var app_version: String? = nil
+        var app_platform: String? = nil
         let confirmed: Bool
         let blocked: Bool
         let providers: [String]
