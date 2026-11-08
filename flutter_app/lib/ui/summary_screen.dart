@@ -245,7 +245,7 @@ class _Hero extends StatelessWidget {
   const _Hero({required this.pic, required this.hideEstimate, required this.showSwitch});
   final MonthPicture pic;
 
-  /// "כולל הערכת הוצאות באשראי" switched off: only what actually went out.
+  /// The card estimate hidden ("הסתר הערכת אשראי"): only what actually went out.
   final bool hideEstimate;
   final bool showSwitch;
 
@@ -253,55 +253,97 @@ class _Hero extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final positive = pic.remaining >= 0;
-    Widget mini(String title, double value) => Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: theme.textTheme.labelMedium?.copyWith(color: Colors.white.withValues(alpha: 0.75))),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: AlignmentDirectional.centerStart,
-              child: Text(Fmt.money(value),
-                  textDirection: TextDirection.rtl,
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600, fontFeatures: tabular)),
-            ),
-          ]),
-        );
+    Widget miniColumn(String title, double value) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: theme.textTheme.labelMedium?.copyWith(color: Colors.white.withValues(alpha: 0.75))),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(Fmt.money(value),
+                textDirection: TextDirection.rtl,
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600, fontFeatures: tabular)),
+          ),
+        ]);
+    final minis = [
+      (pic.isActual ? 'נטו בפועל' : 'נטו (משוער)', pic.net),
+      ('הוצאות', pic.spendingTotal + pic.periodic + pic.cardWithInstallments),
+      ('לחיסכון', pic.toSavingsTotal),
+    ];
     // Both big numbers side by side and the same size: what's left now, and what's expected after the card.
     // One font size for both, shrunk so the longer one fits.
     TextStyle bigStyle(double size) => theme.textTheme.displayMedium!
         .copyWith(color: Colors.white, fontWeight: FontWeight.w800, fontSize: size, fontFeatures: tabular, height: 1.1);
-    Widget big(String title, String value, double size, {String? note}) => Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title,
-                maxLines: 2,
-                style: theme.textTheme.titleSmall?.copyWith(color: Colors.white.withValues(alpha: 0.85), fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Text(value, textDirection: TextDirection.rtl, maxLines: 1, softWrap: false, style: bigStyle(size)),
-            if (note != null)
-              Text(note, style: theme.textTheme.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.75))),
-          ]),
-        );
+    Widget big(String title, String value, double size, {String? note}) =>
+        Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(title,
+              maxLines: 2,
+              style: theme.textTheme.titleSmall?.copyWith(color: Colors.white.withValues(alpha: 0.85), fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Text(value, textDirection: TextDirection.rtl, maxLines: 1, softWrap: false, style: bigStyle(size)),
+          if (note != null)
+            Text(note, style: theme.textTheme.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.75))),
+        ]);
+    const full = 46.0;
+    double width(String v) =>
+        (TextPainter(text: TextSpan(text: v, style: bigStyle(full)), textDirection: TextDirection.rtl, maxLines: 1)
+              ..layout())
+            .width;
     final actual = Fmt.money(pic.remainingActual), expected = Fmt.money(pic.remaining);
-    final numbers = LayoutBuilder(builder: (context, c) {
-      const gap = 16.0, full = 46.0;
-      double width(String v) =>
-          (TextPainter(text: TextSpan(text: v, style: bigStyle(full)), textDirection: TextDirection.rtl, maxLines: 1)
-                ..layout())
-              .width;
-      final room = hideEstimate ? c.maxWidth : (c.maxWidth - gap) / 2;
-      final size = full * min(1.0, room / max(width(actual), hideEstimate ? 0 : width(expected)));
-      // With the estimate switched off, only what actually went out.
-      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        big('נשאר בפועל מהמשכורת האחרונה', actual, size,
-            note: hideEstimate ? 'רק מה שכבר ירד — בלי הערכת אשראי' : 'מה שכבר ירד עד עכשיו'),
-        if (!hideEstimate) ...[
-          const SizedBox(width: gap),
-          big('צפוי להישאר אחרי חיוב האשראי', expected, size, note: 'לפי ממוצע החודשים הקודמים'),
-        ],
+    final switchButton = _EstimateSwitch(hidden: hideEstimate);
+
+    final Widget content;
+    if (hideEstimate) {
+      // Only what actually went out: the number (and the button under it), with the month's figures beside it,
+      // as wide as they need and set apart by a thin line (heroCard in SummaryView.swift).
+      content = Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Expanded(
+          child: LayoutBuilder(builder: (context, c) {
+            final size = full * min(1.0, c.maxWidth / width(actual));
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              big('נשאר בפועל מהמשכורת האחרונה', actual, size, note: 'רק מה שכבר ירד — בלי הערכת אשראי'),
+              if (showSwitch) ...[const SizedBox(height: 12), switchButton],
+            ]);
+          }),
+        ),
+        const SizedBox(width: 24),
+        Container(
+          padding: const EdgeInsetsDirectional.only(start: 20),
+          decoration: BoxDecoration(
+            border: BorderDirectional(start: BorderSide(color: Colors.white.withValues(alpha: 0.25), width: 1)),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            for (var i = 0; i < minis.length; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              miniColumn(minis[i].$1, minis[i].$2),
+            ],
+          ]),
+        ),
       ]);
-    });
+    } else {
+      final numbers = LayoutBuilder(builder: (context, c) {
+        const gap = 16.0;
+        final size = full * min(1.0, ((c.maxWidth - gap) / 2) / max(width(actual), width(expected)));
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: big('נשאר בפועל מהמשכורת האחרונה', actual, size, note: 'מה שכבר ירד עד עכשיו')),
+          const SizedBox(width: gap),
+          Expanded(child: big('צפוי להישאר אחרי חיוב האשראי', expected, size, note: 'לפי ממוצע החודשים הקודמים')),
+        ]);
+      });
+      content = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        numbers,
+        const SizedBox(height: 26),
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          for (var i = 0; i < minis.length; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            Expanded(child: miniColumn(minis[i].$1, minis[i].$2)),
+          ],
+          if (showSwitch) ...[const SizedBox(width: 12), switchButton],
+        ]),
+      ]);
+    }
     return Container(
-      constraints: BoxConstraints(minHeight: isWide(context) ? 262 : 230),
+      // With the estimate hidden the card is only as tall as what's in it.
+      constraints: BoxConstraints(minHeight: hideEstimate ? 0 : (isWide(context) ? 262 : 230)),
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
@@ -318,61 +360,42 @@ class _Hero extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        numbers,
-        const SizedBox(height: 26),
-        Row(children: [
-          mini(pic.isActual ? 'נטו בפועל' : 'נטו (משוער)', pic.net),
-          const SizedBox(width: 12),
-          mini('הוצאות', pic.spendingTotal + pic.periodic + pic.cardWithInstallments),
-          const SizedBox(width: 12),
-          mini('לחיסכון', pic.toSavingsTotal),
-        ]),
-        if (showSwitch) ...[
-          const SizedBox(height: 16),
-          Align(alignment: AlignmentDirectional.centerStart, child: _EstimateSwitch(on: !hideEstimate)),
-        ],
-      ]),
+      child: content,
     );
   }
 }
 
-/// "כולל הערכת הוצאות באשראי": shows or hides the card estimate everywhere the month is shown (estimateSwitch).
-/// Kept on this device only.
+/// "הסתר הערכת אשראי" / "הצג הערכת אשראי": a small white pill that shows or hides the card estimate everywhere the
+/// month is shown (estimateSwitch in SummaryView.swift). Kept on this device only.
 class _EstimateSwitch extends StatelessWidget {
-  const _EstimateSwitch({required this.on});
-  final bool on;
+  const _EstimateSwitch({required this.hidden});
+  final bool hidden;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    void set(bool v) {
-      context.scope.prefs.setBool(MonthPicture.hideCardEstimateKey, !v);
-      MonthPicture.hideCardEstimate.value = !v;
+    void toggle() {
+      context.scope.prefs.setBool(MonthPicture.hideCardEstimateKey, !hidden);
+      MonthPicture.hideCardEstimate.value = !hidden;
     }
 
-    return Material(
-      color: Colors.white.withValues(alpha: 0.12),
-      shape: const StadiumBorder(),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: () => set(!on),
-        child: Padding(
-          padding: const EdgeInsetsDirectional.fromSTEB(12, 2, 6, 2),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.auto_fix_high, size: 18, color: Colors.white.withValues(alpha: 0.9)),
-            const SizedBox(width: 6),
-            Text('כולל הערכת הוצאות באשראי',
-                style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.9), fontWeight: FontWeight.w500)),
-            const SizedBox(width: 6),
-            Switch(
-              value: on,
-              onChanged: set,
-              activeThumbColor: Colors.white,
-              activeTrackColor: Colors.white.withValues(alpha: 0.35),
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ]),
+    return Tooltip(
+      message: hidden ? 'להציג גם את ההערכה לפי ממוצע החודשים הקודמים' : 'להציג רק את מה שכבר ירד בפועל, בלי ההערכה',
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.18),
+        shape: StadiumBorder(side: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 1)),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: toggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 14, color: Colors.white),
+              const SizedBox(width: 5),
+              Text(hidden ? 'הצג הערכת אשראי' : 'הסתר הערכת אשראי',
+                  style: theme.textTheme.labelMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+            ]),
+          ),
         ),
       ),
     );

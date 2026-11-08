@@ -654,8 +654,11 @@ class MonthNumbers extends StatelessWidget {
         const SizedBox(height: 6),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(child: number('נשאר בפועל', pic.remainingActual, color: tone(pic.remainingActual))),
-          const SizedBox(width: 8),
-          Expanded(child: number('צפוי להישאר', pic.remaining, color: tone(pic.remaining))),
+          // With the card estimate hidden there is nothing expected to show (sidebar in MaskoretApp.swift).
+          if (!MonthPicture.hideCardEstimate.value) ...[
+            const SizedBox(width: 8),
+            Expanded(child: number('צפוי להישאר', pic.remaining, color: tone(pic.remaining))),
+          ],
         ]),
       ]),
     );
