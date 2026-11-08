@@ -145,9 +145,14 @@ final class Updater: ObservableObject {
         }
         phase = .installing
         log = ["מוריד את הגרסה החדשה…"]
-        URLSession.shared.downloadTask(with: asset.url) { [weak self] file, _, error in
+        download(asset.url, attempt: 1) { [weak self] file, response, error in
             guard let self else { return }
             let fail: (String) -> Void = { text in DispatchQueue.main.async { self.phase = .failed(text) } }
+            // GitHub sometimes answers with an error page (e.g. 504) instead of the file.
+            if let status = (response as? HTTPURLResponse)?.statusCode, status != 200 {
+                fail("שרת ההורדות של GitHub לא זמין כרגע (שגיאה \(status)). נסה שוב בעוד כמה דקות.")
+                return
+            }
             guard let file, error == nil, let data = try? Data(contentsOf: file) else {
                 fail("ההורדה נכשלה: " + (error?.localizedDescription ?? "בדוק את החיבור לאינטרנט"))
                 return
@@ -183,6 +188,24 @@ final class Updater: ObservableObject {
                     self.installBuilt(from: stage)
                 }
             }
+        }
+    }
+
+    /// Downloads a file, trying again a few times when the server answers with a temporary error (5xx) or the
+    /// connection drops. The handler runs inside the download's own callback, while the file still exists.
+    private func download(_ url: URL, attempt: Int,
+                          completion: @escaping (URL?, URLResponse?, Error?) -> Void) {
+        URLSession.shared.downloadTask(with: url) { [weak self] file, response, error in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let temporary = error != nil || (500...599).contains(status)
+            if temporary, attempt < 3, let self {
+                DispatchQueue.main.async { self.log.append("השרת לא ענה — מנסה שוב (\(attempt + 1)/3)…") }
+                DispatchQueue.global().asyncAfter(deadline: .now() + Double(attempt * 10)) {
+                    self.download(url, attempt: attempt + 1, completion: completion)
+                }
+                return
+            }
+            completion(file, response, error)
         }.resume()
     }
 
