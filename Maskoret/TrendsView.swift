@@ -21,6 +21,12 @@ struct TrendsView: View {
                     empty
                 } else {
                     ScrollView {
+                        if store.money.trends.contains(where: { $0.monthlyLimit > 0 }) {
+                            TrendLimitsSummary()
+                                .padding([.horizontal, .top], 20)
+                                .frame(maxWidth: 1100)
+                                .frame(maxWidth: .infinity)
+                        }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 330), spacing: 16)], spacing: 16) {
                             ForEach(store.money.trends) { trend in
                                 Button {
@@ -68,6 +74,103 @@ struct TrendsView: View {
             Button("מגמה חדשה") { creating = true }
                 .buttonStyle(.borderedProminent)
         }
+    }
+}
+
+// MARK: - Limits summary
+
+/// All trend limits together, against this month's spending and against recent income.
+struct TrendLimitsSummary: View {
+    @EnvironmentObject private var store: Store
+
+    private var limited: [Trend] { store.money.trends.filter { $0.monthlyLimit > 0 } }
+    private var totalLimit: Double { limited.reduce(0) { $0 + $1.monthlyLimit } }
+    private var spentThisMonth: Double {
+        limited.reduce(0) { $0 + max(store.money.stats(of: $1).thisMonth, 0) }
+    }
+
+    /// Net that reached the bank in a saved month, or its estimate.
+    private func net(_ r: MonthRecord) -> Double { r.actualNet ?? r.budget.net }
+    private var recentMonths: [MonthRecord] {
+        Array(store.history.sorted { $0.sortKey > $1.sortKey }.prefix(3))
+    }
+    /// Latest income: the last saved month, or the current estimate when nothing is saved.
+    private var lastIncome: (value: Double, label: String) {
+        if let r = recentMonths.first { return (net(r), "ההכנסה האחרונה (" + r.title + ")") }
+        return (store.budget.net, "ההכנסה החודשית המשוערת")
+    }
+    private var averageIncome: Double? {
+        let m = recentMonths
+        guard m.count >= 2 else { return nil }
+        return m.reduce(0) { $0 + net($1) } / Double(m.count)
+    }
+
+    var body: some View {
+        let last = lastIncome
+        let avg = averageIncome
+        let overLast = last.value > 0 && totalLimit > last.value
+        let overAvg = (avg ?? 0) > 0 && totalLimit > (avg ?? 0)
+        Card {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("סך התקרות")
+                        .font(.headline)
+                    Text(verbatim: "\(limited.count) מגמות עם תקרה")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(verbatim: Fmt.money(totalLimit))
+                    .font(.title2.weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(overLast || overAvg ? Color.red : Color.primary)
+            }
+
+            ProgressView(value: min(spentThisMonth, totalLimit), total: totalLimit) {
+                Text(verbatim: "הוצאתם החודש " + Fmt.money(spentThisMonth) + " מתוך " + Fmt.money(totalLimit))
+                    .font(.caption)
+            }
+            .tint(spentThisMonth > totalLimit ? .red : .green)
+
+            if last.value > 0 {
+                incomeBar(last.label, last.value)
+            }
+            if let avg, avg > 0 {
+                incomeBar("ממוצע \(recentMonths.count) החודשים האחרונים", avg)
+            }
+
+            if overLast || overAvg {
+                Label {
+                    Text(verbatim: warning(last: last.value, avg: avg, overLast: overLast, overAvg: overAvg))
+                        .font(.callout)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .foregroundStyle(.red)
+            }
+        }
+    }
+
+    /// How much of an income the limits take.
+    private func incomeBar(_ title: String, _ income: Double) -> some View {
+        let share = totalLimit / income
+        return ProgressView(value: min(totalLimit, income), total: income) {
+            HStack {
+                Text(verbatim: title + " · " + Fmt.money(income))
+                Spacer()
+                Text(verbatim: "התקרות: \(Int((share * 100).rounded()))%")
+                    .monospacedDigit()
+            }
+            .font(.caption)
+        }
+        .tint(share > 1 ? .red : share > 0.8 ? .orange : .green)
+    }
+
+    private func warning(last: Double, avg: Double?, overLast: Bool, overAvg: Bool) -> String {
+        if overLast {
+            return "סך התקרות גבוה מההכנסה האחרונה ב-" + Fmt.money(totalLimit - last) + ". כדאי להוריד תקרות."
+        }
+        return "סך התקרות גבוה מממוצע ההכנסות האחרונות ב-" + Fmt.money(totalLimit - (avg ?? 0)) + "."
     }
 }
 
