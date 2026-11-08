@@ -216,8 +216,9 @@ struct SummaryView: View {
                     heroMini(title: p.isActual ? "נטו בפועל" : "נטו (משוער)", value: p.net)
                     heroMini(title: "הוצאות", value: p.spendingTotal + p.periodic + p.cardWithInstallments)
                     heroMini(title: "לחיסכון", value: p.toSavingsTotal)
-                    estimateSwitch
                 }
+                // Its own row: beside the figures it squeezed them (and itself) on an iPhone.
+                estimateSwitch
             }
         }
         .padding(22)
@@ -245,6 +246,8 @@ struct SummaryView: View {
                 Label(hideCardEstimate ? "הצג הערכת אשראי" : "הסתר הערכת אשראי",
                       systemImage: hideCardEstimate ? "eye" : "eye.slash")
                     .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .fixedSize()
                     .foregroundStyle(Color.white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
