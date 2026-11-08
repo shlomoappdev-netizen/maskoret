@@ -337,8 +337,9 @@ class _Hero extends StatelessWidget {
             if (i > 0) const SizedBox(width: 12),
             Expanded(child: miniColumn(minis[i].$1, minis[i].$2)),
           ],
-          if (showSwitch) ...[const SizedBox(width: 12), switchButton],
         ]),
+        // On its own row, so on a narrow screen it doesn't squeeze the amounts (estimateSwitch in SummaryView.swift).
+        if (showSwitch) ...[const SizedBox(height: 14), switchButton],
       ]);
     }
     return Container(
@@ -393,6 +394,8 @@ class _EstimateSwitch extends StatelessWidget {
               Icon(hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 14, color: Colors.white),
               const SizedBox(width: 5),
               Text(hidden ? 'הצג הערכת אשראי' : 'הסתר הערכת אשראי',
+                  maxLines: 1,
+                  softWrap: false,
                   style: theme.textTheme.labelMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
             ]),
           ),
