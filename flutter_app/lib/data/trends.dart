@@ -1,4 +1,5 @@
 import 'card.dart';
+import 'fmt.dart';
 import 'json.dart';
 import 'models.dart';
 import 'money_calc.dart';
@@ -201,5 +202,63 @@ class TrendActions {
     final t = _trend(trendID);
     if (t == null) return;
     JObj(t).addObject('entries', {'id': newId(), 'date': dateTimeToSwift(date), 'amount': jsonNumber(amount), 'note': note});
+  }
+}
+
+/// All the trends' limits together, against the latest income and the recent average (TrendLimitsSummary in
+/// TrendsView.swift).
+class TrendLimits {
+  TrendLimits._(this.count, this.total, this.spentThisMonth, this.lastIncome, this.lastLabel, this.averageIncome, this.months);
+
+  /// Trends with a monthly limit.
+  final int count;
+  final double total;
+
+  /// What the trends with a limit spent this month.
+  final double spentThisMonth;
+
+  /// The last saved month's net (actual, or its estimate), or the current estimate when nothing is saved.
+  final double lastIncome;
+  final String lastLabel;
+
+  /// The average of the last (up to 3) saved months, when there are at least 2.
+  final double? averageIncome;
+  final int months;
+
+  bool get overLast => lastIncome > 0 && total > lastIncome;
+  bool get overAverage => (averageIncome ?? 0) > 0 && total > averageIncome!;
+
+  String? get warning {
+    if (overLast) return 'סך התקרות גבוה מההכנסה האחרונה ב-${Fmt.money(total - lastIncome)}. כדאי להוריד תקרות.';
+    if (overAverage) return 'סך התקרות גבוה מממוצע ההכנסות האחרונות ב-${Fmt.money(total - averageIncome!)}.';
+    return null;
+  }
+
+  /// Null when no trend has a limit.
+  static TrendLimits? of(SaveFile file, {DateTime? now}) {
+    final money = file.money;
+    final limited = JObj(money.raw).objects('trends').map(Trend.new).where((t) => t.monthlyLimit > 0).toList();
+    if (limited.isEmpty) return null;
+    final total = limited.fold(0.0, (s, t) => s + t.monthlyLimit);
+    final spent = limited.fold(0.0, (s, t) {
+      final m = TrendCalc.stats(money, t, now: now).thisMonth;
+      return s + (m > 0 ? m : 0);
+    });
+    double net(MonthRecord r) {
+      final b = r.json['budget'];
+      return r.actualNet ?? (b is Json ? Budget(JObj(b)).net : 0);
+    }
+
+    final recent = (file.history..sort((a, b) => b.sortKey.compareTo(a.sortKey))).take(3).toList();
+    final first = recent.firstOrNull;
+    return TrendLimits._(
+      limited.length,
+      total,
+      spent,
+      first != null ? net(first) : file.budget.net,
+      first != null ? 'ההכנסה האחרונה (${Fmt.monthTitle(first.year, first.month)})' : 'ההכנסה החודשית המשוערת',
+      recent.length >= 2 ? recent.fold(0.0, (s, r) => s + net(r)) / recent.length : null,
+      recent.length,
+    );
   }
 }

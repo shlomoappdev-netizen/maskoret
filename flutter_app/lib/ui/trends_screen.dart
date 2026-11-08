@@ -53,12 +53,89 @@ class TrendsScreen extends StatelessWidget {
         body: PageList(children: [
           Text('כמה באמת הולך על דברים שאין להם קטגוריה — דייטים, מתנות, יציאות', style: theme.textTheme.bodySmall),
           const SizedBox(height: 8),
+          if (TrendLimits.of(store.file) case final limits?) _LimitsSummary(limits: limits),
           TileGrid(minWidth: 320, spacing: 14, children: [
             for (final t in trends) _TrendCard(trend: t, stats: TrendCalc.stats(store.money, t)),
           ]),
         ]),
       );
     });
+  }
+}
+
+/// "סך התקרות": every trend's limit together, this month's spending against it, and the limits against the latest
+/// income and the recent average, with a warning when they're more than the income (TrendLimitsSummary).
+class _LimitsSummary extends StatelessWidget {
+  const _LimitsSummary({required this.limits});
+  final TrendLimits limits;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l = limits;
+    final error = theme.colorScheme.error;
+    Widget bar(Widget label, double value, double total, Color color) => Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            DefaultTextStyle.merge(style: theme.textTheme.bodySmall, child: label),
+            const SizedBox(height: 4),
+            LinearProgressIndicator(
+              value: total <= 0 ? 0 : (value / total).clamp(0.0, 1.0),
+              color: color,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ]),
+        );
+    // How much of an income the limits take.
+    Widget incomeBar(String title, double income) {
+      final share = l.total / income;
+      return bar(
+        Row(children: [
+          Expanded(child: Text('$title · ${Fmt.money(income)}')),
+          Text('התקרות: ${(share * 100).round()}%', style: const TextStyle(fontFeatures: tabular)),
+        ]),
+        l.total < income ? l.total : income,
+        income,
+        share > 1 ? Colors.red : (share > 0.8 ? Colors.orange : Colors.green),
+      );
+    }
+
+    final warning = l.warning;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Glass(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('סך התקרות', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                Text('${l.count} מגמות עם תקרה',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              ]),
+            ),
+            Text(Fmt.money(l.total),
+                textDirection: TextDirection.rtl,
+                style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700, fontFeatures: tabular, color: warning != null ? error : null)),
+          ]),
+          bar(Text('הוצאתם החודש ${Fmt.money(l.spentThisMonth)} מתוך ${Fmt.money(l.total)}'), l.spentThisMonth, l.total,
+              l.spentThisMonth > l.total ? Colors.red : Colors.green),
+          if (l.lastIncome > 0) incomeBar(l.lastLabel, l.lastIncome),
+          if ((l.averageIncome ?? 0) > 0) incomeBar('ממוצע ${l.months} החודשים האחרונים', l.averageIncome!),
+          if (warning != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.warning_rounded, color: error, size: 20),
+                const SizedBox(width: 6),
+                Expanded(child: Text(warning, style: TextStyle(color: error))),
+              ]),
+            ),
+        ]),
+      ),
+    );
   }
 }
 
