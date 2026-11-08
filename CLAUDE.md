@@ -23,6 +23,11 @@ signed with "Maskoret Signing", a GitHub release in this repo, and latest.json +
 the download site. Secrets are set once with `tools/setup_cloud_release.sh`. `tools/publish_release.sh` is a manual
 fallback from the Mac.
 
+Before setting `"ready": true`, build on the Mac and upload (both from a clean checkout of origin/main):
+`tools/upload_mac_build.sh` (prerelease mac-build-<build>) and `tools/upload_android_build.sh` (android-build-<build>,
+checks the APK is signed with the permanent key). release.yml then uses them instead of building Mac/Android in the
+cloud (faster); without an upload it builds that platform in the cloud as before. Windows is always built in the cloud.
+
 **Every finished version is published — the user asked for it (2026-10-30); no separate approval is needed.**
 - While a version is being worked on, keep `"ready": false`.
 - When the piece of work you were doing is finished and checked (it builds, the tests pass, and you looked at it on

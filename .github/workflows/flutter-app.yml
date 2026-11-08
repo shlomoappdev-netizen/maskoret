@@ -19,6 +19,11 @@ on:
   workflow_dispatch:
   # release.yml calls it for a release; the files stay in that run.
   workflow_call:
+    inputs:
+      # The APK was built on the Mac (tools/upload_android_build.sh): release.yml takes it from there.
+      skip_android:
+        type: boolean
+        default: false
 
 env:
   FLUTTER_VERSION: '3.44.4'
@@ -62,6 +67,7 @@ jobs:
           retention-days: 30
 
   android:
+    if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
     defaults:
       run:
