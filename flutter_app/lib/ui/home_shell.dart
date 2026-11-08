@@ -621,7 +621,11 @@ class MonthNumbers extends StatelessWidget {
   const MonthNumbers({super.key});
 
   @override
-  Widget build(BuildContext context) => StoreBuilder(builder: _numbers);
+  Widget build(BuildContext context) => ListenableBuilder(
+        // "כולל הערכת הוצאות באשראי" on the home screen changes these numbers too.
+        listenable: MonthPicture.hideCardEstimate,
+        builder: (context, _) => StoreBuilder(builder: _numbers),
+      );
 
   Widget _numbers(BuildContext context, AppStore store) {
     final theme = Theme.of(context);

@@ -29,6 +29,7 @@ import 'support/app_log.dart';
 import 'support/support.dart';
 import 'update/updater.dart';
 import 'data/exchange_rates.dart';
+import 'data/month_picture.dart';
 import 'update/whats_new.dart';
 
 /// --dart-define=DEMO=true: open straight into the app with demo data (for checking screens).
@@ -41,6 +42,8 @@ Future<void> main() async {
   await initializeDateFormatting('he');
   await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
   final prefs = await SharedPreferences.getInstance();
+  // "כולל הערכת הוצאות באשראי" on the home screen, as the user left it on this device.
+  MonthPicture.hideCardEstimate.value = prefs.getBool(MonthPicture.hideCardEstimateKey) ?? false;
   final support = await getApplicationSupportDirectory();
   // The technical log lives outside the data folder (that one is wiped on sign-out).
   await AppLog.init(Directory('${support.path}/logs'));

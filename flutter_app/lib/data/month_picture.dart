@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import 'card.dart';
@@ -6,9 +7,12 @@ import 'models.dart';
 import 'money_calc.dart';
 
 class MonthLine {
-  MonthLine(this.title, this.amount);
+  MonthLine(this.title, this.amount, {this.estimate = false});
   final String title;
   final double amount;
+
+  /// An estimate (the average of past statements, a card's usual charge) — not charged yet.
+  final bool estimate;
 }
 
 /// One payment of a purchase split into installments — only this payment comes off this month.
@@ -121,8 +125,39 @@ class MonthPicture {
     return d < 1 ? 1 : d;
   }
 
-  /// The money period today is in (Store.monthPicture).
+  /// Without the card estimates: only what was actually charged or recorded (actualOnly in Sync.swift).
+  MonthPicture get actualOnly => MonthPicture(
+        year: year,
+        month: month,
+        estimatedNet: estimatedNet,
+        actualNet: actualNet,
+        spending: spending,
+        periodic: periodic,
+        toSavings: toSavings,
+        oneOffs: oneOffs,
+        card: card.where((l) => !l.estimate).toList(),
+        cardEstimated: false,
+        cardEstimate: 0,
+        fixedInCardSuspects: fixedInCardSuspects,
+        periodStart: periodStart,
+        periodEnd: periodEnd,
+        installments: installments,
+        installmentsAfterThisMonth: installmentsAfterThisMonth,
+      );
+
+  /// The home screen's "כולל הערכת הוצאות באשראי" switched off, on this device ("hideCardEstimate"): the month in
+  /// view leaves out the card estimates everywhere. Set at launch and by the switch (main.dart / summary_screen.dart).
+  static final hideCardEstimate = ValueNotifier<bool>(false);
+  static const hideCardEstimateKey = 'hideCardEstimate';
+
+  /// The money period today is in (Store.monthPicture) — without the card estimates when the user switched them off.
   static MonthPicture current(SaveFile file) {
+    final full = currentFull(file);
+    return hideCardEstimate.value ? full.actualOnly : full;
+  }
+
+  /// The month in view with the card estimates, whatever the switch says (fullMonthPicture).
+  static MonthPicture currentFull(SaveFile file) {
     final (y, m) = file.money.period(DateTime.now());
     return of(file, y, m);
   }
@@ -207,12 +242,12 @@ class MonthPicture {
     final average = cards.averageCardVariable();
     if (average > known && (monthEnd.isAfter(DateTime.now()) || card.isEmpty)) {
       cardEstimate = average - known;
-      card.add(MonthLine('עוד צפוי לפי ממוצע החודשים הקודמים', cardEstimate));
+      card.add(MonthLine('עוד צפוי לפי ממוצע החודשים הקודמים', cardEstimate, estimate: true));
       cardEstimated = true;
     }
     // Cards whose statements aren't imported (e.g. the bank's own card): what they usually charge.
     for (final s in cards.cardSettings.where((s) => s.monthlyEstimate > 0)) {
-      card.add(MonthLine('💳 ${s.displayName} (משוער)', s.monthlyEstimate));
+      card.add(MonthLine('💳 ${s.displayName} (משוער)', s.monthlyEstimate, estimate: true));
     }
     // A fixed expense paid by card that isn't linked to its charge would count twice — point it out.
     final fixedAmounts = spending.map((l) => l.amount).where((a) => a >= 20).toList();

@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:math';
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
@@ -17,6 +16,7 @@ import '../data/money_calc.dart';
 import '../data/month_picture.dart';
 import '../data/payslip.dart';
 import '../data/trends.dart';
+import '../state/store.dart';
 import '../support/app_log.dart';
 import '../support/payslip_pdf.dart';
 import 'app_prompts.dart';
@@ -31,7 +31,14 @@ class SummaryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StoreBuilder(builder: (context, store) {
+    return ListenableBuilder(
+      listenable: MonthPicture.hideCardEstimate,
+      builder: (context, _) => StoreBuilder(builder: _build),
+    );
+  }
+
+  Widget _build(BuildContext context, AppStore store) {
+    {
       final d = store.dashboard;
       final b = d.budget;
       final money = d.money;
@@ -46,7 +53,9 @@ class SummaryScreen extends StatelessWidget {
       final forecast = Forecaster.run(d, months: ForecastSettings.of(store.file).months);
       final last = forecast.last;
 
-      final hero = _Hero(pic: pic);
+      final hide = MonthPicture.hideCardEstimate.value;
+      // The switch shows only when there's an estimate to hide (or it's already hidden).
+      final hero = _Hero(pic: pic, hideEstimate: hide, showSwitch: hide || MonthPicture.currentFull(d).cardEstimated);
       final donut = pic.net > 0 ? _NetDonut(pic: pic, money: d.money) : null;
       final breakdown = SectionCard(title: 'החודש — מהנטו ועד מה שנשאר', children: monthBreakdown(context, pic));
       final payslip = b.gross > 0
@@ -77,16 +86,9 @@ class SummaryScreen extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 14),
-        if (wide && donut != null)
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: hero),
-            const SizedBox(width: 14),
-            Expanded(child: donut),
-          ])
-        else ...[
-          hero,
-          if (donut != null) ...[const SizedBox(height: 14), donut],
-        ],
+        // One under the other (4.17.0): the bar of "לאן הולך הנטו" needs the width.
+        hero,
+        if (donut != null) ...[const SizedBox(height: 14), donut],
         const SizedBox(height: 14),
         _Todos(pic: pic, money: money),
         const SizedBox(height: 14),
@@ -116,7 +118,7 @@ class SummaryScreen extends StatelessWidget {
             ]),
         ]),
       ]);
-    });
+    }
   }
 
   static String _shareText(MonthPicture p, double checking, double savings) {
@@ -240,8 +242,12 @@ class _DetailsState extends State<_Details> {
 
 /// "נשאר לך מההכנסה האחרונה" on the teal → blue gradient (red when negative), with three small numbers under it.
 class _Hero extends StatelessWidget {
-  const _Hero({required this.pic});
+  const _Hero({required this.pic, required this.hideEstimate, required this.showSwitch});
   final MonthPicture pic;
+
+  /// "כולל הערכת הוצאות באשראי" switched off: only what actually went out.
+  final bool hideEstimate;
+  final bool showSwitch;
 
   @override
   Widget build(BuildContext context) {
@@ -282,12 +288,16 @@ class _Hero extends StatelessWidget {
           (TextPainter(text: TextSpan(text: v, style: bigStyle(full)), textDirection: TextDirection.rtl, maxLines: 1)
                 ..layout())
               .width;
-      final room = (c.maxWidth - gap) / 2;
-      final size = full * min(1.0, room / max(width(actual), width(expected)));
+      final room = hideEstimate ? c.maxWidth : (c.maxWidth - gap) / 2;
+      final size = full * min(1.0, room / max(width(actual), hideEstimate ? 0 : width(expected)));
+      // With the estimate switched off, only what actually went out.
       return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        big('נשאר בפועל מהמשכורת האחרונה', actual, size),
-        const SizedBox(width: gap),
-        big('צפוי להישאר אחרי חיוב האשראי', expected, size, note: 'לפי ממוצע החודשים הקודמים'),
+        big('נשאר בפועל מהמשכורת האחרונה', actual, size,
+            note: hideEstimate ? 'רק מה שכבר ירד — בלי הערכת אשראי' : 'מה שכבר ירד עד עכשיו'),
+        if (!hideEstimate) ...[
+          const SizedBox(width: gap),
+          big('צפוי להישאר אחרי חיוב האשראי', expected, size, note: 'לפי ממוצע החודשים הקודמים'),
+        ],
       ]);
     });
     return Container(
@@ -318,7 +328,53 @@ class _Hero extends StatelessWidget {
           const SizedBox(width: 12),
           mini('לחיסכון', pic.toSavingsTotal),
         ]),
+        if (showSwitch) ...[
+          const SizedBox(height: 16),
+          Align(alignment: AlignmentDirectional.centerStart, child: _EstimateSwitch(on: !hideEstimate)),
+        ],
       ]),
+    );
+  }
+}
+
+/// "כולל הערכת הוצאות באשראי": shows or hides the card estimate everywhere the month is shown (estimateSwitch).
+/// Kept on this device only.
+class _EstimateSwitch extends StatelessWidget {
+  const _EstimateSwitch({required this.on});
+  final bool on;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    void set(bool v) {
+      context.scope.prefs.setBool(MonthPicture.hideCardEstimateKey, !v);
+      MonthPicture.hideCardEstimate.value = !v;
+    }
+
+    return Material(
+      color: Colors.white.withValues(alpha: 0.12),
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: () => set(!on),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(12, 2, 6, 2),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.auto_fix_high, size: 18, color: Colors.white.withValues(alpha: 0.9)),
+            const SizedBox(width: 6),
+            Text('כולל הערכת הוצאות באשראי',
+                style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.9), fontWeight: FontWeight.w500)),
+            const SizedBox(width: 6),
+            Switch(
+              value: on,
+              onChanged: set,
+              activeThumbColor: Colors.white,
+              activeTrackColor: Colors.white.withValues(alpha: 0.35),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ]),
+        ),
+      ),
     );
   }
 }
@@ -326,8 +382,9 @@ class _Hero extends StatelessWidget {
 /// The slices of "לאן הולך הנטו" (name, amount, color).
 List<(String, double, Color)> netSlices(MonthPicture pic, MoneyData money) => _NetDonut._slices(pic, money);
 
-/// "לאן הולך הנטו": a donut with its legend beside it (under it on a phone).
-class _NetDonut extends StatelessWidget {
+/// "לאן הולך הנטו": one long bar split by where the net goes, and the legend under it; tapping a part (or a legend
+/// line) shows what it is (chartCard and SliceBar in SummaryView.swift).
+class _NetDonut extends StatefulWidget {
   const _NetDonut({required this.pic, required this.money});
   final MonthPicture pic;
   final MoneyData money;
@@ -386,62 +443,129 @@ class _NetDonut extends StatelessWidget {
   }
 
   @override
+  State<_NetDonut> createState() => _NetDonutState();
+}
+
+class _NetDonutState extends State<_NetDonut> {
+  /// The tapped slice (its name).
+  String? selected;
+
+  void toggle(String name) => setState(() => selected = selected == name ? null : name);
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final items = netSlices(pic, money);
+    final pic = widget.pic, money = widget.money;
+    final items = _NetDonut._slices(pic, money);
     final total = items.fold(0.0, (s, i) => s + i.$2).clamp(1.0, double.infinity);
-    final donut = SizedBox(
-      width: 170,
-      height: 170,
-      child: Stack(alignment: Alignment.center, children: [
-        PieChart(PieChartData(
-          sectionsSpace: 2,
-          centerSpaceRadius: 54,
-          startDegreeOffset: -90,
-          sections: [
-            for (final i in items) PieChartSectionData(value: i.$2, color: i.$3, radius: 31, showTitle: false),
-          ],
-        )),
-        Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(pic.isActual ? 'נטו בפועל' : 'נטו', style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          Text(Fmt.money(pic.net),
-              textDirection: TextDirection.rtl,
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, fontFeatures: tabular)),
-        ]),
-      ]),
-    );
+    if (selected != null && !items.any((i) => i.$1 == selected)) selected = null;
+    String pct(double v) => Fmt.percent((v / total * 100).roundToDouble());
+    final chosen = items.where((i) => i.$1 == selected).firstOrNull;
     final legend = Column(mainAxisSize: MainAxisSize.min, children: [
       for (final i in items)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(children: [
-            Container(width: 9, height: 9, decoration: BoxDecoration(color: i.$3, shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Expanded(child: Text(i.$1, style: theme.textTheme.bodyMedium)),
-            Text(Fmt.money(i.$2), textDirection: TextDirection.rtl, style: theme.textTheme.bodyMedium?.copyWith(fontFeatures: tabular)),
-            SizedBox(
-              width: 44,
-              child: Text(Fmt.percent((i.$2 / total * 100).roundToDouble()),
-                  textAlign: TextAlign.end,
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant, fontFeatures: tabular)),
+        Opacity(
+          opacity: selected == null || selected == i.$1 ? 1 : 0.45,
+          child: InkWell(
+            onTap: () => toggle(i.$1),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(children: [
+                Container(width: 9, height: 9, decoration: BoxDecoration(color: i.$3, shape: BoxShape.circle)),
+                const SizedBox(width: 8),
+                Expanded(child: Text(i.$1, style: theme.textTheme.bodyMedium)),
+                Text(Fmt.money(i.$2),
+                    textDirection: TextDirection.rtl, style: theme.textTheme.bodyMedium?.copyWith(fontFeatures: tabular)),
+                SizedBox(
+                  width: 44,
+                  child: Text(pct(i.$2),
+                      textAlign: TextAlign.end,
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant, fontFeatures: tabular)),
+                ),
+              ]),
             ),
-          ]),
+          ),
         ),
     ]);
     return Glass(
       padding: const EdgeInsets.all(18),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('לאן הולך הנטו', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
         if (JObj(money.raw).objects('trends').isNotEmpty)
           Text('המגמות שיצרת — מה ששייך להן בתקופה הזו',
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         const SizedBox(height: 12),
-        LayoutBuilder(
-          builder: (context, c) => c.maxWidth >= 420
-              ? Row(children: [donut, const SizedBox(width: 18), Expanded(child: legend)])
-              : Column(children: [donut, const SizedBox(height: 14), legend]),
-        ),
+        Row(children: [
+          Text(pic.isActual ? 'נטו בפועל ' : 'נטו ',
+              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          Text(Fmt.money(pic.net),
+              textDirection: TextDirection.rtl,
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, fontFeatures: tabular)),
+        ]),
+        const SizedBox(height: 8),
+        SliceBar(parts: [for (final i in items) (id: i.$1, value: i.$2, color: i.$3)], selected: selected, onTap: toggle),
+        if (chosen != null)
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: chosen.$3.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: chosen.$3, shape: BoxShape.circle)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(chosen.$1, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+              Text('${Fmt.money(chosen.$2)} · ${pct(chosen.$2)}',
+                  textDirection: TextDirection.rtl,
+                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, fontFeatures: tabular)),
+            ]),
+          ),
+        const SizedBox(height: 12),
+        legend,
       ]),
+    );
+  }
+}
+
+/// A horizontal bar made of parts by size (right to left in Hebrew), 2 apart; tapping a part selects it and the others
+/// fade (SliceBar in SummaryView.swift).
+class SliceBar extends StatelessWidget {
+  const SliceBar({super.key, required this.parts, required this.selected, required this.onTap, this.height = 30});
+  final List<({String id, double value, Color color})> parts;
+  final String? selected;
+  final ValueChanged<String> onTap;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = max(parts.fold(0.0, (s, p) => s + p.value), 0.01);
+    final outline = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8);
+    return SizedBox(
+      height: height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Row(children: [
+          for (var i = 0; i < parts.length; i++) ...[
+            if (i > 0) const SizedBox(width: 2),
+            // Each part by its share (a sliver of at least one ten-thousandth stays visible and tappable).
+            Expanded(
+              flex: max(1, (parts[i].value / total * 10000).round()),
+              child: GestureDetector(
+                onTap: () => onTap(parts[i].id),
+                child: Tooltip(
+                  message: parts[i].id,
+                  child: Opacity(
+                    opacity: selected == null || selected == parts[i].id ? 1 : 0.35,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: parts[i].color,
+                        border: selected == parts[i].id ? Border.all(color: outline, width: 2) : null,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ]),
+      ),
     );
   }
 }
