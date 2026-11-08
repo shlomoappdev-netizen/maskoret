@@ -71,8 +71,8 @@
 > שימו לב: החישובים הם הערכה לפי הנתונים שהזנתם, ולא ייעוץ פיננסי או מיסויי.
 
 **גרפיקה:**
-- אייקון 512×512 (PNG) — מ-`flutter_app/assets/icon/icon_full.png`.
-- תמונה ראשית (Feature graphic) 1024×500.
+- אייקון 512×512: [docs/play/icon-512.png](play/icon-512.png) (מוכן).
+- תמונה ראשית (Feature graphic) 1024×500: [docs/play/feature-graphic.png](play/feature-graphic.png) (מוכנה).
 - לפחות 2 צילומי מסך מהטלפון (מומלץ 4–6: מסך הבית, אשראי, תקציב, תחזית, מגמות). בלי נתונים אמיתיים —
   אפשר לבנות עם נתוני הדוגמה: `flutter run --dart-define=DEMO=true`.
 
