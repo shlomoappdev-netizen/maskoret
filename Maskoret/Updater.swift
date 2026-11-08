@@ -422,7 +422,9 @@ final class Updater: ObservableObject {
         let script = """
         #!/bin/bash
         PID="$1"; SRC="$2"; DST="$3"; NAME="\(Updater.signingName)"
-        if /usr/bin/security find-identity -p codesigning | grep -qF "\\"$NAME\\""; then
+        # Published builds come signed already; signing again only makes macOS ask for the keychain password.
+        if ! /usr/bin/codesign -dvv "$SRC" 2>&1 | grep -qF "Authority=$NAME" \\
+            && /usr/bin/security find-identity -p codesigning | grep -qF "\\"$NAME\\""; then
           /usr/bin/codesign --force --sign "$NAME" "$SRC"
         fi
         for i in $(seq 1 150); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
