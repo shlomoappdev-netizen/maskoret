@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -134,6 +135,7 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
           final user = state.session?.user;
           if (user != null) {
             await _setUser(user);
+            if (state.event != AuthChangeEvent.userUpdated) unawaited(_reportSeen());
           } else if (state.event == AuthChangeEvent.initialSession) {
             _clearUser();
           }
@@ -145,6 +147,22 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
       didLoad = true;
       notifyListeners();
     });
+  }
+
+  DateTime? _lastSeenReport;
+
+  /// Tells the server this app is in use and which version it runs (shown to the admin), at most once an hour
+  /// (reportSeen in Account.swift). Any error is ignored — the server may not have the function yet.
+  Future<void> _reportSeen() async {
+    final platform = Platform.isAndroid ? 'Android' : (Platform.isWindows ? 'Windows' : null);
+    if (platform == null) return;
+    final last = _lastSeenReport;
+    if (last != null && DateTime.now().difference(last) < const Duration(hours: 1)) return;
+    _lastSeenReport = DateTime.now();
+    try {
+      final info = await PackageInfo.fromPlatform();
+      await _c.rpc('report_app_seen', params: {'p_version': '${info.version} (${info.buildNumber})', 'p_platform': platform});
+    } catch (_) {}
   }
 
   Future<void> _setUser(User user) async {
