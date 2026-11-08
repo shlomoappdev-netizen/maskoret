@@ -193,7 +193,9 @@ final class Updater: ObservableObject {
 
     /// Downloads a file, trying again a few times when the server answers with a temporary error (5xx) or the
     /// connection drops. The handler runs inside the download's own callback, while the file still exists.
-    private func download(_ url: URL, attempt: Int,
+    /// When the regular link keeps failing, the same file is fetched once more through the GitHub API
+    /// (a different server, which kept working when the download links answered 504).
+    private func download(_ url: URL, attempt: Int, viaAPI: Bool = false,
                           completion: @escaping (URL?, URLResponse?, Error?) -> Void) {
         URLSession.shared.downloadTask(with: url) { [weak self] file, response, error in
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -205,7 +207,42 @@ final class Updater: ObservableObject {
                 }
                 return
             }
+            if temporary, !viaAPI, let self {
+                DispatchQueue.main.async { self.log.append("מנסה דרך שרת אחר של GitHub…") }
+                self.downloadViaAPI(url) { file2, response2, error2 in
+                    // Whatever the API gave; if it also failed, report the original failure.
+                    if file2 != nil, (response2 as? HTTPURLResponse)?.statusCode == 200 {
+                        completion(file2, response2, error2)
+                    } else {
+                        completion(file, response, error)
+                    }
+                }
+                return
+            }
             completion(file, response, error)
+        }.resume()
+    }
+
+    /// github.com/<owner>/<repo>/releases/download/<tag>/<name> → the same asset through api.github.com.
+    private func downloadViaAPI(_ url: URL, completion: @escaping (URL?, URLResponse?, Error?) -> Void) {
+        let parts = url.pathComponents   // ["/", owner, repo, "releases", "download", tag, name]
+        guard url.host == "github.com", parts.count == 7, parts[3] == "releases", parts[4] == "download",
+              let release = URL(string: "https://api.github.com/repos/\(parts[1])/\(parts[2])/releases/tags/\(parts[5])")
+        else { completion(nil, nil, nil); return }
+        var request = URLRequest(url: release)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            struct Release: Decodable { struct Asset: Decodable { let name: String; let url: URL }; let assets: [Asset] }
+            guard let data, let info = try? JSONDecoder().decode(Release.self, from: data),
+                  let asset = info.assets.first(where: { $0.name == parts[6] }) else {
+                completion(nil, nil, nil)
+                return
+            }
+            var fileRequest = URLRequest(url: asset.url)
+            fileRequest.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+            URLSession.shared.downloadTask(with: fileRequest) { file, response, error in
+                completion(file, response, error)
+            }.resume()
         }.resume()
     }
 

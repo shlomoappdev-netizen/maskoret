@@ -276,14 +276,22 @@ class Updater extends ChangeNotifier {
 
   /// Downloads into `<file>.part` and renames it when complete. A part left by an interrupted download (the
   /// connection broke, the app was closed) is continued with an HTTP Range request instead of starting over.
-  Future<void> _download(String url, File file) async {
+  /// When GitHub's download link answers with a server error (it answered 504 for a while), the same file is
+  /// fetched through the GitHub API instead — a different server, which kept working.
+  Future<void> _download(String url, File file, {bool viaApi = false}) async {
     final part = File('${file.path}.part');
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
     try {
       var have = await part.exists() ? await part.length() : 0;
       final request = await client.getUrl(Uri.parse(url));
+      if (viaApi) request.headers.set(HttpHeaders.acceptHeader, 'application/octet-stream');
       if (have > 0) request.headers.set(HttpHeaders.rangeHeader, 'bytes=$have-');
       final response = await request.close();
+      if (response.statusCode >= 500 && !viaApi) {
+        await response.drain<void>();
+        final api = await _apiAssetUrl(client, url);
+        if (api != null) return _download(api, file, viaApi: true);
+      }
       if (response.statusCode == 416) {
         // The part is already complete (or doesn't fit the file any more): check it as is.
         await response.drain<void>();
@@ -315,6 +323,23 @@ class Updater extends ChangeNotifier {
     } finally {
       client.close();
     }
+  }
+
+  /// `github.com/<owner>/<repo>/releases/download/<tag>/<name>` → the same asset's address on api.github.com.
+  static Future<String?> _apiAssetUrl(HttpClient client, String url) async {
+    final p = Uri.parse(url).pathSegments; // [owner, repo, releases, download, tag, name]
+    if (Uri.parse(url).host != 'github.com' || p.length != 6 || p[2] != 'releases' || p[3] != 'download') return null;
+    try {
+      final request = await client.getUrl(Uri.parse('https://api.github.com/repos/${p[0]}/${p[1]}/releases/tags/${p[4]}'));
+      request.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
+      final response = await request.close();
+      if (response.statusCode != 200) return null;
+      final release = jsonDecode(await response.transform(utf8.decoder).join()) as Map<String, dynamic>;
+      for (final a in (release['assets'] as List? ?? [])) {
+        if (a is Map && a['name'] == p[5]) return a['url'] as String?;
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Windows: runs the downloaded installer silently and closes; the installer replaces the app (closing it if
