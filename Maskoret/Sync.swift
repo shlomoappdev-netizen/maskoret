@@ -10,6 +10,8 @@ struct MonthPicture {
         let id = UUID()
         let title: String
         let amount: Double
+        /// An estimate (the average of past statements, a card's usual charge) — not charged yet.
+        var estimate = false
     }
 
     let year: Int
@@ -89,6 +91,14 @@ struct MonthPicture {
     var remaining: Double { net - spendingTotal - periodic - toSavingsTotal - cardWithInstallments + oneOffTotal }
     /// Left right now: only what actually went out so far, without the estimate.
     var remainingActual: Double { remaining + cardEstimate }
+    /// Without the card estimates: only what was actually charged or recorded.
+    var actualOnly: MonthPicture {
+        var p = self
+        p.card = card.filter { !$0.estimate }
+        p.cardEstimated = false
+        p.cardEstimate = 0
+        return p
+    }
     var outTotal: Double { spendingTotal + periodic + toSavingsTotal + cardWithInstallments - min(oneOffTotal, 0) }
     var title: String { Fmt.monthTitle(year: year, month: month) }
     /// "10 באוק׳ – 9 בנוב׳", or the month's name when the period is a calendar month.
@@ -102,10 +112,18 @@ struct MonthPicture {
 }
 
 extension Store {
+    /// The month in view — without the card estimates when the user switched them off on the home screen.
     var monthPicture: MonthPicture {
+        UserDefaults.standard.bool(forKey: Store.hideCardEstimateKey) ? fullMonthPicture.actualOnly : fullMonthPicture
+    }
+
+    /// The month in view with the card estimates, whatever the switch says.
+    var fullMonthPicture: MonthPicture {
         let current = dashboard.money.period(containing: Date())
         return monthPicture(year: current.year, month: current.month)
     }
+
+    static let hideCardEstimateKey = "hideCardEstimate"
 
     /// What was left of a saved month's income — the same calculation as "נשאר מההכנסה האחרונה" in the summary,
     /// with that month's own incomes, deductions and fixed expenses (the current period uses today's).
@@ -194,13 +212,13 @@ extension Store {
         let known = card.reduce(0) { $0 + $1.amount }
         let average = money.averageCardVariable()
         if average > known, monthEnd > now || card.isEmpty {
-            card.append(.init(title: "עוד צפוי לפי ממוצע החודשים הקודמים", amount: average - known))
+            card.append(.init(title: "עוד צפוי לפי ממוצע החודשים הקודמים", amount: average - known, estimate: true))
             cardEstimated = true
             cardEstimate = average - known
         }
         // Cards whose statements aren't imported (e.g. the bank's own card): what they usually charge.
         for s in money.cardSettings where s.monthlyEstimate > 0 {
-            card.append(.init(title: "💳 " + s.displayName + " (משוער)", amount: s.monthlyEstimate))
+            card.append(.init(title: "💳 " + s.displayName + " (משוער)", amount: s.monthlyEstimate, estimate: true))
         }
         // A fixed expense paid by card that isn't linked to its charge would count twice — point it out.
         let fixedAmounts = spending.map(\.amount).filter { $0 >= 20 }

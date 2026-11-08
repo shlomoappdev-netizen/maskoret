@@ -6,6 +6,9 @@ struct SummaryView: View {
     @EnvironmentObject private var store: Store
     @State private var showSaveMonth = false
     @AppStorage("summaryShowDetails") private var showDetails = false
+    @AppStorage(Store.hideCardEstimateKey) private var hideCardEstimate = false
+    /// The slice of "לאן הולך הנטו" the user tapped (its name).
+    @State private var selectedSlice: String?
 
     /// The member in view, or the family members in view merged together.
     private var budget: Budget { store.dashboard.budget }
@@ -36,11 +39,9 @@ struct SummaryView: View {
                     }
                     .padding(.horizontal, -20)
 
-                    AdaptiveStack {
-                        heroCard(picture)
-                        if picture.net > 0 {
-                            chartCard(picture)
-                        }
+                    heroCard(picture)
+                    if picture.net > 0 {
+                        chartCard(picture)
                     }
                     todoCard(picture)
                     moneyStrip
@@ -186,16 +187,21 @@ struct SummaryView: View {
     private func heroCard(_ p: MonthPicture) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             // What actually went out so far, beside what is expected once the card charges — the same size.
+            // With the estimate switched off, only what actually went out.
             HStack(alignment: .top, spacing: 16) {
-                heroNumber(title: "נשאר בפועל מהמשכורת האחרונה", value: p.remainingActual, note: "מה שכבר ירד עד עכשיו")
-                heroNumber(title: "צפוי להישאר אחרי חיוב האשראי", value: p.remaining, note: "לפי ממוצע החודשים הקודמים")
+                heroNumber(title: "נשאר בפועל מהמשכורת האחרונה", value: p.remainingActual,
+                           note: hideCardEstimate ? "רק מה שכבר ירד — בלי הערכת אשראי" : "מה שכבר ירד עד עכשיו")
+                if !hideCardEstimate {
+                    heroNumber(title: "צפוי להישאר אחרי חיוב האשראי", value: p.remaining, note: "לפי ממוצע החודשים הקודמים")
+                }
             }
             Spacer(minLength: 0)
-            HStack(spacing: 16) {
+            HStack(alignment: .bottom, spacing: 16) {
                 heroMini(title: p.isActual ? "נטו בפועל" : "נטו (משוער)", value: p.net)
                 heroMini(title: "הוצאות", value: p.spendingTotal + p.periodic + p.cardWithInstallments)
                 heroMini(title: "לחיסכון", value: p.toSavingsTotal)
             }
+            estimateSwitch
         }
         .padding(22)
         .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
@@ -209,6 +215,29 @@ struct SummaryView: View {
             ),
             in: RoundedRectangle(cornerRadius: 18, style: .continuous)
         )
+    }
+
+    /// Shows or hides the card estimate everywhere the month is shown (only when there is one to hide).
+    @ViewBuilder private var estimateSwitch: some View {
+        if hideCardEstimate || store.fullMonthPicture.cardEstimated {
+            Toggle(isOn: Binding(
+                get: { !hideCardEstimate },
+                set: { on in
+                    store.objectWillChange.send()
+                    withAnimation { hideCardEstimate = !on }
+                }
+            )) {
+                Label("כולל הערכת הוצאות באשראי", systemImage: "wand.and.stars")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Color.white.opacity(0.9))
+            }
+            .toggleStyle(.switch)
+            .tint(Color.white.opacity(0.35))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.12), in: Capsule())
+            .fixedSize()
+        }
     }
 
     private func heroNumber(title: String, value: Double, note: String) -> some View {
@@ -319,48 +348,55 @@ struct SummaryView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            // A donut with its legend beside it; on an iPhone the legend goes under it.
-            AdaptiveStack(spacing: 18, compactAlignment: .center, wideAlignment: .center) {
-                ZStack {
-                    Chart(items) { slice in
-                        SectorMark(
-                            angle: .value("סכום", slice.value),
-                            innerRadius: .ratio(0.62),
-                            angularInset: 2
-                        )
-                        .cornerRadius(4)
-                        .foregroundStyle(slice.color)
-                    }
-                    .frame(width: 170, height: 170)
-
-                    VStack(spacing: 2) {
-                        Text(p.isActual ? "נטו בפועל" : "נטו")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(verbatim: Fmt.moneyRounded(p.net))
-                            .font(.headline)
-                            .monospacedDigit()
-                    }
+            HStack(alignment: .firstTextBaseline) {
+                Text(p.isActual ? "נטו בפועל" : "נטו")
+                    .foregroundStyle(.secondary)
+                Text(verbatim: Fmt.moneyRounded(p.net))
+                    .font(.headline)
+                    .monospacedDigit()
+            }
+            .font(.callout)
+            // One long bar, split by where the net goes; tapping a color (or a legend line) shows what it is.
+            SliceBar(slices: items.map { .init(id: $0.name, value: $0.value, color: $0.color) }, selected: $selectedSlice)
+                .frame(height: 30)
+            if let name = selectedSlice, let slice = items.first(where: { $0.name == name }) {
+                HStack(spacing: 8) {
+                    Circle().fill(slice.color).frame(width: 10, height: 10)
+                    Text(slice.name)
+                        .font(.callout.weight(.semibold))
+                    Spacer()
+                    Text(verbatim: Fmt.moneyRounded(slice.value) + " · " + Fmt.percent((slice.value / total * 100).rounded()))
+                        .font(.callout.weight(.semibold))
+                        .monospacedDigit()
                 }
-                VStack(spacing: 8) {
-                    ForEach(items) { slice in
-                        HStack {
-                            Circle().fill(slice.color).frame(width: 9, height: 9)
-                            Text(slice.name)
-                            Spacer()
-                            Text(verbatim: Fmt.moneyRounded(slice.value))
-                                .monospacedDigit()
-                            Text(verbatim: Fmt.percent((slice.value / total * 100).rounded()))
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                                .frame(minWidth: 40, alignment: .trailing)
+                .padding(10)
+                .background(slice.color.opacity(0.15), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .transition(.opacity)
+            }
+            VStack(spacing: 8) {
+                ForEach(items) { slice in
+                    HStack {
+                        Circle().fill(slice.color).frame(width: 9, height: 9)
+                        Text(slice.name)
+                        Spacer()
+                        Text(verbatim: Fmt.moneyRounded(slice.value))
+                            .monospacedDigit()
+                        Text(verbatim: Fmt.percent((slice.value / total * 100).rounded()))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 40, alignment: .trailing)
+                    }
+                    .font(.callout)
+                    .opacity(selectedSlice == nil || selectedSlice == slice.name ? 1 : 0.45)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            selectedSlice = selectedSlice == slice.name ? nil : slice.name
                         }
-                        .font(.callout)
                     }
                 }
             }
         }
-        .frame(minHeight: 230)
     }
 
     // MARK: Stats
@@ -756,6 +792,49 @@ struct SaveMonthSheet: View {
             payslipError = error.localizedDescription
             try? FileManager.default.removeItem(at: file)
             payslipFile = nil
+        }
+    }
+}
+
+// MARK: - A long bar split into colored parts
+
+/// A horizontal bar made of parts by size (right to left in Hebrew); tapping a part selects it.
+struct SliceBar: View {
+    struct Part: Identifiable {
+        let id: String
+        let value: Double
+        let color: Color
+    }
+
+    let slices: [Part]
+    @Binding var selected: String?
+
+    var body: some View {
+        let total = max(slices.reduce(0) { $0 + $1.value }, 0.01)
+        GeometryReader { geo in
+            let gap: CGFloat = 2
+            let usable = max(geo.size.width - gap * CGFloat(max(slices.count - 1, 0)), 0)
+            HStack(spacing: gap) {
+                ForEach(slices) { part in
+                    Rectangle()
+                        .fill(part.color)
+                        .frame(width: max(usable * part.value / total, 3))
+                        .opacity(selected == nil || selected == part.id ? 1 : 0.35)
+                        .overlay {
+                            if selected == part.id {
+                                Rectangle().strokeBorder(Color.primary.opacity(0.8), lineWidth: 2)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                selected = selected == part.id ? nil : part.id
+                            }
+                        }
+                        .help(part.id)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 }
