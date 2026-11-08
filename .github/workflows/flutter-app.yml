@@ -42,6 +42,28 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      # pdfium_dart downloads PDFium from a GitHub release link while building; when those links answer 504
+      # (as on 08.11.2026) the build fails. Put it where the package looks first, trying the link and then the API.
+      - name: PDFium
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rel=chromium%2F7811
+          dir=".dart_tool/hooks_runner/shared/pdfium_dart/build/${rel/\%2F/_}/win-x64"
+          [ -f "$dir/pdfium.dll" ] && exit 0
+          mkdir -p "$dir"
+          for i in 1 2 3 4 5; do
+            curl -fsSL --retry 2 "https://github.com/bblanchon/pdfium-binaries/releases/download/$rel/pdfium-win-x64.tgz" -o pdfium.tgz && break
+            url=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/bblanchon/pdfium-binaries/releases/tags/$rel" \
+                  | jq -r '.assets[] | select(.name == "pdfium-win-x64.tgz") | .url') \
+              && curl -fsSL -H "Accept: application/octet-stream" -H "Authorization: Bearer $GH_TOKEN" "$url" -o pdfium.tgz && break
+            echo "PDFium download failed (try $i)"; sleep 20
+          done
+          tar -xzf pdfium.tgz bin/pdfium.dll
+          mv bin/pdfium.dll "$dir/pdfium.dll"
+          rm -rf bin pdfium.tgz
+          ls -la "$dir"
       # The Swift cross-check needs a Mac; every other test runs here.
       - run: flutter test --exclude-tags swift
       - name: Build
