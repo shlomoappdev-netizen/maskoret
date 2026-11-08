@@ -102,14 +102,16 @@ class HouseholdsScreen extends StatelessWidget {
                 ),
               ),
             ]),
-            if (Updater.supported)
+            if (Updater.hasScreen)
               SectionCard(title: 'האפליקציה', children: [
                 ListTile(
                   leading: const Icon(Icons.system_update_alt),
                   title: const Text('עדכונים'),
-                  subtitle: Text(scope.updater.available
-                      ? 'יש גרסה חדשה: ${scope.updater.latest!.version}'
-                      : 'גרסה ${scope.updater.currentVersion}'),
+                  subtitle: Text(Updater.fromPlayStore
+                      ? 'העדכונים מגיעים דרך Google Play'
+                      : scope.updater.available
+                          ? 'יש גרסה חדשה: ${scope.updater.latest!.version}'
+                          : 'גרסה ${scope.updater.currentVersion}'),
                   trailing: const Icon(Icons.chevron_left),
                   onTap: () => Navigator.push(context, glassRoute((_) => const UpdatesScreen())),
                 ),

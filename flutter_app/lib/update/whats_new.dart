@@ -55,6 +55,20 @@ class WhatsNew {
     }
   }
 
+  /// The whole published changelog, newest first (null without a network).
+  static Future<List<ChangelogEntry>?> all({Future<String?> Function(Uri url)? fetch}) async {
+    try {
+      final text = await (fetch ?? _get)(Uri.parse('$url?t=${DateTime.now().millisecondsSinceEpoch}'));
+      if (text == null) return null;
+      return [
+        for (final e in jsonDecode(text) as List)
+          if (e is Map) ChangelogEntry(e.cast<String, dynamic>())
+      ]..sort((a, b) => b.build.compareTo(a.build));
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> markSeen(SharedPreferences prefs, int build) => prefs.setInt(seenKey, build);
 
   static Future<String?> _get(Uri url) async {

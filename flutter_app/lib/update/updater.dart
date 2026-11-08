@@ -84,8 +84,16 @@ class Updater extends ChangeNotifier {
   int? _postponedBuild;
   bool _prompting = false;
 
-  /// Only where updates are published (not on the iPhone/Mac, and not in tests).
-  static bool get supported => Platform.isAndroid || Platform.isWindows;
+  /// Built for Google Play (`--dart-define=STORE=play`, tools/build_play_bundle.sh): Play updates the app, and an app
+  /// from Play may not update itself — no checks, no download, no install.
+  static const fromPlayStore = String.fromEnvironment('STORE') == 'play';
+
+  /// Only where updates are published (not on the iPhone/Mac, not in the Play build, and not in tests).
+  static bool get supported => !fromPlayStore && (Platform.isAndroid || Platform.isWindows);
+
+  /// The updates screen: where the app updates itself, and in the Play build (the version's notes, and that updates
+  /// come through Google Play).
+  static bool get hasScreen => supported || (fromPlayStore && Platform.isAndroid);
 
   bool get available => latest != null && latest!.build > currentBuild && latest!.forThisDevice != null;
   /// A newer version the user wasn't asked about yet (since this launch).

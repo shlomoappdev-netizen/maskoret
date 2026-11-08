@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:package_info_plus/package_info_plus.dart';
+
 import '../update/updater.dart';
+import '../update/whats_new.dart';
 import 'common.dart';
 
 /// "יש גרסה חדשה" at the top of the app.
@@ -35,7 +38,61 @@ class UpdatesScreen extends StatefulWidget {
   const UpdatesScreen({super.key});
 
   @override
-  State<UpdatesScreen> createState() => _UpdatesScreenState();
+  State<UpdatesScreen> createState() => Updater.fromPlayStore ? _PlayUpdatesState() : _UpdatesScreenState();
+}
+
+/// The Play build: the installed version and what's new in it, and that updates come through Google Play
+/// (an app from Play may not update itself).
+class _PlayUpdatesState extends State<UpdatesScreen> {
+  String _version = '';
+  int _build = 0;
+  List<ChangelogEntry>? _changelog;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final info = await PackageInfo.fromPlatform();
+    final all = await WhatsNew.all();
+    if (!mounted) return;
+    setState(() {
+      _version = info.version;
+      _build = int.tryParse(info.buildNumber) ?? 0;
+      _changelog = all?.where((e) => e.build <= _build && e.notes.isNotEmpty).take(5).toList();
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('עדכונים')),
+      body: PageList(children: [
+        SectionCard(title: 'הגרסה שלך', children: [
+          ListTile(
+            leading: const Icon(Icons.shop_outlined),
+            title: Text(_version.isEmpty ? '…' : 'גרסה $_version'),
+            subtitle: const Text('העדכונים מגיעים דרך Google Play'),
+          ),
+        ]),
+        if (_loading)
+          const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+        else
+          for (final e in _changelog ?? const <ChangelogEntry>[])
+            SectionCard(
+              title: 'מה חדש בגרסה ${e.version}',
+              subtitle: e.date == null ? null : 'פורסמה ${e.date}',
+              children: [
+                for (final n in e.notes) ListTile(dense: true, leading: const Icon(Icons.check, size: 18), title: Text(n)),
+              ],
+            ),
+      ]),
+    );
+  }
 }
 
 class _UpdatesScreenState extends State<UpdatesScreen> {

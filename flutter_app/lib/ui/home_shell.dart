@@ -124,7 +124,7 @@ enum Dest {
   static List<Dest> searchable({bool admin = false}) => [
         summary, ...moneyTabs, ...budgetTabs,
         forecast, history, maaser, owed, trends, insights, family, tax, account, support,
-        if (admin) adminAnnouncements, versions, if (Updater.supported) updates,
+        if (admin) adminAnnouncements, versions, if (Updater.hasScreen) updates,
       ];
 
   /// Where the screen sits, for the search results ("הכסף שלי ← עו״ש").
@@ -176,7 +176,7 @@ enum Dest {
         ('', [summary, money, budget]),
         ('תכנון ותובנות', [forecast, history, maaser, owed, trends, insights]),
         ('הגדרות', [
-          family, tax, account, support, if (admin) adminAnnouncements, versions, if (Updater.supported) updates,
+          family, tax, account, support, if (admin) adminAnnouncements, versions, if (Updater.hasScreen) updates,
         ]),
       ];
 

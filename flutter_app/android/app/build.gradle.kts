@@ -1,3 +1,4 @@
+import java.util.Base64
 import java.util.Properties
 
 // The permanent release key: every update must be signed with the same key, or Android won't install it.
@@ -8,6 +9,14 @@ val keyProps = Properties().apply {
 }
 val releaseStoreFile: String? = keyProps.getProperty("storeFile")?.let { file(it).path } ?: System.getenv("ANDROID_KEYSTORE_PATH")
 val releaseStorePassword: String? = keyProps.getProperty("storePassword") ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+
+// The Google Play build: built with --dart-define=STORE=play (tools/build_play_bundle.sh). Flutter hands the defines to
+// Gradle as base64 in "dart-defines"; with STORE=play the manifest in src/play removes what only self-update needs.
+// Every other build (the APK on the site, CI, upload_android_build.sh) is unchanged.
+val playStore: Boolean = (findProperty("dart-defines") as String?)
+    ?.split(",")
+    ?.any { define: String -> runCatching { String(Base64.getDecoder().decode(define)) }.getOrNull() == "STORE=play" }
+    ?: false
 
 plugins {
     id("com.android.application")
@@ -45,6 +54,10 @@ android {
                 keyPassword = releaseStorePassword
             }
         }
+    }
+
+    if (playStore) {
+        sourceSets.getByName("release").manifest.srcFile("src/play/AndroidManifest.xml")
     }
 
     buildTypes {
