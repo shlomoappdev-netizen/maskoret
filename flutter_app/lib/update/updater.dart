@@ -73,6 +73,8 @@ class Updater extends ChangeNotifier {
 
   /// Android: the user was sent to allow installs from this app; back in the app, the install goes on by itself.
   bool _waitingForPermission = false;
+  /// A download broke in the middle — it goes on by itself when the user is back in the app.
+  bool _resumeDownload = false;
 
   Updater() {
     if (Platform.isAndroid) _channel.setMethodCallHandler(_onPlatformCall);
@@ -123,6 +125,12 @@ class Updater extends ChangeNotifier {
 
   /// Back in the app (see main.dart): if the user just allowed installs from this app, install what was downloaded.
   Future<void> resumed() async {
+    // A download that broke while the app was in the background goes on from where it stopped.
+    if (_resumeDownload && !busy) {
+      _resumeDownload = false;
+      await install();
+      return;
+    }
     if (!_waitingForPermission || busy) return;
     final allowed = await _channel.invokeMethod<bool>('canInstall') ?? false;
     if (allowed) {
@@ -162,9 +170,9 @@ class Updater extends ChangeNotifier {
   static Future<File> _updateFile(int build) async {
     final dir = Directory('${(await getTemporaryDirectory()).path}/updates');
     await dir.create(recursive: true);
-    // Older downloads aren't needed any more.
+    // Older downloads aren't needed any more (this build's file and its partial download stay).
     for (final f in dir.listSync().whereType<File>()) {
-      if (!f.path.endsWith('-$build.${Platform.isWindows ? 'exe' : 'apk'}')) {
+      if (!f.uri.pathSegments.last.startsWith('maskoret-$build.')) {
         try {
           f.deleteSync();
         } catch (_) {}
@@ -219,6 +227,7 @@ class Updater extends ChangeNotifier {
     final build = latest?.build;
     if (target == null || build == null || busy) return;
     _waitingForPermission = false;
+    _resumeDownload = false;
     phase = UpdatePhase.downloading;
     progress = 0;
     error = null;
@@ -256,6 +265,8 @@ class Updater extends ChangeNotifier {
       }
     } catch (e) {
       phase = UpdatePhase.failed;
+      // A broken connection (e.g. the app went to the background): continue on return, keeping what arrived.
+      if (e is IOException || e is TimeoutException) _resumeDownload = true;
       error = e is _Corrupt
           ? 'הקובץ שהורד פגום. נסה שוב.'
           : (e is PlatformException && e.code == 'install' ? installError('failure') : 'העדכון נכשל. נסה שוב בעוד רגע.');
@@ -263,23 +274,44 @@ class Updater extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Downloads into `<file>.part` and renames it when complete. A part left by an interrupted download (the
+  /// connection broke, the app was closed) is continued with an HTTP Range request instead of starting over.
   Future<void> _download(String url, File file) async {
+    final part = File('${file.path}.part');
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
     try {
-      final response = await (await client.getUrl(Uri.parse(url))).close();
-      if (response.statusCode != 200) throw HttpException('HTTP ${response.statusCode}');
-      final total = response.contentLength;
-      var received = 0;
-      final sink = file.openWrite();
-      await for (final chunk in response) {
-        sink.add(chunk);
-        received += chunk.length;
-        if (total > 0) {
-          progress = received / total;
-          notifyListeners();
-        }
+      var have = await part.exists() ? await part.length() : 0;
+      final request = await client.getUrl(Uri.parse(url));
+      if (have > 0) request.headers.set(HttpHeaders.rangeHeader, 'bytes=$have-');
+      final response = await request.close();
+      if (response.statusCode == 416) {
+        // The part is already complete (or doesn't fit the file any more): check it as is.
+        await response.drain<void>();
+        await part.rename(file.path);
+        return;
       }
-      await sink.close();
+      if (response.statusCode == 200) {
+        have = 0; // The server sent the whole file.
+      } else if (response.statusCode != 206) {
+        throw HttpException('HTTP ${response.statusCode}');
+      }
+      final total = response.contentLength > 0 ? have + response.contentLength : 0;
+      var received = have;
+      final sink = part.openWrite(mode: have > 0 ? FileMode.append : FileMode.write);
+      try {
+        // A connection that stalls (e.g. cut off while the app was in the background) fails instead of hanging.
+        await for (final chunk in response.timeout(const Duration(seconds: 30))) {
+          sink.add(chunk);
+          received += chunk.length;
+          if (total > 0) {
+            progress = received / total;
+            notifyListeners();
+          }
+        }
+      } finally {
+        await sink.close();
+      }
+      await part.rename(file.path);
     } finally {
       client.close();
     }
