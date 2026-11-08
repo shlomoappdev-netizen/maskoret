@@ -1,6 +1,8 @@
 #!/bin/bash
-# Builds the iPhone app (Release) from this checkout and reinstalls it on the connected iPhone.
+# Builds the iPhone app (Release) and reinstalls it on the connected iPhone.
 # Free signing expires after 7 days — run this to renew it.
+# It builds the latest *published* version (its release tag, as the Mac and the other platforms get it), so the iPhone
+# never runs work in progress. `--main` builds the current folder instead (for trying unreleased changes).
 set -euo pipefail
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer}"
@@ -38,10 +40,27 @@ if [ -z "$UDID" ]; then
 fi
 echo "  נמצא: $UDID"
 
-if git rev-parse --git-dir >/dev/null 2>&1; then
-  echo "▶ מושך את הגרסה האחרונה…"
-  git pull --ff-only -q || echo "  (לא הצלחתי למשוך — בונה ממה שיש בתיקייה)"
+SRC="$ROOT"
+if [ "${1:-}" != "--main" ]; then
+  echo "▶ בודק מה הגרסה האחרונה שפורסמה…"
+  PUBLISHED=$(curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)" \
+    | /usr/bin/python3 -c "import json,sys;print(json.load(sys.stdin)['version'])") || PUBLISHED=""
+  if [ -z "$PUBLISHED" ]; then
+    echo "✖ לא הצלחתי לבדוק את הגרסה שפורסמה (אין אינטרנט?). נסה שוב."
+    exit 1
+  fi
+  git fetch -q --tags origin
+  if ! git rev-parse -q --verify "refs/tags/v$PUBLISHED" >/dev/null; then
+    echo "✖ לא נמצא התג v$PUBLISHED. נסה שוב בעוד כמה דקות."
+    exit 1
+  fi
+  # A separate copy of the published version, so the project folder (and work in it) isn't touched.
+  SRC="$HOME/Library/Caches/maskoret-iphone-src"
+  git worktree remove --force "$SRC" >/dev/null 2>&1 || rm -rf "$SRC"
+  git worktree prune
+  git worktree add -q --detach "$SRC" "v$PUBLISHED"
 fi
+cd "$SRC"
 
 VERSION=$(/usr/bin/python3 -c "import json;print(json.load(open('version.json'))['version'])")
 echo "▶ בונה את גרסה $VERSION (Release) — זה לוקח כמה דקות…"
