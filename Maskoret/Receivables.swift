@@ -72,7 +72,23 @@ extension MoneyData {
     var totalOwedToMe: Double { receivables.reduce(0) { $0 + outstanding($1) } }
 
     /// Income transactions that are someone paying you back — not real income.
-    var reimbursementIncomeIDs: Set<UUID> { Set(receivables.flatMap(\.incomeIDs)) }
+    /// Also participation in a shared fixed expense — it comes off that expense instead.
+    var reimbursementIncomeIDs: Set<UUID> {
+        Set(receivables.flatMap(\.incomeIDs) + costShareIncomes.keys.compactMap(UUID.init(uuidString:)))
+    }
+
+    /// The shared expense an income is participation in.
+    func sharedCost(forIncome id: UUID) -> UUID? {
+        costShareIncomes[id.uuidString].flatMap(UUID.init(uuidString:))
+    }
+
+    /// What was paid toward a shared expense in a period (income transactions marked as participation in it).
+    func costShareReceived(_ costID: UUID, from start: Date, to end: Date) -> Double {
+        let key = costID.uuidString
+        return transactions
+            .filter { $0.kind == .income && costShareIncomes[$0.id.uuidString] == key && $0.date >= start && $0.date < end }
+            .reduce(0) { $0 + $1.amount }
+    }
 
     /// The part of an expense transaction someone else owes you.
     func owedPortion(transaction id: UUID) -> Double {
@@ -178,6 +194,7 @@ extension Store {
     /// Links an income transaction as a payment on a debt (nil = a regular income again).
     func linkIncome(_ txID: UUID, to receivableID: UUID?) {
         var m = money
+        if receivableID != nil { m.costShareIncomes[txID.uuidString] = nil }
         for i in m.receivables.indices { m.receivables[i].incomeIDs.removeAll { $0 == txID } }
         if let receivableID, let i = m.receivables.firstIndex(where: { $0.id == receivableID }) {
             m.receivables[i].incomeIDs.append(txID)
@@ -190,11 +207,30 @@ extension Store {
         var r = Receivable(person: person.trimmingCharacters(in: .whitespaces), note: note)
         r.manualAmount = t.amount
         var m = money
+        m.costShareIncomes[t.id.uuidString] = nil
         for i in m.receivables.indices { m.receivables[i].incomeIDs.removeAll { $0 == t.id } }
         r.incomeIDs = [t.id]
         m.receivables.append(r)
         syncOwedPortions(&m)
         money = m
+    }
+
+    /// Marks an income as someone's participation in a shared fixed expense (nil = a regular income again).
+    func linkIncome(_ txID: UUID, toSharedCost costID: UUID?) {
+        var m = money
+        for i in m.receivables.indices { m.receivables[i].incomeIDs.removeAll { $0 == txID } }
+        m.costShareIncomes[txID.uuidString] = costID?.uuidString
+        money = m
+    }
+
+    /// Fixed expenses marked as shared, to link participation to.
+    var sharedCosts: [CostItem] { budget.expenses.filter { $0.isShared } }
+
+    /// "נטפליקס (עם דני)" — the shared expense an income pays into, for its row.
+    func sharedCostTitle(forIncome id: UUID) -> String? {
+        guard let costID = money.sharedCost(forIncome: id) else { return nil }
+        guard let item = budget.expenses.first(where: { $0.id == costID }) else { return "חיוב משותף" }
+        return item.name + " (" + item.sharedWith + ")"
     }
 
     var people: [String] {

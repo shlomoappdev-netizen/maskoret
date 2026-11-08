@@ -87,6 +87,23 @@ struct CostsView: View {
     private var cardKey: Int? { section == .expenses ? store.money.cardStatementKeys.first : nil }
     private var cardActuals: [UUID: Double] { cardKey.map { store.cardActuals(billingKey: $0) } ?? [:] }
 
+
+    /// "משותף עם דני · השתתף החודש ב-₪25 מתוך ₪30".
+    private func sharedText(_ item: CostItem) -> String? {
+        guard item.isShared else { return nil }
+        let money = store.money
+        let period = money.period(containing: Date())
+        let back = money.costShareReceived(item.id, from: money.periodStart(year: period.year, month: period.month),
+                                           to: money.periodEnd(year: period.year, month: period.month))
+        var text = "משותף עם " + item.sharedWith
+        if back > 0.005 {
+            text += " · השתתף החודש ב-" + Fmt.money(back)
+            if item.partnerShare > 0 { text += " מתוך " + Fmt.money(item.partnerShare) }
+        } else if item.partnerShare > 0 {
+            text += " · החלק שלו " + Fmt.money(item.partnerShare) + " — עוד לא הגיע החודש"
+        }
+        return text
+    }
     private func displayAmount(_ item: CostItem) -> Double {
         switch section {
         case .deductions: return store.budget.rawDeductionAmount(item)
@@ -124,7 +141,8 @@ struct CostsView: View {
                                 CostRow(item: item, amount: displayAmount(item), baseLabel: section.baseLabel,
                                         cardActual: cardActuals[item.id], cardLabel: cardKey.map(CardView.billingTitle),
                                         note: item.auto == .pension && !store.budget.taxSettings.contributesPension()
-                                            ? "לא מפריש לפנסיה כרגע — אפשר לשנות בנתוני מס" : nil)
+                                            ? "לא מפריש לפנסיה כרגע — אפשר לשנות בנתוני מס" : nil,
+                                        shared: section == .expenses ? sharedText(item) : nil)
                             }
                             .buttonStyle(.plain)
                             .rowMenu(onEdit: { editing = item }) {
@@ -237,6 +255,8 @@ struct CostRow: View {
     var cardActual: Double? = nil
     var cardLabel: String? = nil
     var note: String? = nil
+    /// A shared charge: who shares it and what they paid toward it this period.
+    var shared: String? = nil
 
     private var subtitle: String {
         switch item.kind {
@@ -264,6 +284,11 @@ struct CostRow: View {
                 Text(verbatim: note ?? subtitle)
                     .font(.caption)
                     .foregroundStyle(note == nil ? Color.secondary : Color.orange)
+                if let shared {
+                    Label(shared, systemImage: "person.2.fill")
+                        .font(.caption)
+                        .foregroundStyle(.teal)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -291,6 +316,8 @@ struct CostRow: View {
 
 struct CostEditor: View {
     @State private var item: CostItem
+    /// The "shared" switch is on while the name is still empty.
+    @State private var sharingOn = false
     let isNew: Bool
     let section: CostSection
     let budget: Budget
@@ -327,8 +354,32 @@ struct CostEditor: View {
                 manualSection
             }
 
+            if section == .expenses && item.kind != .automatic && item.targetAccountID == nil {
+                sharedSection
+            }
+
             Section {
                 Toggle("כלול בחישוב", isOn: $item.isActive)
+            }
+        }
+    }
+
+    /// A charge shared with someone (a subscription, a joint bill): their participation comes off it.
+    private var sharedSection: some View {
+        Section {
+            Toggle("חיוב משותף", isOn: Binding(
+                get: { item.isShared || sharingOn },
+                set: { on in
+                    sharingOn = on
+                    if !on { item.sharedWith = ""; item.partnerShare = 0 }
+                }))
+            if item.isShared || sharingOn {
+                FormTextField("עם מי", text: $item.sharedWith, prompt: Text("למשל: דני"))
+                AmountField(title: "החלק שלו בחודש (לא חובה)", value: $item.partnerShare)
+            }
+        } footer: {
+            if item.isShared || sharingOn {
+                Text("כשמגיע ממנו כסף על החיוב (למשל העברה בביט), סמן את ההכנסה במסך ״עו״ש״ כ״השתתפות בחיוב משותף״. הסכום יורד מההוצאה, ולא נספר כהכנסה (גם לא במעשרות).")
             }
         }
     }

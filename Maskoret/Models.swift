@@ -132,8 +132,17 @@ struct CostItem: Identifiable, Codable, Equatable, Hashable {
     var targetAccountID: UUID? = nil
     /// Expenses only: the day of the month it leaves the bank (nil = the pay day).
     var chargeDay: Int? = nil
+    /// Expenses only: a shared charge (e.g. a subscription split with a friend) — who shares it ("" = not shared).
+    /// Incomes marked as their participation (MoneyData.costShareIncomes) come off this expense.
+    var sharedWith: String = ""
+    /// The part they're expected to pay each month (0 = not set).
+    var partnerShare: Double = 0
 
-    private enum CodingKeys: String, CodingKey { case id, name, kind, value, isActive, auto, targetAccountID, chargeDay }
+    var isShared: Bool { !sharedWith.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, kind, value, isActive, auto, targetAccountID, chargeDay, sharedWith, partnerShare
+    }
 
     static func automatic(_ type: AutoDeduction) -> CostItem {
         CostItem(name: type.title, kind: .automatic, value: type.defaultPercent, auto: type)
@@ -164,6 +173,8 @@ extension CostItem {
         auto = try c.decodeIfPresent(AutoDeduction.self, forKey: .auto)
         targetAccountID = try c.decodeIfPresent(UUID.self, forKey: .targetAccountID)
         chargeDay = try? c.decodeIfPresent(Int.self, forKey: .chargeDay)
+        sharedWith = (try? c.decodeIfPresent(String.self, forKey: .sharedWith)) ?? ""
+        partnerShare = (try? c.decodeIfPresent(Double.self, forKey: .partnerShare)) ?? 0
     }
 }
 

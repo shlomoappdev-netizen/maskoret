@@ -389,6 +389,9 @@ struct MoneyData: Codable, Equatable {
     /// The rates of each day the app saw them ("2026-11-03" → rates), so a charge is converted at the rate of the
     /// day it was made. The Bank of Israel API gives only today's rates, so the days fill in as the app is used.
     var exchangeRateHistory: [String: [String: Double]] = [:]
+    /// Income transactions that are someone's participation in a shared fixed expense: income id → expense id
+    /// (both uuidString). Not income — they come off that expense.
+    var costShareIncomes: [String: String] = [:]
 
     /// Until the first check with the Bank of Israel (November 2026).
     static let fallbackRates: [String: Double] = ["USD": 3.157, "EUR": 3.5306, "GBP": 4.235]
@@ -396,7 +399,7 @@ struct MoneyData: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case accounts, transactions, forecast, primeRate, primeAuto, boiRate, primeCheckedAt, nextRateDecision, rateLastChanged
         case cardTransactions, merchantRules, cardImports, trends, maaser, receivables, payDay, autoBalanceSince, cardSettings
-        case exchangeRates, exchangeRatesAt, exchangeRateHistory
+        case exchangeRates, exchangeRatesAt, exchangeRateHistory, costShareIncomes
     }
 
     var checking: Account? { accounts.first { $0.kind == .checking } }
@@ -425,6 +428,7 @@ extension MoneyData {
         trends = (try? c.decodeIfPresent([Trend].self, forKey: .trends)) ?? []
         maaser = (try? c.decodeIfPresent(MaaserSettings.self, forKey: .maaser)) ?? MaaserSettings()
         receivables = (try? c.decodeIfPresent([Receivable].self, forKey: .receivables)) ?? []
+        costShareIncomes = (try? c.decodeIfPresent([String: String].self, forKey: .costShareIncomes)) ?? [:]
         payDay = (try? c.decodeIfPresent(Int.self, forKey: .payDay)) ?? 1
         autoBalanceSince = try? c.decodeIfPresent(Date.self, forKey: .autoBalanceSince)
         cardSettings = (try? c.decodeIfPresent([CardSetting].self, forKey: .cardSettings)) ?? []

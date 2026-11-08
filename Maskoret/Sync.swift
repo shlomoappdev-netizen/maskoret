@@ -150,12 +150,21 @@ extension Store {
         var spending: [MonthPicture.Line] = []
         var toSavings: [MonthPicture.Line] = []
         for item in budget.expenses where item.isActive {
-            let amount = item.amount(base: budget.expenseBase)
+            var amount = item.amount(base: budget.expenseBase)
             guard amount != 0 else { continue }
             if let target = money.account(item.targetAccountID) {
                 toSavings.append(.init(title: item.name + " ← " + target.name, amount: amount))
             } else {
-                spending.append(.init(title: item.name, amount: amount))
+                // A shared charge: what the others paid toward it this period comes off it.
+                var title = item.name
+                if item.isShared {
+                    let back = money.costShareReceived(item.id, from: monthStart, to: monthEnd)
+                    if back > 0.005 {
+                        amount = max(0, amount - back)
+                        title += " (אחרי השתתפות " + Fmt.money(back) + ")"
+                    }
+                }
+                spending.append(.init(title: title, amount: amount))
             }
         }
 

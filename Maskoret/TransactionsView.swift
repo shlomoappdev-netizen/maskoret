@@ -291,17 +291,30 @@ struct TransactionsView: View {
                 Button {
                     editing = t
                 } label: {
-                    TransactionRow(transaction: t, money: store.money)
+                    TransactionRow(transaction: t, money: store.money, sharedCost: store.sharedCostTitle(forIncome: t.id))
                 }
                 .buttonStyle(.plain)
-                if t.kind == .income, t.salaryKey == nil, store.receivable(forIncome: t.id) == nil {
+                if t.kind == .income, t.salaryKey == nil, store.receivable(forIncome: t.id) == nil,
+                   store.money.sharedCost(forIncome: t.id) == nil {
                     let open = store.openReceivables()
-                    if !open.isEmpty {
+                    let shared = store.sharedCosts
+                    if !open.isEmpty || !shared.isEmpty {
                         Menu {
-                            Section("זה תשלום על חוב של…") {
-                                ForEach(open) { r in
-                                    Button(r.person + " — נשאר " + Fmt.money(store.money.outstanding(r))) {
-                                        store.linkIncome(t.id, to: r.id)
+                            if !open.isEmpty {
+                                Section("זה תשלום על חוב של…") {
+                                    ForEach(open) { r in
+                                        Button(r.person + " — נשאר " + Fmt.money(store.money.outstanding(r))) {
+                                            store.linkIncome(t.id, to: r.id)
+                                        }
+                                    }
+                                }
+                            }
+                            if !shared.isEmpty {
+                                Section("השתתפות בחיוב משותף") {
+                                    ForEach(shared) { c in
+                                        Button(c.name + " — " + c.sharedWith) {
+                                            store.linkIncome(t.id, toSharedCost: c.id)
+                                        }
                                     }
                                 }
                             }
@@ -310,7 +323,7 @@ struct TransactionsView: View {
                         }
                         .menuStyle(.borderlessButton)
                         .fixedSize()
-                        .help("שייך להחזר חוב")
+                        .help("החזר חוב או השתתפות בחיוב משותף")
                     }
                 }
             }
@@ -342,6 +355,8 @@ struct TransactionsView: View {
 struct TransactionRow: View {
     let transaction: MoneyTransaction
     let money: MoneyData
+    /// The shared fixed expense this income is participation in ("נטפליקס (דני)").
+    var sharedCost: String? = nil
 
     private var accountsText: String {
         if transaction.isCardPurchase {
@@ -357,6 +372,9 @@ struct TransactionRow: View {
         let from = money.account(transaction.accountID)?.name ?? "—"
         if transaction.kind == .income, let r = money.receivables.first(where: { $0.incomeIDs.contains(transaction.id) }) {
             return from + " · ↩︎ החזר חוב — " + (r.person.isEmpty ? "חבר" : r.person)
+        }
+        if transaction.kind == .income, let sharedCost {
+            return from + " · 👥 השתתפות ב" + sharedCost
         }
         if transaction.kind == .transfer {
             return from + " ← " + (money.account(transaction.toAccountID)?.name ?? "—")
@@ -452,6 +470,9 @@ struct TransactionEditor: View {
                                 .tag(r.id.uuidString)
                         }
                         Text("חוב שלא רשמתי…").tag("new")
+                        ForEach(store.sharedCosts) { c in
+                            Text(verbatim: "השתתפות ב" + c.name + " — " + c.sharedWith).tag("cost:" + c.id.uuidString)
+                        }
                     }
                     if debtChoice == "new" {
                         FormTextField("מי החזיר", text: $newDebtPerson, prompt: Text("שם"))
@@ -459,13 +480,16 @@ struct TransactionEditor: View {
                     }
                 } footer: {
                     Text(debtChoice == "none"
-                         ? "אם זה מישהו שמחזיר לך כסף ששילמת בשבילו — שייך לחוב, וזה לא ייספר כהכנסה (גם לא במעשרות)."
+                         ? "אם זה מישהו שמחזיר לך כסף ששילמת בשבילו — שייך לחוב או לחיוב משותף, וזה לא ייספר כהכנסה (גם לא במעשרות)."
+                         : debtChoice.hasPrefix("cost:")
+                         ? "נרשם כהשתתפות בחיוב המשותף — יורד מההוצאה הקבועה, ולא נספר כהכנסה בסיכום ובמעשרות."
                          : "נרשם כתשלום על החוב ב״חייבים לי״ — לא נספר כהכנסה בסיכום ובמעשרות.")
                 }
                 .onAppear {
                     guard !loadedDebt else { return }
                     loadedDebt = true
                     if let r = store.receivable(forIncome: transaction.id) { debtChoice = r.id.uuidString }
+                    if let c = store.money.sharedCost(forIncome: transaction.id) { debtChoice = "cost:" + c.uuidString }
                 }
             }
 
@@ -519,8 +543,12 @@ struct TransactionEditor: View {
         onSave(transaction)
         let isIncome = transaction.kind == .income && transaction.salaryKey == nil
         let current = store.receivable(forIncome: transaction.id)?.id
+        let currentCost = store.money.sharedCost(forIncome: transaction.id)
         if !isIncome || debtChoice == "none" {
             if current != nil { store.linkIncome(transaction.id, to: nil) }
+            if currentCost != nil { store.linkIncome(transaction.id, toSharedCost: nil) }
+        } else if debtChoice.hasPrefix("cost:"), let id = UUID(uuidString: String(debtChoice.dropFirst(5))) {
+            if id != currentCost { store.linkIncome(transaction.id, toSharedCost: id) }
         } else if debtChoice == "new" {
             let person = newDebtPerson.trimmingCharacters(in: .whitespaces)
             if !person.isEmpty {
