@@ -185,26 +185,43 @@ struct SummaryView: View {
     // MARK: Hero
 
     private func heroCard(_ p: MonthPicture) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // What actually went out so far, beside what is expected once the card charges — the same size.
-            // With the estimate switched off, only what actually went out.
-            HStack(alignment: .top, spacing: 16) {
-                heroNumber(title: "נשאר בפועל מהמשכורת האחרונה", value: p.remainingActual,
-                           note: hideCardEstimate ? "רק מה שכבר ירד — בלי הערכת אשראי" : "מה שכבר ירד עד עכשיו")
-                if !hideCardEstimate {
+        VStack(alignment: .leading, spacing: 14) {
+            if hideCardEstimate {
+                // Only what actually went out: the number, with the month's figures beside it.
+                HStack(alignment: .center, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        heroNumber(title: "נשאר בפועל מהמשכורת האחרונה", value: p.remainingActual,
+                                   note: "רק מה שכבר ירד — בלי הערכת אשראי")
+                        estimateSwitch
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        heroMini(title: p.isActual ? "נטו בפועל" : "נטו (משוער)", value: p.net)
+                        heroMini(title: "הוצאות", value: p.spendingTotal + p.periodic + p.cardWithInstallments)
+                        heroMini(title: "לחיסכון", value: p.toSavingsTotal)
+                    }
+                    .padding(.leading, 20)
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(Color.white.opacity(0.25)).frame(width: 1)
+                    }
+                    .fixedSize()
+                }
+            } else {
+                // What actually went out so far, beside what is expected once the card charges — the same size.
+                HStack(alignment: .top, spacing: 16) {
+                    heroNumber(title: "נשאר בפועל מהמשכורת האחרונה", value: p.remainingActual, note: "מה שכבר ירד עד עכשיו")
                     heroNumber(title: "צפוי להישאר אחרי חיוב האשראי", value: p.remaining, note: "לפי ממוצע החודשים הקודמים")
                 }
+                Spacer(minLength: 0)
+                HStack(alignment: .bottom, spacing: 16) {
+                    heroMini(title: p.isActual ? "נטו בפועל" : "נטו (משוער)", value: p.net)
+                    heroMini(title: "הוצאות", value: p.spendingTotal + p.periodic + p.cardWithInstallments)
+                    heroMini(title: "לחיסכון", value: p.toSavingsTotal)
+                    estimateSwitch
+                }
             }
-            Spacer(minLength: 0)
-            HStack(alignment: .bottom, spacing: 16) {
-                heroMini(title: p.isActual ? "נטו בפועל" : "נטו (משוער)", value: p.net)
-                heroMini(title: "הוצאות", value: p.spendingTotal + p.periodic + p.cardWithInstallments)
-                heroMini(title: "לחיסכון", value: p.toSavingsTotal)
-            }
-            estimateSwitch
         }
         .padding(22)
-        .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: hideCardEstimate ? 0 : 230, alignment: .topLeading)
         .background(
             LinearGradient(
                 colors: p.remainingActual >= 0
@@ -218,25 +235,26 @@ struct SummaryView: View {
     }
 
     /// Shows or hides the card estimate everywhere the month is shown (only when there is one to hide).
+    /// A small pill in the hero's corner that says what it does now.
     @ViewBuilder private var estimateSwitch: some View {
         if hideCardEstimate || store.fullMonthPicture.cardEstimated {
-            Toggle(isOn: Binding(
-                get: { !hideCardEstimate },
-                set: { on in
-                    store.objectWillChange.send()
-                    withAnimation { hideCardEstimate = !on }
-                }
-            )) {
-                Label("כולל הערכת הוצאות באשראי", systemImage: "wand.and.stars")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.9))
+            Button {
+                store.objectWillChange.send()
+                withAnimation(.easeInOut(duration: 0.2)) { hideCardEstimate.toggle() }
+            } label: {
+                Label(hideCardEstimate ? "הצג הערכת אשראי" : "הסתר הערכת אשראי",
+                      systemImage: hideCardEstimate ? "eye" : "eye.slash")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.18), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+                    .contentShape(Capsule())
             }
-            .toggleStyle(.switch)
-            .tint(Color.white.opacity(0.35))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.12), in: Capsule())
-            .fixedSize()
+            .buttonStyle(.plain)
+            .help(hideCardEstimate ? "להציג גם את ההערכה לפי ממוצע החודשים הקודמים"
+                                   : "להציג רק את מה שכבר ירד בפועל, בלי ההערכה")
         }
     }
 

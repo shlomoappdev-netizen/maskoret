@@ -109,13 +109,15 @@ struct MoreView: View {
                                 .monospacedDigit()
                                 .foregroundStyle(picture.remainingActual >= 0 ? Color.green : Color.red)
                         }
-                        Spacer()
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("צפוי להישאר").font(.caption).foregroundStyle(.secondary)
-                            Text(verbatim: Fmt.moneyRounded(picture.remaining))
-                                .font(.title3.weight(.bold))
-                                .monospacedDigit()
-                                .foregroundStyle(picture.remaining >= 0 ? Color.green : Color.red)
+                        if !UserDefaults.standard.bool(forKey: Store.hideCardEstimateKey) {
+                            Spacer()
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("צפוי להישאר").font(.caption).foregroundStyle(.secondary)
+                                Text(verbatim: Fmt.moneyRounded(picture.remaining))
+                                    .font(.title3.weight(.bold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(picture.remaining >= 0 ? Color.green : Color.red)
+                            }
                         }
                     }
                 }
