@@ -174,13 +174,22 @@ class MonthPicture {
     final toSavings = <MonthLine>[];
     final base = budget.expenseBase;
     for (final item in budget.expenses.where((e) => e.isActive)) {
-      final amount = item.amount(base);
+      var amount = item.amount(base);
       if (amount == 0) continue;
       final target = money.account(item.targetAccountID);
       if (target != null) {
         toSavings.add(MonthLine('${item.name} ← ${target.name}', amount));
       } else {
-        spending.add(MonthLine(item.name, amount));
+        // A shared charge: what the others paid toward it this period comes off it.
+        var title = item.name;
+        if (item.isShared) {
+          final back = money.costShareReceived(item.id, monthStart, monthEnd);
+          if (back > 0.005) {
+            amount = amount - back < 0 ? 0 : amount - back;
+            title += ' (אחרי השתתפות ${Fmt.money(back)})';
+          }
+        }
+        spending.add(MonthLine(title, amount));
       }
     }
 

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../data/fmt.dart';
 import '../data/json.dart';
 import '../data/models.dart';
+import '../data/money_calc.dart';
 import 'common.dart';
 import 'tax_settings_screen.dart';
+import 'theme.dart';
 
 // MARK: - Incomes
 
@@ -325,11 +327,23 @@ class ExpensesScreen extends StatelessWidget {
                 ListTile(
                   leading: Switch(value: e.isActive, onChanged: (v) => store.edit((f) => CostItem(e.json).isActive = v)),
                   title: Text(e.name),
-                  subtitle: Text([
-                    if (e.kind == CostKind.percent) '${Fmt.percent(e.value)} מהנטו' else 'סכום קבוע',
-                    if (e.targetAccountID != null) 'עובר ל${money.account(e.targetAccountID)?.name ?? 'חשבון'}',
-                    if (e.chargeDay != null) 'יורד ב-${e.chargeDay} לחודש',
-                  ].join(' · ')),
+                  subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text([
+                      if (e.kind == CostKind.percent) '${Fmt.percent(e.value)} מהנטו' else 'סכום קבוע',
+                      if (e.targetAccountID != null) 'עובר ל${money.account(e.targetAccountID)?.name ?? 'חשבון'}',
+                      if (e.chargeDay != null) 'יורד ב-${e.chargeDay} לחודש',
+                    ].join(' · ')),
+                    // A shared charge: who shares it and what they paid toward it this period (CostRow.shared).
+                    if (sharedCostText(e, money) case final shared?)
+                      Row(children: [
+                        Icon(Icons.people, size: 14, color: AppColors.teal),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(shared,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.teal)),
+                        ),
+                      ]),
+                  ]),
                   trailing: Text(Fmt.money(e.rawAmount(b.expenseBase)), textDirection: TextDirection.rtl,
                       style: Theme.of(context).textTheme.titleMedium),
                   onTap: () => editCost(context, e, deductions: false),
@@ -348,12 +362,29 @@ class ExpensesScreen extends StatelessWidget {
   }
 }
 
+/// "משותף עם דני · השתתף החודש ב-₪25 מתוך ₪30" (sharedText in CostsView.swift).
+String? sharedCostText(CostItem item, MoneyData money) {
+  if (!item.isShared) return null;
+  final (y, m) = money.period(DateTime.now());
+  final back = money.costShareReceived(item.id, money.periodStart(y, m), money.periodEnd(y, m));
+  var text = 'משותף עם ${item.sharedWith}';
+  if (back > 0.005) {
+    text += ' · השתתף החודש ב-${Fmt.money(back)}';
+    if (item.partnerShare > 0) text += ' מתוך ${Fmt.money(item.partnerShare)}';
+  } else if (item.partnerShare > 0) {
+    text += ' · החלק שלו ${Fmt.money(item.partnerShare)} — עוד לא הגיע החודש';
+  }
+  return text;
+}
+
 /// Editing a manual deduction (percent of gross) or a fixed expense (percent of net).
 Future<void> editCost(BuildContext context, CostItem? existing, {required bool deductions}) async {
   final store = context.store;
   final draft = CostItem(existing != null ? deepCopy(existing.json) as Json : CostItem.create());
   // Deposits into savings are set on the savings account itself; a pension comes out of the salary.
   final savings = store.money.accounts.where((a) => a.kind == AccountKind.pension).toList();
+  // The "shared" switch is on while the name is still empty.
+  var sharingOn = false;
   await showEditor(
     context,
     title: existing == null ? (deductions ? 'ניכוי חדש' : 'הוצאה חדשה') : existing.name,
@@ -409,8 +440,36 @@ Future<void> editCost(BuildContext context, CostItem? existing, {required bool d
             const DropdownMenuItem(value: null, child: Text('לא — זו הוצאה')),
             for (final a in savings) DropdownMenuItem(value: a.id, child: Text(a.name)),
           ],
-          onChanged: (v) => draft.targetAccountID = v,
+          onChanged: (v) => setState(() => draft.targetAccountID = v),
         ),
+      ],
+      // A charge shared with someone (a subscription, a joint bill): their participation comes off it (sharedSection).
+      if (!deductions && draft.kind != CostKind.automatic && draft.targetAccountID == null) ...[
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('חיוב משותף'),
+          value: draft.isShared || sharingOn,
+          onChanged: (on) => setState(() {
+            sharingOn = on;
+            if (!on) {
+              draft.sharedWith = '';
+              draft.partnerShare = 0;
+            }
+          }),
+        ),
+        if (draft.isShared || sharingOn) ...[
+          TextInput(label: 'עם מי', initial: draft.sharedWith, onChanged: (v) => draft.sharedWith = v),
+          gap,
+          NumberField(
+              label: 'החלק שלו בחודש (לא חובה)', suffix: '₪', value: draft.partnerShare, onChanged: (v) => draft.partnerShare = v),
+          const SizedBox(height: 6),
+          Text(
+            'כשמגיע ממנו כסף על החיוב (למשל העברה בביט), סמן את ההכנסה במסך ״עו״ש״ כ״השתתפות בחיוב משותף״. '
+            'הסכום יורד מההוצאה, ולא נספר כהכנסה (גם לא במעשרות).',
+            style: Theme.of(ctx).textTheme.bodySmall?.copyWith(color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+          ),
+          gap,
+        ],
       ],
       SwitchListTile(
         contentPadding: EdgeInsets.zero,

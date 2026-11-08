@@ -392,6 +392,53 @@ void main() {
     compare(doc);
   }, skip: canRun ? false : 'needs swiftc (macOS)');
 
+  test('a shared fixed expense: participation this period comes off it and is not income — like Swift', () {
+    final doc = loadFixture();
+    final family = FamilyBackup(doc);
+    final file = family.fileForEditing(family.state.activeID);
+    final now = DateTime.now();
+    final expense = file.budget.expenses
+        .firstWhere((e) => e.isActive && e.kind == CostKind.fixed && e.targetAccountID == null && e.value > 50);
+    CostItem(expense.json)
+      ..sharedWith = 'דני'
+      ..partnerShare = 30;
+    final before = MonthPicture.of(file, file.money.period(now).$1, file.money.period(now).$2).spendingTotal;
+    final checking = file.money.ensureChecking();
+    final (y, m) = file.money.period(now);
+    final start = file.money.periodStart(y, m);
+    MoneyTransaction income(DateTime date, double amount) {
+      final t = MoneyTransaction.create(kind: TransactionKind.income, accountID: checking.id)
+        ..['title'] = 'ביט מדני'
+        ..['amount'] = amount
+        ..['date'] = dateTimeToSwift(date);
+      file.money.upsertTransaction(t);
+      return MoneyTransaction(t);
+    }
+
+    final actions = ReceivableActions(file);
+    final inPeriod = income(start.add(const Duration(days: 1, hours: 3)), 25);
+    final earlier = income(start.subtract(const Duration(days: 3)), 40);
+    actions.linkIncomeToSharedCost(inPeriod.id, expense.id);
+    actions.linkIncomeToSharedCost(earlier.id, expense.id);
+    // Linked to a debt first, then to the shared expense: the debt link goes.
+    final debt = ReceivableActions.create(person: 'דני')..['manualAmount'] = 100;
+    actions.upsert(debt);
+    final third = income(start.add(const Duration(days: 2)), 10.5);
+    actions.linkIncome(third.id, debt['id'] as String);
+    actions.linkIncomeToSharedCost(third.id, expense.id);
+    expect(CardData(file.money).receivables.any((r) => r.incomeIDs.contains(third.id)), isFalse);
+    expect(CardData(file.money).reimbursementIncomeIDs, containsAll([inPeriod.id, earlier.id, third.id]));
+    final after = MonthPicture.of(file, y, m);
+    expect(after.spendingTotal, closeTo(before - 35.5, 0.001));
+    expect(after.spending.any((l) => l.title.contains('(אחרי השתתפות')), isTrue);
+    expect(ReceivableActions.sharedCostTitle(file, inPeriod.id), '${expense.name} (דני)');
+    compare(doc);
+    // A debt link clears the shared one.
+    actions.linkIncome(third.id, debt['id'] as String);
+    expect(file.money.sharedCost(third.id), isNull);
+    compare(doc);
+  }, skip: canRun ? false : 'needs swiftc (macOS)');
+
   test('family: a member added, renamed and another deleted here is read by Swift with the same numbers', () {
     final doc = loadFixture();
     final family = FamilyBackup(doc);

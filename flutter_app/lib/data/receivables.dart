@@ -113,11 +113,43 @@ class ReceivableActions {
 
   /// Links an income transaction as a payment on a debt (null = a regular income again).
   void linkIncome(String txID, String? receivableID) {
+    if (receivableID != null) _setCostShare(txID, null);
     for (final r in _money.objects('receivables')) {
       (r['incomeIDs'] as List?)?.remove(txID);
     }
     if (receivableID == null) return;
     final r = _money.objects('receivables').where((r) => r['id'] == receivableID).firstOrNull;
     if (r != null) ((r['incomeIDs'] ??= <dynamic>[]) as List).add(txID);
+  }
+
+  /// Marks an income as someone's participation in a shared fixed expense (null = a regular income again) —
+  /// linkIncome(_:toSharedCost:) in Receivables.swift.
+  void linkIncomeToSharedCost(String txID, String? costID) {
+    for (final r in _money.objects('receivables')) {
+      (r['incomeIDs'] as List?)?.remove(txID);
+    }
+    _setCostShare(txID, costID);
+  }
+
+  void _setCostShare(String txID, String? costID) {
+    final map = file.money.costShareIncomes;
+    if (costID == null) {
+      if (!map.containsKey(txID)) return;
+      map.remove(txID);
+    } else {
+      map[txID] = costID;
+    }
+    file.money.costShareIncomes = map;
+  }
+
+  /// Fixed expenses marked as shared, to link participation to.
+  List<CostItem> get sharedCosts => file.budget.expenses.where((e) => e.isShared).toList();
+
+  /// "נטפליקס (דני)" — the shared expense an income pays into, for its row (sharedCostTitle in Receivables.swift).
+  static String? sharedCostTitle(SaveFile file, String incomeId) {
+    final costID = file.money.sharedCost(incomeId);
+    if (costID == null) return null;
+    final item = file.budget.expenses.where((e) => e.id == costID).firstOrNull;
+    return item == null ? 'חיוב משותף' : '${item.name} (${item.sharedWith})';
   }
 }

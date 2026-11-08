@@ -490,17 +490,48 @@ class _Statement extends StatelessWidget {
   }
 
   Future<void> menu(BuildContext context, LedgerLine l, Offset at) async {
-    final t = context.store.money.transactions.where((t) => t.id == l.transactionId).firstOrNull;
+    final store = context.store;
+    final money = store.money;
+    final t = money.transactions.where((t) => t.id == l.transactionId).firstOrNull;
     if (t == null) return;
+    // An income not linked yet: a payment on a debt, or participation in a shared fixed expense.
+    final cards = CardData(money);
+    final linkable = t.kind == TransactionKind.income &&
+        t.salaryKey == null &&
+        !cards.receivables.any((r) => r.incomeIDs.contains(t.id)) &&
+        money.sharedCost(t.id) == null;
+    final open = linkable ? openReceivables(money) : const <Receivable>[];
+    final shared = linkable ? ReceivableActions(store.dashboard).sharedCosts : const <CostItem>[];
     final choice = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
-      items: const [
-        PopupMenuItem(value: 'edit', child: Text('עריכה')),
-        PopupMenuItem(value: 'delete', child: Text('מחיקה')),
+      items: [
+        const PopupMenuItem(value: 'edit', child: Text('עריכה')),
+        const PopupMenuItem(value: 'delete', child: Text('מחיקה')),
+        if (open.isNotEmpty) ...[
+          const PopupMenuDivider(),
+          const PopupMenuItem(enabled: false, height: 32, child: Text('זה תשלום על חוב של…')),
+          for (final r in open)
+            PopupMenuItem(
+                value: 'debt:${r.id}',
+                child: Text('${r.person} — נשאר ${Fmt.money(cards.outstanding(r, money.transactions))}')),
+        ],
+        if (shared.isNotEmpty) ...[
+          const PopupMenuDivider(),
+          const PopupMenuItem(enabled: false, height: 32, child: Text('השתתפות בחיוב משותף')),
+          for (final c in shared) PopupMenuItem(value: 'cost:${c.id}', child: Text('${c.name} — ${c.sharedWith}')),
+        ],
       ],
     );
-    if (!context.mounted) return;
+    if (!context.mounted || choice == null) return;
+    if (choice.startsWith('debt:')) {
+      store.edit((f) => ReceivableActions(f).linkIncome(t.id, choice.substring(5)));
+      return;
+    }
+    if (choice.startsWith('cost:')) {
+      store.edit((f) => ReceivableActions(f).linkIncomeToSharedCost(t.id, choice.substring(5)));
+      return;
+    }
     if (choice == 'edit') editTransaction(context, t);
     if (choice == 'delete' &&
         await confirm(context, 'למחוק את התנועה?', 'אי אפשר לבטל את הפעולה.', ok: 'מחיקה') &&
@@ -550,6 +581,9 @@ class _Statement extends StatelessWidget {
                         style: l.source == LedgerSource.balance ? const TextStyle(fontWeight: FontWeight.w600) : null,
                       ),
                       if (l.note.isNotEmpty) Text(l.note, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+                      if (l.transactionId != null)
+                        if (ReceivableActions.sharedCostTitle(context.store.dashboard, l.transactionId!) case final cost?)
+                          Text('👥 השתתפות ב$cost', style: theme.textTheme.bodySmall?.copyWith(color: muted)),
                     ],
                   ),
                 ),
@@ -695,7 +729,13 @@ class _LegacyTransactions extends StatelessWidget {
           final debt = t.kind == TransactionKind.income
               ? cards.receivables.where((r) => r.incomeIDs.contains(t.id)).firstOrNull
               : null;
-          final canLink = t.kind == TransactionKind.income && t.salaryKey == null && debt == null && open.isNotEmpty;
+          final costTitle = ReceivableActions.sharedCostTitle(store.dashboard, t.id);
+          final shared = ReceivableActions(store.dashboard).sharedCosts;
+          final canLink = t.kind == TransactionKind.income &&
+              t.salaryKey == null &&
+              debt == null &&
+              costTitle == null &&
+              (open.isNotEmpty || shared.isNotEmpty);
           return ListTile(
             leading: CircleAvatar(
               backgroundColor: color.withValues(alpha: 0.12),
@@ -707,23 +747,32 @@ class _LegacyTransactions extends StatelessWidget {
             ),
             title: Text(t.title.isEmpty ? t.kind.title : t.title),
             subtitle: Text(
-              '${Fmt.date(t.date)}${where.isEmpty ? '' : ' · $where'}${debt == null ? '' : ' · ↩︎ החזר חוב של ${debt.person}'}',
+              '${Fmt.date(t.date)}${where.isEmpty ? '' : ' · $where'}${debt == null ? '' : ' · ↩︎ החזר חוב של ${debt.person}'}'
+              '${costTitle == null ? '' : ' · 👥 השתתפות ב$costTitle'}',
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (canLink)
                   PopupMenuButton<String>(
-                    tooltip: 'שייך להחזר חוב',
+                    tooltip: 'החזר חוב או השתתפות בחיוב משותף',
                     icon: const Icon(Icons.assignment_return_outlined, size: 20),
-                    onSelected: (id) => store.edit((f) => ReceivableActions(f).linkIncome(t.id, id)),
+                    onSelected: (id) => store.edit((f) => id.startsWith('cost:')
+                        ? ReceivableActions(f).linkIncomeToSharedCost(t.id, id.substring(5))
+                        : ReceivableActions(f).linkIncome(t.id, id)),
                     itemBuilder: (_) => [
-                      const PopupMenuItem(enabled: false, height: 32, child: Text('זה תשלום על חוב של…')),
-                      for (final r in open)
-                        PopupMenuItem(
-                          value: r.id,
-                          child: Text('${r.person} — נשאר ${Fmt.money(cards.outstanding(r, money.transactions))}'),
-                        ),
+                      if (open.isNotEmpty) ...[
+                        const PopupMenuItem(enabled: false, height: 32, child: Text('זה תשלום על חוב של…')),
+                        for (final r in open)
+                          PopupMenuItem(
+                            value: r.id,
+                            child: Text('${r.person} — נשאר ${Fmt.money(cards.outstanding(r, money.transactions))}'),
+                          ),
+                      ],
+                      if (shared.isNotEmpty) ...[
+                        const PopupMenuItem(enabled: false, height: 32, child: Text('השתתפות בחיוב משותף')),
+                        for (final c in shared) PopupMenuItem(value: 'cost:${c.id}', child: Text('${c.name} — ${c.sharedWith}')),
+                      ],
                     ],
                   ),
                 Text(
@@ -766,6 +815,15 @@ Future<void> editTransaction(BuildContext context, MoneyTransaction? existing, {
   if (existing == null && kind == TransactionKind.transfer) {
     draft.toAccountID = accounts.where((a) => a.kind != AccountKind.checking).firstOrNull?.id;
   }
+  // What this income pays back: "none", a debt's id, or "cost:<expense id>".
+  final cards = CardData(store.money);
+  final debts = openReceivables(store.money, including: draft.id);
+  final shared = ReceivableActions(store.dashboard).sharedCosts;
+  var debtChoice = 'none';
+  final linkedDebt = debts.where((r) => r.incomeIDs.contains(draft.id)).firstOrNull;
+  if (linkedDebt != null) debtChoice = linkedDebt.id;
+  final linkedCost = store.money.sharedCost(draft.id);
+  if (linkedCost != null && shared.any((c) => c.id == linkedCost)) debtChoice = 'cost:$linkedCost';
   await showEditor(
     context,
     title: existing == null ? 'תנועה חדשה' : 'עריכת תנועה',
@@ -827,11 +885,53 @@ Future<void> editTransaction(BuildContext context, MoneyTransaction? existing, {
         ],
         gap,
         TextInput(label: 'הערה', initial: draft.note, onChanged: (v) => draft.note = v),
+        // "החזר חוב": an income that pays back a debt or is participation in a shared fixed expense — not income.
+        if (draft.kind == TransactionKind.income && draft.salaryKey == null && (debts.isNotEmpty || shared.isNotEmpty)) ...[
+          gap,
+          DropdownButtonFormField<String>(
+            initialValue: debtChoice,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: 'החזר חוב',
+              border: const OutlineInputBorder(),
+              helperMaxLines: 3,
+              helperText: debtChoice == 'none'
+                  ? 'אם זה מישהו שמחזיר לך כסף ששילמת בשבילו — שייך לחוב או לחיוב משותף, וזה לא ייספר כהכנסה (גם לא במעשרות).'
+                  : debtChoice.startsWith('cost:')
+                      ? 'נרשם כהשתתפות בחיוב המשותף — יורד מההוצאה הקבועה, ולא נספר כהכנסה בסיכום ובמעשרות.'
+                      : 'נרשם כתשלום על החוב ב״חייבים לי״ — לא נספר כהכנסה בסיכום ובמעשרות.',
+            ),
+            items: [
+              const DropdownMenuItem(value: 'none', child: Text('לא — הכנסה רגילה')),
+              for (final r in debts)
+                DropdownMenuItem(
+                    value: r.id,
+                    child: Text('${r.person.isEmpty ? 'חבר' : r.person} — נשאר ${Fmt.money(cards.outstanding(r, store.money.transactions))}')),
+              for (final c in shared)
+                DropdownMenuItem(value: 'cost:${c.id}', child: Text('השתתפות ב${c.name} — ${c.sharedWith}')),
+            ],
+            onChanged: (v) => setState(() => debtChoice = v ?? 'none'),
+          ),
+        ],
       ]);
     },
     onSave: () => store.edit((f) {
       if (draft.title.trim().isEmpty) draft.title = draft.kind.title;
       f.money.upsertTransaction(draft.json);
+      // The debt / shared-expense link (save in TransactionEditor.swift).
+      final actions = ReceivableActions(f);
+      final currentDebt = CardData(f.money).receivables.where((r) => r.incomeIDs.contains(draft.id)).firstOrNull?.id;
+      final currentCost = f.money.sharedCost(draft.id);
+      final isIncome = draft.kind == TransactionKind.income && draft.salaryKey == null;
+      if (!isIncome || debtChoice == 'none') {
+        if (currentDebt != null) actions.linkIncome(draft.id, null);
+        if (currentCost != null) actions.linkIncomeToSharedCost(draft.id, null);
+      } else if (debtChoice.startsWith('cost:')) {
+        final id = debtChoice.substring(5);
+        if (id != currentCost) actions.linkIncomeToSharedCost(draft.id, id);
+      } else if (debtChoice != currentDebt) {
+        actions.linkIncome(draft.id, debtChoice);
+      }
     }),
     onDelete: existing == null ? null : () => store.edit((f) => f.money.removeTransaction(existing.id)),
   );

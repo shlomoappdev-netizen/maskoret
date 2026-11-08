@@ -467,8 +467,12 @@ class CardData {
   bool looksLikeCardPurchase(MoneyTransaction t) =>
       t.kind == TransactionKind.expense && !t.paidByCard && t.salaryKey == null && cardMatch(t) != null;
 
-  /// Income transactions that are someone paying you back — not real income.
-  late final Set<String> reimbursementIncomeIDs = {for (final r in receivables) ...r.incomeIDs};
+  /// Income transactions that are someone paying you back — not real income. Also participation in a shared fixed
+  /// expense — it comes off that expense instead.
+  late final Set<String> reimbursementIncomeIDs = {
+    for (final r in receivables) ...r.incomeIDs,
+    ...money.costShareIncomes.keys,
+  };
 
   /// The part of an expense transaction someone else owes you.
   double owedPortion(String transactionId) => receivables

@@ -186,6 +186,17 @@ class CostItem {
   int? get chargeDay => _o.raw('chargeDay') is num ? (_o.raw('chargeDay') as num).toInt() : null;
   set chargeDay(int? v) => _o.set('chargeDay', v);
 
+  /// Expenses only: a shared charge (e.g. a subscription split with a friend) — who shares it ("" = not shared).
+  /// Incomes marked as their participation (MoneyData.costShareIncomes) come off this expense.
+  String get sharedWith => _o.s('sharedWith');
+  set sharedWith(String v) => _o.set('sharedWith', v);
+
+  /// The part they're expected to pay each month (0 = not set).
+  double get partnerShare => _o.d('partnerShare');
+  set partnerShare(double v) => _o.set('partnerShare', v);
+
+  bool get isShared => sharedWith.trim().isNotEmpty;
+
   double rawAmount(double base) => switch (kind) {
         CostKind.fixed => value,
         CostKind.percent => base * value / 100,
@@ -714,6 +725,28 @@ class MoneyData {
   set exchangeRateHistory(Map<String, Map<String, double>> v) => _o.set('exchangeRateHistory', {
         for (final e in v.entries) e.key: {for (final r in e.value.entries) r.key: jsonNumber(r.value)},
       });
+
+  /// Income transactions that are someone's participation in a shared fixed expense: income id → expense id.
+  /// Not income — they come off that expense.
+  Map<String, String> get costShareIncomes {
+    final m = _o.raw('costShareIncomes');
+    if (m is! Map) return {};
+    return {for (final e in m.entries) if (e.value is String) '${e.key}': e.value as String};
+  }
+
+  set costShareIncomes(Map<String, String> v) => _o.set('costShareIncomes', Map<String, dynamic>.of(v));
+
+  /// The shared expense an income is participation in.
+  String? sharedCost(String incomeId) => costShareIncomes[incomeId];
+
+  /// What was paid toward a shared expense in a period (income transactions marked as participation in it).
+  double costShareReceived(String costId, DateTime start, DateTime end) {
+    final map = costShareIncomes;
+    return transactions
+        .where((t) =>
+            t.kind == TransactionKind.income && map[t.id] == costId && !t.date.isBefore(start) && t.date.isBefore(end))
+        .fold(0.0, (s, t) => s + t.amount);
+  }
 
   /// "2026-11-03": the day a rate belongs to (rateDayFormat in Card.swift; the device's day here).
   static String rateDay(DateTime d) =>
