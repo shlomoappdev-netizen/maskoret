@@ -16,6 +16,13 @@ struct MaskoretApp: App {
     @StateObject private var updater = Updater()
     #endif
 
+    init() {
+        #if os(macOS)
+        // Before anything reads the keychain: take over the items the previous version handed over in an update.
+        KeychainHandoff.importIfNeeded()
+        #endif
+    }
+
     var body: some Scene {
         #if os(macOS)
         WindowGroup("מחשבון שכר") {

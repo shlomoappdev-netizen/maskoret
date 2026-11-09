@@ -307,6 +307,7 @@ final class Updater: ObservableObject {
             helper.executableURL = URL(fileURLWithPath: "/bin/bash")
             helper.arguments = [url.path, String(ProcessInfo.processInfo.processIdentifier), target]
             try helper.run()
+            KeychainHandoff.export()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { NSApp.terminate(nil) }
         } catch {
             message = "החתימה נכשלה: " + error.localizedDescription
@@ -506,12 +507,103 @@ final class Updater: ObservableObject {
                 "מחשבון שכר " + (latest?.version ?? currentVersion)
             ]
             try helper.run()
+            KeychainHandoff.export()
             append("מתקין אל \(installURL.path) ופותח מחדש…")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 NSApp.terminate(nil)
             }
         } catch {
             phase = .failed("ההתקנה נכשלה: \(error.localizedDescription)")
+        }
+    }
+}
+
+// MARK: - Keychain handoff between versions
+
+/// macOS ties every keychain item this app saves to the exact build that saved it ("cdhash" partition), because the
+/// app is signed with a personal certificate and has no Apple team ID. So each update asked for the login password,
+/// once per item. Instead, the running version — which already has access — hands its items to the next one:
+/// it moves them into a file only this user can read, right before the update replaces it, and the new version
+/// adds them back to the keychain as its own (adding needs no password) and deletes the file at once.
+enum KeychainHandoff {
+    static let services = ["com.shlomodavid.maskoret.auth", "com.shlomodavid.maskoret.ai", "com.shlomodavid.maskoret.cache"]
+
+    private struct Item: Codable {
+        let service: String
+        let account: String
+        let label: String?
+        let data: Data
+    }
+
+    private static var file: URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.shlomodavid.maskoret", isDirectory: true)
+        return support.appendingPathComponent("keychain-handoff.json")
+    }
+
+    /// The old version, just before it quits for the update.
+    static func export() {
+        var items: [Item] = []
+        for service in services {
+            let list: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                       kSecAttrService as String: service,
+                                       kSecReturnAttributes as String: true,
+                                       kSecMatchLimit as String: kSecMatchLimitAll]
+            var out: CFTypeRef?
+            guard SecItemCopyMatching(list as CFDictionary, &out) == errSecSuccess,
+                  let rows = out as? [[String: Any]] else { continue }
+            for account in Set(rows.compactMap { $0[kSecAttrAccount as String] as? String }) {
+                let one: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                          kSecAttrService as String: service,
+                                          kSecAttrAccount as String: account,
+                                          kSecReturnData as String: true,
+                                          kSecReturnAttributes as String: true,
+                                          kSecMatchLimit as String: kSecMatchLimitOne]
+                var value: CFTypeRef?
+                guard SecItemCopyMatching(one as CFDictionary, &value) == errSecSuccess,
+                      let row = value as? [String: Any], let data = row[kSecValueData as String] as? Data else { continue }
+                items.append(Item(service: service, account: account, label: row[kSecAttrLabel as String] as? String, data: data))
+            }
+        }
+        guard !items.isEmpty, let json = try? JSONEncoder().encode(items) else { return }
+        let fm = FileManager.default
+        try? fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Created readable by this user only, before any secret is written into it.
+        guard fm.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o600]),
+              let handle = try? FileHandle(forWritingTo: file) else { return }
+        do {
+            try handle.write(contentsOf: json)
+            try handle.close()
+        } catch {
+            try? fm.removeItem(at: file)
+            return
+        }
+        // The old copies would ask for the password again in the new version; this version may still delete them.
+        for item in items {
+            SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                           kSecAttrService as String: item.service,
+                           kSecAttrAccount as String: item.account] as CFDictionary)
+        }
+    }
+
+    /// The new version, first thing at launch.
+    static func importIfNeeded() {
+        guard let data = try? Data(contentsOf: file) else { return }
+        defer { try? FileManager.default.removeItem(at: file) }
+        guard let items = try? JSONDecoder().decode([Item].self, from: data) else { return }
+        for item in items where services.contains(item.service) {
+            var add: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrService as String: item.service,
+                                      kSecAttrAccount as String: item.account,
+                                      kSecValueData as String: item.data]
+            if let label = item.label { add[kSecAttrLabel as String] = label }
+            if SecItemAdd(add as CFDictionary, nil) == errSecDuplicateItem {
+                // An older copy is still there (the old version couldn't delete it): replace it if allowed.
+                SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                               kSecAttrService as String: item.service,
+                               kSecAttrAccount as String: item.account] as CFDictionary)
+                SecItemAdd(add as CFDictionary, nil)
+            }
         }
     }
 }
