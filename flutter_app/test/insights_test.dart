@@ -319,10 +319,10 @@ void main() {
     test('the key and the conversation come from the account on another device', () async {
       final account = _FakeAccount();
       account.saved = [SavedAIKey('gemini', 'from-account', 'gemini-2.5-flash', '')];
-      final older = InsightMessage(role: 'user', text: 'ישן', date: DateTime(2026, 1, 1));
-      final remote = InsightMessage(role: 'assistant', text: 'מהטלפון', date: DateTime(2026, 11, 9, 10));
+      final older = InsightMessage(role: 'user', text: 'ישן', date: DateTime.now().subtract(const Duration(days: 60)));
+      final remote = InsightMessage(role: 'assistant', text: 'מהטלפון', date: DateTime.now().subtract(const Duration(minutes: 10)));
       account.conversationRows = [older.toJson(withImages: false), remote.toJson(withImages: false)];
-      account.cleared = DateTime(2026, 6, 1);
+      account.cleared = DateTime.now().subtract(const Duration(days: 30));
       final other = InsightsEngine(await SharedPreferences.getInstance(), secure, keys, account: account);
       await other.loadModels();
       expect(other.cloudProvider, CloudProvider.gemini);
@@ -332,7 +332,7 @@ void main() {
       expect(other.messages.map((m) => m.text), ['מהטלפון'], reason: 'messages from before the clear stay out');
 
       // Two devices write at the same time: nobody's messages are lost.
-      final mac = InsightMessage(role: 'user', text: 'מהמק', date: DateTime(2026, 11, 9, 11));
+      final mac = InsightMessage(role: 'user', text: 'מהמק', date: DateTime.now().subtract(const Duration(minutes: 5)));
       account.conversationRows = [...account.conversationRows, mac.toJson(withImages: false)];
       other.submitManualAnswer('תשובה מהטלפון');
       await other.pullConversation();
@@ -341,7 +341,7 @@ void main() {
       other.clear();
       await Future<void>.delayed(const Duration(milliseconds: 2100));
       expect(account.conversationRows, isEmpty);
-      expect(account.cleared!.isAfter(DateTime(2026, 6, 1)), isTrue);
+      expect(account.cleared!.isAfter(DateTime.now().subtract(const Duration(minutes: 1))), isTrue);
       await other.flush();
     });
 
