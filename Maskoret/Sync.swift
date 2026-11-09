@@ -19,7 +19,8 @@ struct MonthPicture {
     let estimatedNet: Double
     let actualNet: Double?
     let spending: [Line]
-    let periodic: Double
+    /// The tracked items' monthly average — a reserve for what they cost over time, not money that went out.
+    var periodic: Double
     let toSavings: [Line]
     let oneOffs: [Line]
     /// Variable credit-card spending bought in this period (not linked to a fixed expense), by category —
@@ -89,14 +90,16 @@ struct MonthPicture {
     var oneOffTotal: Double { oneOffs.reduce(0) { $0 + $1.amount } }
     /// Expected to be left once the card charges this period — includes the estimate by the average of the last statements.
     var remaining: Double { net - spendingTotal - periodic - toSavingsTotal - cardWithInstallments + oneOffTotal }
-    /// Left right now: only what actually went out so far, without the estimate.
-    var remainingActual: Double { remaining + cardEstimate }
+    /// Left right now: only what actually went out so far — without the card estimate and without the tracked items'
+    /// monthly average (when such a purchase really happens, it is already in the card charges).
+    var remainingActual: Double { remaining + cardEstimate + periodic }
     /// Without the card estimates: only what was actually charged or recorded.
     var actualOnly: MonthPicture {
         var p = self
         p.card = card.filter { !$0.estimate }
         p.cardEstimated = false
         p.cardEstimate = 0
+        p.periodic = 0
         return p
     }
     var outTotal: Double { spendingTotal + periodic + toSavingsTotal + cardWithInstallments - min(oneOffTotal, 0) }

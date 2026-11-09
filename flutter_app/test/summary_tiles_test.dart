@@ -16,6 +16,17 @@ void main() {
     expect(pic(0).remainingActual, pic(0).remaining);
   });
 
+  test('the tracked items average is a reserve in the expected number, not money that actually went out', () {
+    final p = MonthPicture(
+        year: 2026, month: 11, estimatedNet: 10000, actualNet: null,
+        spending: [MonthLine('שכירות', 4000)], periodic: 300, toSavings: const [], oneOffs: const [],
+        card: [MonthLine('ביגוד', 1200)], cardEstimated: false, cardEstimate: 0,
+        installments: const [], installmentsAfterThisMonth: 0);
+    expect(p.remaining, 4500);
+    expect(p.remainingActual, 4800, reason: 'what was charged on the card is already counted');
+    expect(p.actualOnly.remaining, 4800);
+  });
+
   testWidgets('tiles in one row are the same height, short title or long', (tester) async {
     await tester.pumpWidget(MaterialApp(
       home: Directionality(

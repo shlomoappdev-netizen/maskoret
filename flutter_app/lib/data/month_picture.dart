@@ -105,8 +105,9 @@ class MonthPicture {
   /// What is expected to be left after the card is charged, the estimate of the rest of the card included.
   double get remaining => net - spendingTotal - periodic - toSavingsTotal - cardWithInstallments + oneOffTotal;
 
-  /// What is actually left so far: `remaining` without the estimate of card spending still to come.
-  double get remainingActual => remaining + cardEstimate;
+  /// What is actually left so far: `remaining` without the estimate of card spending still to come and without the
+  /// tracked items' monthly average (when such a purchase really happens, it is already in the card charges).
+  double get remainingActual => remaining + cardEstimate + periodic;
   String get title => Fmt.monthTitle(year, month);
 
   /// "10 באוק׳ – 9 בנוב׳", or the month's name when the period is a calendar month.
@@ -132,7 +133,7 @@ class MonthPicture {
         estimatedNet: estimatedNet,
         actualNet: actualNet,
         spending: spending,
-        periodic: periodic,
+        periodic: 0,
         toSavings: toSavings,
         oneOffs: oneOffs,
         card: card.where((l) => !l.estimate).toList(),
