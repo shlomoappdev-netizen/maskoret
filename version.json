@@ -2,7 +2,7 @@
   "version": "4.21.1",
   "build": 69,
   "date": "2026-11-09",
-  "ready": false,
+  "ready": true,
   "notes": [
     "״בדוק חיבור״ מזהה נכון מודל של Gemini גם כשהשם שלו נשמר עם הקידומת models/"
   ]
