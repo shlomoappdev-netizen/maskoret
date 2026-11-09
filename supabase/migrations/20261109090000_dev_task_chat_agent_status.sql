@@ -39,10 +39,11 @@ $$;
 -- Older agents don't send a heartbeat; their regular calls count as one.
 do $$
 declare
+  v_name text;
   v_def text;
 begin
-  foreach v_def in array array['public.bot_pending_threads(text)', 'public.bot_open_dev_tasks(text)'] loop
-    select pg_get_functiondef(v_def::regprocedure) into v_def;
+  foreach v_name in array array['public.bot_pending_threads(text)', 'public.bot_open_dev_tasks(text)'] loop
+    select pg_get_functiondef(v_name::regprocedure) into v_def;
     v_def := replace(v_def,
       'if not private.is_support_agent(p_token) then raise exception ''forbidden'' using errcode = ''42501''; end if;',
       'if not private.is_support_agent(p_token) then raise exception ''forbidden'' using errcode = ''42501''; end if;
