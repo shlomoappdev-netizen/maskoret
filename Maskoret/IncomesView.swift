@@ -9,19 +9,21 @@ struct IncomesView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-            PageBar(title: SidebarItem.incomes.title, subtitle: subtitle, guide: .incomes) {
-                Menu {
-                    Button("הכנסה רגילה (ברוטו)…") { editing = IncomeItem() }
-                    Button("משכורת צה״לית / הכנסה נטו…") {
-                        editing = IncomeItem(name: "משכורת צה״לית", isNet: true)
+                        List {
+                VStack(spacing: 0) {
+                PageBar(title: SidebarItem.incomes.title, subtitle: subtitle, guide: .incomes) {
+                    Menu {
+                        Button("הכנסה רגילה (ברוטו)…") { editing = IncomeItem() }
+                        Button("משכורת צה״לית / הכנסה נטו…") {
+                            editing = IncomeItem(name: "משכורת צה״לית", isNet: true)
+                        }
+                    } label: {
+                        Label("הכנסה חדשה", systemImage: "plus")
                     }
-                } label: {
-                    Label("הכנסה חדשה", systemImage: "plus")
+                    .fixedSize()
                 }
-                .fixedSize()
-            }
-            Divider()
-            List {
+                }
+                .asListHeader()
                 Section {
                     Stepper(value: $store.money.payDay, in: 1...31) {
                         HStack {

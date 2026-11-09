@@ -88,6 +88,65 @@ struct AIActionPlan {
     }
 }
 
+// MARK: - Polishing a proposal before applying it
+
+extension AIAction {
+    /// The fields the user can change, in this order, with their Hebrew names.
+    static let editableFields: [(key: String, label: String)] = [
+        ("name", "שם"), ("title", "כותרת"), ("account", "חשבון"), ("trend", "מגמה"), ("expense", "הוצאה"),
+        ("new_name", "שם חדש"), ("kind", "סוג"), ("amount", "סכום"), ("balance", "יתרה"), ("balance_date", "יתרה נכון ל-"),
+        ("annual_rate", "ריבית שנתית (%)"), ("rate_type", "סוג ריבית (fixed/prime)"), ("prime_minus", "פריים מינוס (%)"),
+        ("monthly_contribution", "הפקדה חודשית"), ("contribution_day", "יום הפקדה"), ("monthly_limit", "תקרה חודשית"),
+        ("charge_day", "יום חיוב"), ("date", "תאריך"), ("start_date", "התחלה"), ("maturity_date", "סיום"),
+        ("to_account", "אל חשבון"), ("paid_by_card", "באשראי (true/false)"), ("installments", "תשלומים"),
+        ("active", "פעילה (true/false)"), ("emoji", "אימוג׳י"), ("note", "הערה")
+    ]
+
+    static let numberFields: Set<String> = [
+        "amount", "balance", "annual_rate", "prime_minus", "monthly_contribution", "contribution_day",
+        "monthly_limit", "charge_day", "installments", "interest_tax"
+    ]
+    static let boolFields: Set<String> = ["paid_by_card", "active"]
+
+    /// The value of a field as text in the edit box.
+    func text(_ key: String) -> String {
+        switch fields[key] {
+        case let b as Bool: return b ? "true" : "false"
+        case let n as NSNumber: return Fmt.number(n.doubleValue)
+        case let s as String: return s
+        default: return ""
+        }
+    }
+
+    /// The same action with the user's changes (empty text removes the field).
+    func edited(_ changes: [String: String]) -> AIAction {
+        var f = fields
+        for (key, raw) in changes {
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.isEmpty {
+                f.removeValue(forKey: key)
+            } else if AIAction.numberFields.contains(key),
+                      let n = Double(value.filter { $0.isNumber || $0 == "." || $0 == "-" }) {
+                f[key] = n
+            } else if AIAction.boolFields.contains(key) {
+                f[key] = ["true", "כן", "yes", "1"].contains(value.lowercased())
+            } else {
+                f[key] = value
+            }
+        }
+        return AIAction(id: id, type: type, fields: f)
+    }
+}
+
+extension AIActionPlan {
+    /// The block as JSON again — what the conversation keeps once the user changed something.
+    var json: String {
+        let object: [String: Any] = ["summary": summary, "actions": actions.map(\.fields)]
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return "" }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
 // MARK: - What it will do, in Hebrew
 
 extension AIAction {

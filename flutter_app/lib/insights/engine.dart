@@ -612,9 +612,19 @@ type: bar, line או pie.
   // MARK: Changes the model proposed
 
   /// Applies the chosen changes of one answer to the member being edited; keeps an undo.
-  void apply(AIActionPlan plan, Set<int> chosen, String messageID, AppStore store) {
-    final message = messages.where((m) => m.id == messageID).firstOrNull;
+  /// `raw` is the block as the model wrote it; when the user polished the plan, the conversation keeps the edited one.
+  void apply(AIActionPlan plan, Set<int> chosen, String messageID, AppStore store, {String? raw}) {
+    var message = messages.where((m) => m.id == messageID).firstOrNull;
     if (message == null) return;
+    if (raw != null && message.text.contains(raw)) {
+      final i = messages.indexOf(message);
+      final m = message;
+      message = InsightMessage(
+          role: m.role, text: m.text.replaceFirst(raw, '\n${plan.json}\n'), id: m.id, date: m.date, auto: m.auto,
+          model: m.model, label: m.label, images: m.images, imageCount: m.imageCount,
+          applied: m.applied, dismissed: m.dismissed, actionError: m.actionError);
+      messages = [...messages]..[i] = message;
+    }
     final before = jsonDecode(jsonEncode(store.file.json)) as Map<String, dynamic>;
     final done = <int>[];
     final errors = <String>[];

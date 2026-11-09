@@ -7,20 +7,27 @@ struct ReceivablesView: View {
 
     private var money: MoneyData { store.money }
 
+    /// The title bar is the first thing in the scrolling page (it scrolls away with it); on the empty state it stays on top.
+    private var scrollsWithContent: Bool { !store.money.receivables.isEmpty }
+
+    @ViewBuilder
+    private var titleBar: some View {
+        PageBar(title: SidebarItem.owed.title, subtitle: "סה״כ פתוח: " + Fmt.money(money.totalOwedToMe), guide: .owed) {
+            Button {
+                open = Receivable()
+            } label: {
+                Label("חוב חדש", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
     var body: some View {
         let active = money.receivables.filter { money.outstanding($0) > 0.005 }
         let settled = money.receivables.filter { money.outstanding($0) <= 0.005 }
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: SidebarItem.owed.title, subtitle: "סה״כ פתוח: " + Fmt.money(money.totalOwedToMe), guide: .owed) {
-                    Button {
-                        open = Receivable()
-                    } label: {
-                        Label("חוב חדש", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                Divider()
+                if !scrollsWithContent { titleBar; Divider() }
                 if money.receivables.isEmpty {
                     ContentUnavailableView {
                         Label("אף אחד לא חייב לך", systemImage: "arrow.uturn.backward.circle")
@@ -32,6 +39,9 @@ struct ReceivablesView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 16) {
+                            titleBar
+                                .padding(.horizontal, -20)
+                                .padding(.top, -20)
                             peopleCard
                             ForEach(active) { r in row(r) }
                             if !settled.isEmpty {

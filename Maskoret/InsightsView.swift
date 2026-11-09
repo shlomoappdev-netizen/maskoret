@@ -630,8 +630,8 @@ struct ChatRow: View {
                         MarkdownView(text: t)
                     case .chart(let spec):
                         InsightChart(spec: spec)
-                    case .actions(let plan, _):
-                        if !live { ActionPlanCard(plan: plan, message: message) }
+                    case .actions(let plan, let raw):
+                        if !live { ActionPlanCard(plan: plan, raw: raw, message: message) }
                     case .broken:
                         if !live {
                             Text("(ה-AI ניסה להוסיף תרשים או שינוי, אבל הנתונים שלו לא היו תקינים)")
@@ -702,13 +702,59 @@ struct ImageThumb: View {
 struct ActionPlanCard: View {
     @EnvironmentObject private var ai: InsightsEngine
     @EnvironmentObject private var store: Store
-    let plan: AIActionPlan
+    let original: AIActionPlan
+    let raw: String
     let message: InsightMessage
     @State private var chosen: Set<Int>? = nil
+    /// The user's changes, per action: field → text.
+    @State private var edits: [Int: [String: String]] = [:]
+    @State private var editing: Set<Int> = []
 
+    init(plan: AIActionPlan, raw: String, message: InsightMessage) {
+        original = plan
+        self.raw = raw
+        self.message = message
+    }
+
+    /// The proposal with the user's polish.
+    private var plan: AIActionPlan {
+        AIActionPlan(summary: original.summary, actions: original.actions.map { a in edits[a.id].map(a.edited) ?? a })
+    }
     private var applied: [Int]? { message.applied }
     private var isOpen: Bool { applied == nil && message.dismissed != true }
-    private var selection: Set<Int> { chosen ?? Set(plan.actions.map(\.id)) }
+    private var selection: Set<Int> { chosen ?? Set(original.actions.map(\.id)) }
+
+    private func binding(_ action: AIAction, _ key: String) -> Binding<String> {
+        Binding(
+            get: { edits[action.id]?[key] ?? action.text(key) },
+            set: { edits[action.id, default: [:]][key] = $0 })
+    }
+
+    @ViewBuilder
+    private func editor(_ action: AIAction) -> some View {
+        let source = original.actions.first { $0.id == action.id } ?? action
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(AIAction.editableFields.filter { source.fields[$0.key] != nil }, id: \.key) { field in
+                HStack {
+                    Text(field.label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 130, alignment: .leading)
+                    TextField(field.label, text: binding(action, field.key))
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                }
+            }
+            if edits[action.id] != nil {
+                Button("חזרה להצעה המקורית") { edits[action.id] = nil }
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.purple)
+            }
+        }
+        .padding(10)
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: 10))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -749,12 +795,28 @@ struct ActionPlanCard: View {
                         .frame(width: 24, height: 24)
                         .background(Color.purple.gradient, in: RoundedRectangle(cornerRadius: 6))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: action.title).font(.callout.weight(.medium))
+                        HStack {
+                            Text(verbatim: action.title).font(.callout.weight(.medium))
+                            if edits[action.id] != nil {
+                                Text("נערך").font(.caption2.weight(.semibold)).foregroundStyle(.purple)
+                            }
+                        }
                         ForEach(action.details, id: \.self) { line in
                             Text(verbatim: line).font(.caption).foregroundStyle(.secondary)
                         }
+                        if editing.contains(action.id) { editor(action).padding(.top, 4) }
                     }
                     Spacer(minLength: 0)
+                    if isOpen {
+                        Button {
+                            if editing.contains(action.id) { editing.remove(action.id) } else { editing.insert(action.id) }
+                        } label: {
+                            Label(editing.contains(action.id) ? "סיום" : "ערוך", systemImage: editing.contains(action.id) ? "checkmark" : "pencil")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
                 }
             }
             if let error = message.actionError {
@@ -770,7 +832,7 @@ struct ActionPlanCard: View {
                 }
                 HStack {
                     Button {
-                        ai.apply(plan, only: selection, in: message.id, store: store)
+                        ai.apply(plan, only: selection, in: message.id, store: store, replacing: edits.isEmpty ? nil : raw)
                     } label: {
                         Label(selection.count == plan.actions.count ? "אשר ובצע" : "בצע \(selection.count) מתוך \(plan.actions.count)",
                               systemImage: "checkmark")

@@ -17,7 +17,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
 # The same version and build counter as the iPhone/Mac app (version.json); builds pass them explicitly.
-version: 4.21.2+70
+version: 4.22.0+71
 
 environment:
   sdk: ^3.12.2

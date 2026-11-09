@@ -52,29 +52,39 @@ struct CardView: View {
         }
     }
 
+    /// The title bar is the first thing in the scrolling page (it scrolls away with it); on the empty state it stays on top.
+    private var scrollsWithContent: Bool { !store.money.cardTransactions.isEmpty }
+
+    @ViewBuilder
+    private var titleBar: some View {
+        PageBar(title: SidebarItem.card.title, subtitle: subtitle, guide: .card) {
+            if keys.count > 1 {
+                Picker("חודש חיוב", selection: Binding(get: { key ?? 0 }, set: { selectedKey = $0 })) {
+                    ForEach(keys, id: \.self) { k in
+                        Text(verbatim: "חיוב " + CardView.billingTitle(k)).tag(k)
+                    }
+                }
+                .fixedSize()
+            }
+            Button(action: importFile) {
+                Label("ייבוא קובץ (Max / CAL)…", systemImage: "square.and.arrow.down")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: SidebarItem.card.title, subtitle: subtitle, guide: .card) {
-                    if keys.count > 1 {
-                        Picker("חודש חיוב", selection: Binding(get: { key ?? 0 }, set: { selectedKey = $0 })) {
-                            ForEach(keys, id: \.self) { k in
-                                Text(verbatim: "חיוב " + CardView.billingTitle(k)).tag(k)
-                            }
-                        }
-                        .fixedSize()
-                    }
-                    Button(action: importFile) {
-                        Label("ייבוא קובץ (Max / CAL)…", systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                Divider()
+                if !scrollsWithContent { titleBar; Divider() }
                 if store.money.cardTransactions.isEmpty {
                     emptyState
                 } else {
                     ScrollView {
                         VStack(spacing: 16) {
+                            titleBar
+                                .padding(.horizontal, -20)
+                                .padding(.top, -20)
                             banners
                             tiles
                             AdaptiveStack {

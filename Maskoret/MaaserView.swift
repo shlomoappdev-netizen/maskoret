@@ -7,21 +7,31 @@ struct MaaserView: View {
 
     private var s: MaaserSettings { store.money.maaser }
 
+    /// The title bar is the first thing in the scrolling page (it scrolls away with it); on the empty state it stays on top.
+    private var scrollsWithContent: Bool { store.money.maaser.enabled }
+
+    @ViewBuilder
+    private var titleBar: some View {
+        PageBar(title: SidebarItem.maaser.title, subtitle: s.enabled ? Fmt.percent(s.percent) + " · " + s.base.title : nil, guide: .maaser) {
+            if s.enabled {
+                Button { showSettings = true } label: { Label("הגדרות", systemImage: "slider.horizontal.3") }
+                Button { showDonation = true } label: { Label("נתתי מעשרות", systemImage: "plus") }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
     var body: some View {
         let status = store.maaserStatus
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: SidebarItem.maaser.title, subtitle: s.enabled ? Fmt.percent(s.percent) + " · " + s.base.title : nil, guide: .maaser) {
-                    if s.enabled {
-                        Button { showSettings = true } label: { Label("הגדרות", systemImage: "slider.horizontal.3") }
-                        Button { showDonation = true } label: { Label("נתתי מעשרות", systemImage: "plus") }
-                            .buttonStyle(.borderedProminent)
-                    }
-                }
-                Divider()
+                if !scrollsWithContent { titleBar; Divider() }
                 if s.enabled {
                     ScrollView {
                         VStack(spacing: 16) {
+                            titleBar
+                                .padding(.horizontal, -20)
+                                .padding(.top, -20)
                             tiles(status)
                             if !status.missingMonths.isEmpty { missingBanner(status) }
                             if store.isCombined { familyCard }

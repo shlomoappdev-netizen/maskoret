@@ -262,15 +262,8 @@ class TransactionsScreen extends StatelessWidget {
         final lines = money.checking == null
             ? <LedgerLine>[]
             : money.checkingStatement(horizon, store.file.budget, store.file.history);
-        return Scaffold(
-          body: Column(
-            children: [
-              const _QuickEntry(),
-              const Divider(height: 1),
-              Expanded(child: lines.isEmpty ? const _LegacyTransactions() : _Statement(lines: lines)),
-            ],
-          ),
-        );
+        // The quick entry scrolls away with the list (on a phone it took half the screen when it stood still).
+        return Scaffold(body: lines.isEmpty ? const _LegacyTransactions() : _Statement(lines: lines));
       },
     );
   }
@@ -394,7 +387,7 @@ class _QuickEntryState extends State<_QuickEntry> {
     );
     final addButton = FilledButton(onPressed: (value ?? 0) > 0 ? add : null, child: const Text('הוסף'));
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: LayoutBuilder(
         builder: (context, c) {
           final header = Row(
@@ -633,6 +626,7 @@ class _Statement extends StatelessWidget {
     return PageList(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 110),
       children: [
+        const _QuickEntry(),
         if (future.isNotEmpty)
           SectionCard(
             title: 'צפוי — לפי ההכנסות, ההוצאות הקבועות והאשראי',
@@ -788,6 +782,7 @@ class _LegacyTransactions extends StatelessWidget {
 
         return PageList(
           children: [
+            const _QuickEntry(),
             if (list.isEmpty)
               const SectionCard(
                 title: 'תנועות',

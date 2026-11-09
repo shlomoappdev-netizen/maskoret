@@ -7,6 +7,7 @@ import 'package:maskoret/data/month_picture.dart';
 import 'package:maskoret/data/fmt.dart';
 import 'package:maskoret/data/json.dart';
 import 'package:maskoret/insights/ai_account.dart';
+import 'package:maskoret/insights/ai_actions.dart';
 import 'package:maskoret/insights/ai_context.dart';
 import 'package:maskoret/insights/engine.dart';
 import 'package:maskoret/state/secure_file.dart';
@@ -327,17 +328,21 @@ void main() {
       final plan = InsightParser.parse(message.text).whereType<ActionsSegment>().single.plan;
       expect(plan.actions.length, 4);
       final before = jsonEncode(store.file.json);
-      ai.apply(plan, {0, 1, 2, 3}, message.id, store);
+      // The user polishes the first change before approving it.
+      final raw = InsightParser.parse(message.text).whereType<ActionsSegment>().single.raw;
+      final polished = AIActionPlan(plan.summary, [plan.actions[0].edited({'balance': '12,600'}), ...plan.actions.skip(1)]);
+      ai.apply(polished, {0, 1, 2, 3}, message.id, store, raw: raw);
       final account = store.money.accounts.firstWhere((a) => a.id == 'D1');
-      expect(account.balances.single.amount, 12500);
+      expect(account.balances.single.amount, 12600);
+      expect(ai.messages.last.text, contains('12600'), reason: 'the conversation keeps what was really done');
       expect(account.annualRate, 4.1);
       expect(JObj(store.money.raw).objects('trends').single['monthlyLimit'], 800);
       expect(store.budget.expenses.last.json['targetAccountID'], 'D1');
-      expect(message.applied, [0, 1, 2]);
-      expect(message.actionError, contains('לא נמצאה מגמה'));
+      expect(ai.messages.last.applied, [0, 1, 2]);
+      expect(ai.messages.last.actionError, contains('לא נמצאה מגמה'));
       ai.undoLast(store);
       expect(jsonEncode(store.file.json), before);
-      expect(message.applied, isNull);
+      expect(ai.messages.last.applied, isNull);
       await store.flush();
     });
 

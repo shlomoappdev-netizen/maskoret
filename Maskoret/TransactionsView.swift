@@ -33,18 +33,6 @@ struct TransactionsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: SidebarItem.transactions.title, guide: .transactions) {
-                    Menu {
-                        Button("הוצאה גדולה…") { editing = newTransaction(.expense) }
-                        Button("הכנסה (מענק, בונוס, מתנה)…") { editing = newTransaction(.income) }
-                        Button("העברה בין חשבונות…") { editing = newTransaction(.transfer) }
-                    } label: {
-                        Label("תנועה מפורטת", systemImage: "plus")
-                    }
-                    .fixedSize()
-                }
-                quickEntry
-                Divider()
                 if store.money.checking == nil || statement.isEmpty {
                     legacyList
                 } else {
@@ -73,6 +61,24 @@ struct TransactionsView: View {
     private var quickValue: Double? {
         Double(quickAmount.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "₪", with: "")
             .trimmingCharacters(in: .whitespaces))
+    }
+
+    /// The title bar and the quick entry — the first row of the list, so they scroll away with it.
+    private var header: some View {
+        VStack(spacing: 0) {
+            PageBar(title: SidebarItem.transactions.title, guide: .transactions) {
+                Menu {
+                    Button("הוצאה גדולה…") { editing = newTransaction(.expense) }
+                    Button("הכנסה (מענק, בונוס, מתנה)…") { editing = newTransaction(.income) }
+                    Button("העברה בין חשבונות…") { editing = newTransaction(.transfer) }
+                } label: {
+                    Label("תנועה מפורטת", systemImage: "plus")
+                }
+                .fixedSize()
+            }
+            quickEntry
+        }
+        .asListHeader()
     }
 
     private var quickEntry: some View {
@@ -127,6 +133,7 @@ struct TransactionsView: View {
         let cal = Calendar.current
         let months = Dictionary(grouping: past) { cal.component(.year, from: $0.date) * 100 + cal.component(.month, from: $0.date) }
         return List {
+            header
             if !future.isEmpty {
                 Section {
                     ForEach(future) { line in ledgerRow(line, expected: true) }
@@ -233,6 +240,7 @@ struct TransactionsView: View {
 
     private var legacyList: some View {
         List {
+            header
             if !planned.isEmpty {
                 Section {
                     ForEach(planned) { t in row(t) }

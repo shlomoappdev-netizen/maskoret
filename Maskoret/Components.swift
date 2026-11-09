@@ -75,6 +75,15 @@ enum Palette {
 // MARK: - RTL / Hebrew environment
 
 extension View {
+    /// A screen's header (title bar, quick entry…) as the first row of its List, so it scrolls away with the rows
+    /// instead of standing still and taking half of a phone's screen.
+    func asListHeader() -> some View {
+        self
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+
     func hebrew() -> some View {
         self
             .environment(\.layoutDirection, .rightToLeft)

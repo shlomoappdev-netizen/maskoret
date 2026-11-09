@@ -76,13 +76,12 @@ class HistoryScreen extends StatelessWidget {
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(child: chart),
               const SizedBox(width: 12),
-              SizedBox(width: 230, child: Column(children: tiles)),
+              SizedBox(width: 230, child: Column(children: [for (final t in tiles) Padding(padding: const EdgeInsets.only(bottom: 12), child: t)])),
             ])
           else ...[
             chart,
-            Wrap(spacing: 10, runSpacing: 10, children: [
-              for (final t in tiles) SizedBox(width: (MediaQuery.sizeOf(context).width - 42) / 2, child: t),
-            ]),
+            const SizedBox(height: 12),
+            TileGrid(minWidth: 140, children: tiles),
             const SizedBox(height: 12),
           ],
           SectionCard(title: 'חודשים', children: [
@@ -126,8 +125,7 @@ class _Tile extends StatelessWidget {
   final IconData icon;
 
   @override
-  Widget build(BuildContext context) =>
-      Padding(padding: const EdgeInsets.only(bottom: 12), child: StatTile(title: title, value: value, icon: icon));
+  Widget build(BuildContext context) => StatTile(title: title, value: value, icon: icon);
 }
 
 class _HistoryChart extends StatelessWidget {

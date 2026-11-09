@@ -114,13 +114,15 @@ struct CostsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-            PageBar(title: section.title, subtitle: "סה״כ: " + Fmt.money((total * 100).rounded() / 100),
-                    guide: section == .deductions ? .deductions : .expenses) {
-                addMenu
-                    .fixedSize()
-            }
-            Divider()
-            List {
+                        List {
+                VStack(spacing: 0) {
+                PageBar(title: section.title, subtitle: "סה״כ: " + Fmt.money((total * 100).rounded() / 100),
+                        guide: section == .deductions ? .deductions : .expenses) {
+                    addMenu
+                        .fixedSize()
+                }
+                }
+                .asListHeader()
                 if section == .deductions {
                     Section {
                         Button {

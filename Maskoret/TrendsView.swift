@@ -5,22 +5,28 @@ struct TrendsView: View {
     @State private var openTrend: Trend?
     @State private var creating = false
 
+    /// The title bar — the first thing in the scrolling page, so it scrolls away with it.
+    @ViewBuilder
+    private var titleBar: some View {
+        PageBar(title: SidebarItem.trends.title, guide: .trends) {
+            Button {
+                creating = true
+            } label: {
+                Label("מגמה חדשה", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                PageBar(title: SidebarItem.trends.title, guide: .trends) {
-                    Button {
-                        creating = true
-                    } label: {
-                        Label("מגמה חדשה", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                Divider()
+                if store.money.trends.isEmpty { titleBar; Divider() }
                 if store.money.trends.isEmpty {
                     empty
                 } else {
                     ScrollView {
+                        titleBar
                         if store.money.trends.contains(where: { $0.monthlyLimit > 0 }) {
                             TrendLimitsSummary()
                                 .padding([.horizontal, .top], 20)

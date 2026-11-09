@@ -55,6 +55,49 @@ class AIAction {
 
   String _m(double v) => Fmt.money(v);
 
+  /// The fields the user can change, in this order, with their Hebrew names (same as AIActions.swift).
+  static const editableFields = [
+    ('name', 'שם'), ('title', 'כותרת'), ('account', 'חשבון'), ('trend', 'מגמה'), ('expense', 'הוצאה'),
+    ('new_name', 'שם חדש'), ('kind', 'סוג'), ('amount', 'סכום'), ('balance', 'יתרה'), ('balance_date', 'יתרה נכון ל-'),
+    ('annual_rate', 'ריבית שנתית (%)'), ('rate_type', 'סוג ריבית (fixed/prime)'), ('prime_minus', 'פריים מינוס (%)'),
+    ('monthly_contribution', 'הפקדה חודשית'), ('contribution_day', 'יום הפקדה'), ('monthly_limit', 'תקרה חודשית'),
+    ('charge_day', 'יום חיוב'), ('date', 'תאריך'), ('start_date', 'התחלה'), ('maturity_date', 'סיום'),
+    ('to_account', 'אל חשבון'), ('paid_by_card', 'באשראי (true/false)'), ('installments', 'תשלומים'),
+    ('active', 'פעילה (true/false)'), ('emoji', 'אימוג׳י'), ('note', 'הערה'),
+  ];
+  static const numberFields = {
+    'amount', 'balance', 'annual_rate', 'prime_minus', 'monthly_contribution', 'contribution_day',
+    'monthly_limit', 'charge_day', 'installments', 'interest_tax',
+  };
+  static const boolFields = {'paid_by_card', 'active'};
+
+  /// The value of a field as text in the edit box.
+  String text(String key) => switch (fields[key]) {
+        bool b => b ? 'true' : 'false',
+        num n => Fmt.number(n.toDouble()),
+        String s => s,
+        _ => '',
+      };
+
+  /// The same action with the user's changes (empty text removes the field).
+  AIAction edited(Map<String, String> changes) {
+    final f = Map<String, dynamic>.of(fields);
+    changes.forEach((key, raw) {
+      final value = raw.trim();
+      final n = double.tryParse(value.replaceAll(RegExp(r'[^0-9.\-]'), ''));
+      if (value.isEmpty) {
+        f.remove(key);
+      } else if (numberFields.contains(key) && n != null) {
+        f[key] = n;
+      } else if (boolFields.contains(key)) {
+        f[key] = const ['true', 'כן', 'yes', '1'].contains(value.toLowerCase());
+      } else {
+        f[key] = value;
+      }
+    });
+    return AIAction(id, type, f);
+  }
+
   String get icon => switch (type) {
         'add_account' || 'update_account' => 'account',
         'add_trend' || 'update_trend' => 'trend',
@@ -119,6 +162,9 @@ class AIActionPlan {
   AIActionPlan(this.summary, this.actions);
   final String summary;
   final List<AIAction> actions;
+
+  /// The block as JSON again — what the conversation keeps once the user changed something.
+  String get json => jsonEncode({'summary': summary, 'actions': [for (final a in actions) a.fields]});
 
   /// Reads the JSON of an ```actions block; unknown action types are left out.
   static AIActionPlan? decode(String raw) {

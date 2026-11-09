@@ -522,8 +522,12 @@ final class InsightsEngine: ObservableObject {
     // MARK: Changes the model proposed
 
     /// Applies the chosen changes of one answer to the member being edited; keeps an undo.
-    func apply(_ plan: AIActionPlan, only chosen: Set<Int>, in messageID: UUID, store: Store) {
+    /// `raw` is the block as the model wrote it; when the user polished the plan, the conversation keeps the edited one.
+    func apply(_ plan: AIActionPlan, only chosen: Set<Int>, in messageID: UUID, store: Store, replacing raw: String? = nil) {
         guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        if let raw, let range = messages[index].text.range(of: raw) {
+            messages[index].text.replaceSubrange(range, with: "\n" + plan.json + "\n")
+        }
         let before = (store.budget, store.money)
         var done: [Int] = []
         var errors: [String] = []

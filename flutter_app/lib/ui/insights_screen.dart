@@ -585,7 +585,8 @@ class _ChatRow extends StatelessWidget {
                 child: switch (s) {
                   TextSegment(:final text) => MarkdownText(text),
                   ChartSegment(:final spec) => InsightChart(spec: spec),
-                  ActionsSegment(:final plan) => live ? const SizedBox.shrink() : _ActionPlanCard(plan: plan, message: message),
+                  ActionsSegment(:final plan, :final raw) =>
+                    live ? const SizedBox.shrink() : _ActionPlanCard(plan: plan, raw: raw, message: message),
                   BrokenSegment() => live
                       ? const SizedBox.shrink()
                       : Text('(ה-AI ניסה להוסיף תרשים או שינוי, אבל הנתונים שלו לא היו תקינים)', style: theme.textTheme.bodySmall),
@@ -651,8 +652,9 @@ class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderState
 
 /// Changes the model proposed: each with a checkbox; nothing happens until "אשר ובצע".
 class _ActionPlanCard extends StatefulWidget {
-  const _ActionPlanCard({required this.plan, required this.message});
+  const _ActionPlanCard({required this.plan, required this.raw, required this.message});
   final AIActionPlan plan;
+  final String raw;
   final InsightMessage message;
 
   @override
@@ -661,6 +663,46 @@ class _ActionPlanCard extends StatefulWidget {
 
 class _ActionPlanCardState extends State<_ActionPlanCard> {
   Set<int>? _chosen;
+
+  /// The user's changes, per action: field → text.
+  final _edits = <int, Map<String, String>>{};
+  final _editing = <int>{};
+
+  /// The proposal with the user's polish.
+  AIActionPlan get _plan => AIActionPlan(widget.plan.summary, [
+        for (final a in widget.plan.actions) _edits[a.id] == null ? a : a.edited(_edits[a.id]!),
+      ]);
+
+  Widget _editor(AIAction original) {
+    final theme = Theme.of(context);
+    final fields = AIAction.editableFields.where((f) => original.fields.containsKey(f.$1));
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: theme.colorScheme.surface, borderRadius: BorderRadius.circular(10)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        for (final (key, label) in fields)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: TextFormField(
+              key: ValueKey('${original.id}-$key-${_edits[original.id] == null}'),
+              initialValue: _edits[original.id]?[key] ?? original.text(key),
+              decoration: InputDecoration(labelText: label, isDense: true, border: const OutlineInputBorder()),
+              keyboardType: AIAction.numberFields.contains(key) ? const TextInputType.numberWithOptions(decimal: true) : null,
+              onChanged: (v) => setState(() => (_edits[original.id] ??= {})[key] = v),
+            ),
+          ),
+        if (_edits[original.id] != null)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(
+              onPressed: () => setState(() => _edits.remove(original.id)),
+              child: const Text('חזרה להצעה המקורית'),
+            ),
+          ),
+      ]),
+    );
+  }
 
   IconData _icon(AIAction a) => switch (a.icon) {
         'account' => Icons.savings_outlined,
@@ -673,7 +715,7 @@ class _ActionPlanCardState extends State<_ActionPlanCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scope = context.scope;
-    final plan = widget.plan;
+    final plan = _plan;
     final m = widget.message;
     final applied = m.applied;
     final open = applied == null && !m.dismissed;
@@ -733,12 +775,27 @@ class _ActionPlanCardState extends State<_ActionPlanCard> {
                 child: Icon(_icon(a), size: 15, color: Colors.white),
               ),
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(a.title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Row(children: [
+                    Flexible(child: Text(a.title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
+                    if (_edits[a.id] != null)
+                      const Padding(
+                        padding: EdgeInsetsDirectional.only(start: 6),
+                        child: Text('נערך', style: TextStyle(color: Colors.purple, fontSize: 11, fontWeight: FontWeight.w700)),
+                      ),
+                  ]),
                   for (final line in a.details)
                     Text(line, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                  if (_editing.contains(a.id)) _editor(widget.plan.actions.firstWhere((o) => o.id == a.id)),
                 ]),
               ),
+              if (open)
+                TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: Colors.purple, visualDensity: VisualDensity.compact),
+                  icon: Icon(_editing.contains(a.id) ? Icons.check : Icons.edit_outlined, size: 16),
+                  label: Text(_editing.contains(a.id) ? 'סיום' : 'ערוך'),
+                  onPressed: () => setState(() => _editing.contains(a.id) ? _editing.remove(a.id) : _editing.add(a.id)),
+                ),
             ]),
           ),
         if (m.actionError != null)
@@ -758,7 +815,9 @@ class _ActionPlanCardState extends State<_ActionPlanCard> {
               style: FilledButton.styleFrom(backgroundColor: Colors.purple),
               icon: const Icon(Icons.check, size: 18),
               label: Text(selection.length == plan.actions.length ? 'אשר ובצע' : 'בצע ${selection.length} מתוך ${plan.actions.length}'),
-              onPressed: selection.isEmpty ? null : () => scope.insights.apply(plan, selection, m.id, store),
+              onPressed: selection.isEmpty
+                  ? null
+                  : () => scope.insights.apply(plan, selection, m.id, store, raw: _edits.isEmpty ? null : widget.raw),
             ),
             TextButton(onPressed: () => scope.insights.dismiss(m.id), child: const Text('לא עכשיו')),
           ]),

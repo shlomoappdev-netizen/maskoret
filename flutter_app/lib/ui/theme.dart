@@ -277,9 +277,10 @@ class TileGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, c) {
-      final columns = ((c.maxWidth + spacing) / (minWidth + spacing)).floor().clamp(1, 6);
-      final width = (c.maxWidth - spacing * (columns - 1)) / columns;
-      // Row by row, every tile as tall as the tallest one in its row.
+      // Never more columns than tiles, so a short list still fills the width.
+      final int columns = ((c.maxWidth + spacing) / (minWidth + spacing)).floor().clamp(1, max(1, min(6, children.length))).toInt();
+      // Row by row, every tile as tall as the tallest one in its row. A last row with fewer tiles stretches them
+      // across the whole width — no tile alone at one side with empty space next to it.
       final rows = <Widget>[];
       for (var i = 0; i < children.length; i += columns) {
         final row = children.sublist(i, min(i + columns, children.length));
@@ -288,7 +289,7 @@ class TileGrid extends StatelessWidget {
           child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             for (var j = 0; j < row.length; j++) ...[
               if (j > 0) SizedBox(width: spacing),
-              SizedBox(width: width, child: row[j]),
+              Expanded(child: row[j]),
             ],
           ]),
         ));
