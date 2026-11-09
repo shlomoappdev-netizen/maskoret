@@ -18,10 +18,6 @@ final class ServerSync: ObservableObject {
     @Published private(set) var lastError: String? {
         didSet { if let lastError, lastError != oldValue { AppLog.add("sync-error", lastError) } }
     }
-    /// Signed in for the first time with data already on this device, and the account has households:
-    /// ask whether to upload this data as a new household or use one from the server.
-    @Published var pendingLocalChoice = false
-
     private weak var store: Store?
     private weak var account: UserAccount?
     private var debounce: Task<Void, Never>?
@@ -127,32 +123,22 @@ final class ServerSync: ObservableObject {
         await sync()
     }
 
-    /// First time this device's data meets the account.
+    /// This device's data isn't linked to a household of the account (first sign-in, or after signing out).
+    /// The server is the source: the account's household is loaded. Data that was on the device goes to that
+    /// household's version history first (it can be restored from "גרסאות"), so nothing is lost and nobody is asked.
+    /// Changes made offline on a linked device aren't affected — `sync()` sends them up when it's back online.
     private func linkLocalData() async {
         guard let account, let store else { return }
-        // Whatever happens next, this device's data is kept as a backup first.
         if account.households.isEmpty {
             // New account: this device's data becomes their first household.
             await createHousehold(name: "משק הבית שלי", from: store.familyBackup)
-        } else if ServerSync.isEmpty(store) {
-            await switchTo(account.activeHouseholdID ?? account.households[0].id, cacheCurrent: false)
-        } else {
-            pendingLocalChoice = true
+            return
         }
-    }
-
-    /// The answer to `pendingLocalChoice`.
-    func resolveLocalChoice(uploadAsNew: Bool) async {
-        pendingLocalChoice = false
-        guard let account, let store else { return }
-        if uploadAsNew {
-            await createHousehold(name: "משק הבית שלי (מהמכשיר)", from: store.familyBackup)
-        } else {
-            // This device's data joins the household's version history on the server before it's replaced.
-            let target = account.activeHouseholdID ?? account.households[0].id
-            await uploadVersion(store.familyBackup, to: target, note: "הנתונים שהיו במכשיר לפני החיבור לחשבון")
-            await switchTo(target, cacheCurrent: false)
+        let target = account.activeHouseholdID ?? account.households[0].id
+        if !ServerSync.isEmpty(store) {
+            await uploadVersion(store.familyBackup, to: target, note: "הנתונים שהיו במכשיר לפני ההתחברות")
         }
+        await switchTo(target, cacheCurrent: false)
     }
 
     /// A data set that was never really used (nothing worth uploading or asking about).

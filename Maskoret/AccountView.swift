@@ -493,12 +493,6 @@ struct ServerSyncLifecycle: ViewModifier {
             #else
             .sheet(isPresented: signInRequired) { WelcomeView() }
             #endif
-            .confirmationDialog("יש כבר נתונים במכשיר הזה", isPresented: $sync.pendingLocalChoice, titleVisibility: .visible) {
-                Button("העלה אותם כמשק בית חדש") { Task { await sync.resolveLocalChoice(uploadAsNew: true) } }
-                Button("השתמש במשק הבית מהחשבון") { Task { await sync.resolveLocalChoice(uploadAsNew: false) } }
-            } message: {
-                Text("לחשבון שלך כבר יש משק בית. מה לעשות עם הנתונים שכבר נמצאים במכשיר? אם תבחר במשק הבית מהחשבון, הנתונים של המכשיר יישמרו קודם בגיבוי.")
-            }
     }
 }
 

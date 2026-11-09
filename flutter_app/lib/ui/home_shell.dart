@@ -416,7 +416,6 @@ class _HomeShellState extends State<HomeShell> {
 
   /// Phone: the "עוד" tab is selected.
   bool more = false;
-  bool _askedLocalChoice = false;
 
   @override
   Widget build(BuildContext context) {
@@ -425,7 +424,6 @@ class _HomeShellState extends State<HomeShell> {
     return ListenableBuilder(
       listenable: Listenable.merge([scope.store, scope.account, scope.sync, scope.updater, scope.support, nav]),
       builder: (context, _) {
-        _maybeAskLocalChoice(context);
         // Another screen asked to open one (a line in the checking statement, "מה מחכה לך"…): its group and tab.
         final opening = nav.opening;
         if (opening != null) {
@@ -522,28 +520,6 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  /// First sign-in with data already on this device: upload it, or use the household from the server?
-  void _maybeAskLocalChoice(BuildContext context) {
-    final sync = context.scope.sync;
-    if (!sync.pendingLocalChoice || _askedLocalChoice) return;
-    _askedLocalChoice = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final upload = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('יש נתונים במכשיר הזה'),
-          content: const Text('לחשבון שלך כבר יש משק בית בשרת. מה לעשות עם הנתונים שבמכשיר?'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('להעלות כמשק בית חדש')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('להשתמש בנתונים מהשרת')),
-          ],
-        ),
-      );
-      await sync.resolveLocalChoice(uploadAsNew: upload ?? false);
-      _askedLocalChoice = false;
-    });
-  }
 }
 
 class _Title extends StatelessWidget {

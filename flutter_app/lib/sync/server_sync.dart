@@ -163,10 +163,6 @@ class ServerSync extends ChangeNotifier {
   bool isSyncing = false;
   String? lastError;
 
-  /// Signed in for the first time with data already on this device, and the account has households:
-  /// ask whether to upload this data as a new household or use one from the server.
-  bool pendingLocalChoice = false;
-
   Timer? _debounce;
   Timer? _timer;
   Future<void> Function()? _stopListening;
@@ -261,31 +257,19 @@ class ServerSync extends ChangeNotifier {
     await sync();
   }
 
-  /// First time this device's data meets the account.
+  /// This device's data isn't linked to a household of the account (first sign-in, or after signing out).
+  /// The server is the source: the account's household is loaded. Data that was on the device goes to that
+  /// household's version history first (it can be restored from "גרסאות"), so nothing is lost and nobody is asked.
+  /// Changes made offline on a linked device aren't affected — `sync()` sends them up when it's back online.
   Future<void> _linkLocalData() async {
     if (account.households.isEmpty) {
       // New account: this device's data becomes their first household.
       await createHousehold('משק הבית שלי', from: store.doc);
-    } else if (store.isEmpty) {
-      await switchTo(account.activeHouseholdId ?? account.households.first.id, cache: false);
-    } else {
-      pendingLocalChoice = true;
-      notifyListeners();
+      return;
     }
-  }
-
-  /// The answer to `pendingLocalChoice`.
-  Future<void> resolveLocalChoice({required bool uploadAsNew}) async {
-    pendingLocalChoice = false;
-    notifyListeners();
-    if (uploadAsNew) {
-      await createHousehold('משק הבית שלי (מהמכשיר)', from: store.doc);
-    } else {
-      // This device's data joins the household's version history on the server before it's replaced.
-      final target = account.activeHouseholdId ?? account.households.first.id;
-      await _uploadVersion(store.doc, target, 'הנתונים שהיו במכשיר לפני החיבור לחשבון');
-      await switchTo(target, cache: false);
-    }
+    final target = account.activeHouseholdId ?? account.households.first.id;
+    if (!store.isEmpty) await _uploadVersion(store.doc, target, 'הנתונים שהיו במכשיר לפני ההתחברות');
+    await switchTo(target, cache: false);
   }
 
   Future<void> createHousehold(String name, {Json? from}) async {

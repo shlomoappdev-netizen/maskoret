@@ -17,6 +17,9 @@ import 'compat_test.dart' show diff, loadFixture;
 class FakeServer implements SyncBackend {
   final households = <String, ({Json data, int revision, DateTime updatedAt, String? device})>{};
   var saves = 0;
+
+  /// No connection: every call fails, like on a plane.
+  var offline = false;
   final snapshots = <({String hid, Json data, String note})>[];
 
   Json data(String hid) => (jsonDecode(jsonEncode(households[hid]!.data)) as Map).cast<String, dynamic>();
@@ -28,7 +31,10 @@ class FakeServer implements SyncBackend {
   }
 
   @override
-  Future<int> headRevision(String hid) async => households[hid]!.revision;
+  Future<int> headRevision(String hid) async {
+    if (offline) throw const SocketException('offline');
+    return households[hid]!.revision;
+  }
 
   @override
   Future<RemoteData> fetch(String hid) async {
@@ -272,14 +278,26 @@ void main() {
     expect(jsonEncode(server.data(server.households.keys.single)).contains('cardTransactions'), isFalse);
   });
 
-  test('using the server household keeps the device data in the server history first', () async {
+  test('signing in with data on the device: nobody is asked, the server wins, the device data is kept in its history', () async {
     await setUpDevice();
     store.edit((f) => f.budget.incomes.first.amount = 5000); // data on the device before signing in
     await sync.accountChanged();
-    expect(sync.pendingLocalChoice, isTrue);
-    await sync.resolveLocalChoice(uploadAsNew: false);
-    expect(server.snapshots.single.note, 'הנתונים שהיו במכשיר לפני החיבור לחשבון');
+    expect(server.snapshots.single.note, 'הנתונים שהיו במכשיר לפני ההתחברות');
     expect(diff(loadFixture(), store.doc), isEmpty);
+    expect(server.households.length, 1, reason: 'no second household is created');
+  });
+
+  test('changes made offline on a linked device go up when it is back online', () async {
+    await setUpDevice();
+    await sync.accountChanged();
+    server.offline = true;
+    store.edit((f) => f.budget.incomes.first.amount = 7777);
+    await sync.sync();
+    expect(sync.hasUnsyncedChanges, isTrue);
+    server.offline = false;
+    await sync.sync();
+    expect(sync.hasUnsyncedChanges, isFalse);
+    expect(server.data('h1')['files'][store.activeMemberId]['budget']['incomes'][0]['amount'], 7777);
   });
 
   test('restoring a previous version makes it current everywhere', () async {

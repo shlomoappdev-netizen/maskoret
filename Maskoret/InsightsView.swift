@@ -296,7 +296,7 @@ struct InsightsView: View {
                     }
                 }
             }
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
                 Menu {
                     Button { pickingPhoto = true } label: { Label("מהתמונות", systemImage: "photo.on.rectangle") }
                     Button { pickingFile = true } label: { Label("מקובץ", systemImage: "folder") }
@@ -304,43 +304,56 @@ struct InsightsView: View {
                         Button { if let d = Platform.pastedImage() { addImage(d) } } label: { Label("הדבק תמונה", systemImage: "doc.on.clipboard") }
                     }
                 } label: {
-                    Image(systemName: "paperclip")
-                        .font(.title3)
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.secondary)
                         .frame(width: 30, height: 30)
+                        .background(Color.primary.opacity(0.07), in: Circle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .disabled(attachments.count >= 4)
                 .help("צרף צילום מסך או תמונה")
 
                 TextField("", text: $input, prompt: Text("שאל, בקש שינוי, או צרף צילום מסך…"), axis: .vertical)
                     .textFieldStyle(.plain)
+                    .font(.body)
                     .lineLimit(1...6)
                     .focused($inputFocused)
                     .onSubmit { ask() }
-                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
 
                 if ai.isRunning {
                     Button { ai.stop() } label: {
-                        Image(systemName: "stop.circle.fill").font(.system(size: 28))
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(Color.primary.opacity(0.75), in: Circle())
                     }
                     .buttonStyle(.plain)
                     .help("עצור")
                 } else {
                     Button { ask() } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundStyle(canAsk ? Color.accentColor : Color.secondary.opacity(0.4))
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(canAsk ? Color.white : Color.secondary)
+                            .frame(width: 30, height: 30)
+                            .background(canAsk ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(Color.primary.opacity(0.08)), in: Circle())
                     }
                     .buttonStyle(.plain)
                     .disabled(!canAsk)
                     .keyboardShortcut(.return, modifiers: .command)
+                    .help("שלח")
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Palette.card, in: RoundedRectangle(cornerRadius: 22))
-            .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Color.primary.opacity(0.12)))
+            .padding(.leading, 8)
+            .padding(.trailing, 8)
+            .padding(.vertical, 7)
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(inputFocused ? Color.accentColor.opacity(0.5) : Color.primary.opacity(0.1)))
+            .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)

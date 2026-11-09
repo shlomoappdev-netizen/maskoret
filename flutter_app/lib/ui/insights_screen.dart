@@ -92,6 +92,9 @@ class _InsightsScreenState extends State<InsightsScreen> with WidgetsBindingObse
   @override
   void initState() {
     super.initState();
+    _focus.addListener(() {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _open());
   }
@@ -426,18 +429,23 @@ class _InsightsScreenState extends State<InsightsScreen> with WidgetsBindingObse
                 ),
               const SizedBox(height: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: theme.colorScheme.onSurface.withValues(alpha: 0.12)),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                      color: _focus.hasFocus ? AppColors.teal.withValues(alpha: 0.5) : theme.colorScheme.onSurface.withValues(alpha: 0.1)),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
                 ),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  IconButton(
+                child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  _RoundButton(
                     tooltip: 'צרף צילום מסך או תמונה',
-                    icon: const Icon(Icons.attach_file),
-                    onPressed: _attachments.length >= 4 ? null : _pickImages,
+                    icon: Icons.add,
+                    background: theme.colorScheme.onSurface.withValues(alpha: 0.07),
+                    foreground: theme.colorScheme.onSurfaceVariant,
+                    onTap: _attachments.length >= 4 ? null : _pickImages,
                   ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: TextField(
                       controller: _input,
@@ -447,21 +455,29 @@ class _InsightsScreenState extends State<InsightsScreen> with WidgetsBindingObse
                       textInputAction: TextInputAction.send,
                       onChanged: (_) => setState(() {}),
                       onSubmitted: (_) => _ask(),
+                      style: theme.textTheme.bodyLarge,
                       decoration: const InputDecoration(
                         hintText: 'שאל, בקש שינוי, או צרף צילום מסך…',
                         border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        filled: false,
                         isDense: true,
-                        contentPadding: EdgeInsets.symmetric(vertical: 12),
+                        contentPadding: EdgeInsets.symmetric(vertical: 6),
                       ),
                     ),
                   ),
+                  const SizedBox(width: 10),
                   if (ai.isRunning)
-                    IconButton(tooltip: 'עצור', icon: const Icon(Icons.stop_circle, size: 30), onPressed: ai.stop)
+                    _RoundButton(tooltip: 'עצור', icon: Icons.stop, background: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+                        foreground: theme.colorScheme.surface, onTap: ai.stop)
                   else
-                    IconButton(
+                    _RoundButton(
                       tooltip: 'שלח',
-                      icon: Icon(Icons.arrow_circle_up, size: 32, color: canAsk ? AppColors.teal : theme.disabledColor),
-                      onPressed: canAsk ? _ask : null,
+                      icon: Icons.arrow_upward,
+                      background: canAsk ? AppColors.teal : theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                      foreground: canAsk ? Colors.white : theme.disabledColor,
+                      onTap: canAsk ? _ask : null,
                     ),
                 ]),
               ),
@@ -471,6 +487,30 @@ class _InsightsScreenState extends State<InsightsScreen> with WidgetsBindingObse
       ),
     );
   }
+}
+
+/// A 32-point round button of the input bar.
+class _RoundButton extends StatelessWidget {
+  const _RoundButton({required this.tooltip, required this.icon, required this.background, required this.foreground, this.onTap});
+  final String tooltip;
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: Material(
+          color: background,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: SizedBox(width: 32, height: 32, child: Icon(icon, size: 18, color: foreground)),
+          ),
+        ),
+      );
 }
 
 class _Thumb extends StatelessWidget {
