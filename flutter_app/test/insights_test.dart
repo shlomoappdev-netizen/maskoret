@@ -307,6 +307,14 @@ void main() {
       expect(other.hasCloudKey, isTrue);
       await other.pullConversation();
       expect(other.messages.map((m) => m.text), ['מהטלפון'], reason: 'messages from before the clear stay out');
+
+      // Two devices write at the same time: nobody's messages are lost.
+      final mac = InsightMessage(role: 'user', text: 'מהמק', date: DateTime(2026, 11, 9, 11));
+      account.conversationRows = [...account.conversationRows, mac.toJson(withImages: false)];
+      other.submitManualAnswer('תשובה מהטלפון');
+      await other.pullConversation();
+      expect(other.messages.map((m) => m.text), containsAll(['מהטלפון', 'מהמק', 'תשובה מהטלפון']));
+      expect(account.conversationRows.map((m) => m['text']), containsAll(['מהטלפון', 'מהמק', 'תשובה מהטלפון']));
       other.clear();
       await Future<void>.delayed(const Duration(milliseconds: 2100));
       expect(account.conversationRows, isEmpty);
@@ -420,11 +428,21 @@ class _FakeAccount implements AIAccount {
   Future<void> deleteKey(String provider) async {}
   @override
   Future<List<SavedAIKey>> keys() async => saved;
+
+  /// Same as the server's ai_conversation_merge: by id, nothing overwritten, nothing from before the clear.
   @override
-  Future<SavedConversation?> conversation() async => SavedConversation(conversationRows, cleared);
-  @override
-  Future<void> saveConversation(List<Map<String, dynamic>> messages, DateTime? clearedAt) async {
-    conversationRows = messages;
-    cleared = clearedAt;
+  Future<SavedConversation> mergeConversation(List<Map<String, dynamic>> messages, DateTime? clearedAt) async {
+    if (clearedAt != null && (cleared == null || clearedAt.isAfter(cleared!))) cleared = clearedAt;
+    final byId = <String, Map<String, dynamic>>{};
+    for (final m in [...conversationRows, ...messages]) {
+      final id = (m['id'] as String).toUpperCase();
+      final old = byId[id];
+      if (old != null && old.containsKey('applied') && !m.containsKey('applied')) continue;
+      byId[id] = m;
+    }
+    final list = byId.values.where((m) => cleared == null || DateTime.parse(m['date'] as String).isAfter(cleared!)).toList()
+      ..sort((a, b) => (a['date'] as String).compareTo(b['date'] as String));
+    conversationRows = list;
+    return SavedConversation(list, cleared);
   }
 }

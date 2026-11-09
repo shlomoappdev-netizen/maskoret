@@ -104,16 +104,23 @@ class _InsightsScreenState extends State<InsightsScreen> with WidgetsBindingObse
     if (state == AppLifecycleState.resumed && mounted) context.scope.insights.pullConversation();
   }
 
+  Timer? _poll;
+
   Future<void> _open() async {
     if (!mounted) return;
     final ai = context.scope.insights;
     await ai.loadModels();
     await ai.pullConversation();
+    // While the screen is open, what the other devices write shows up within half a minute.
+    _poll ??= Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!ai.isRunning) ai.pullConversation();
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _poll?.cancel();
     _input.dispose();
     _pasted.dispose();
     _scroll.dispose();

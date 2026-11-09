@@ -26,8 +26,10 @@ struct SyncedMessage: Codable {
         return f
     }()
 
+    /// Dates as the apps and the server write them: "…T10:20:28.056Z", "….056123Z" (Dart), "….828123+00:00" (Postgres).
     static func date(_ s: String) -> Date? {
-        iso.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+        let trimmed = s.replacingOccurrences(of: #"(\.\d{3})\d+"#, with: "$1", options: .regularExpression)
+        return iso.date(from: trimmed) ?? ISO8601DateFormatter().date(from: trimmed)
     }
 
     init(_ m: InsightMessage) {
@@ -55,45 +57,42 @@ struct SyncedMessage: Codable {
     }
 }
 
-private struct ConversationRow: Codable {
-    var messages: [SyncedMessage]
-    var cleared_at: String?
-    var updated_at: String?
-}
-
 extension InsightsEngine {
-    /// Brings in what the user's other devices wrote, merged with this device's messages (by id).
-    func pullConversation() async {
+    /// Sends this device's conversation and takes the account's: the server merges them by message id (nothing is
+    /// overwritten), drops what came before the newest "new conversation", and returns the one conversation
+    /// every device shows.
+    func syncConversation() async {
         guard supabase.auth.currentUser != nil else { return }
-        guard let rows = try? await supabase.from("ai_conversations").select("messages,cleared_at,updated_at")
-            .execute().value as [ConversationRow], let row = rows.first else {
-            // Nothing in the account yet: put this device's conversation there.
-            if !messages.isEmpty { schedulePush(now: true) }
-            return
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        struct Params: Encodable {
+            let p_messages: [SyncedMessage]
+            let p_cleared_at: String?
         }
-        let remoteCleared = row.cleared_at.flatMap(SyncedMessage.date)
-        if let remoteCleared, remoteCleared > (clearedAt ?? .distantPast) { clearedAt = remoteCleared }
+        struct Merged: Decodable {
+            let messages: [SyncedMessage]
+            let cleared_at: String?
+        }
+        let sent = messages.suffix(200)
+        let params = Params(p_messages: sent.map(SyncedMessage.init), p_cleared_at: clearedAt.map { formatter.string(from: $0) })
+        guard let merged = try? await supabase.rpc("ai_conversation_merge", params: params).decoded(Merged.self) else { return }
+        if let cleared = merged.cleared_at.flatMap(SyncedMessage.date), cleared > (clearedAt ?? .distantPast) { clearedAt = cleared }
         let since = clearedAt ?? .distantPast
-        var byID: [UUID: InsightMessage] = [:]
-        for m in messages where m.date > since { byID[m.id] = m }
-        for s in row.messages {
-            guard let m = s.message, m.date > since else { continue }
-            if var local = byID[m.id] {
-                // Same message on both: keep this device's pictures, take the newest decision on its changes.
-                if local.applied == nil, m.applied != nil { local.applied = m.applied; local.actionError = m.actionError }
-                if m.dismissed == true { local.dismissed = true }
-                byID[m.id] = local
-            } else {
-                byID[m.id] = m
-            }
+        // This device keeps its pictures; messages written here while the request was on its way stay too.
+        let local = Dictionary(messages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var result: [InsightMessage] = merged.messages.compactMap { s in
+            guard var m = s.message else { return nil }
+            if let mine = local[m.id] { m.images = mine.images }
+            return m
         }
-        let merged = byID.values.sorted { $0.date < $1.date }.suffix(200)
-        if Array(merged) != messages {
-            setMessagesFromSync(Array(merged))
-        }
-        // Push when this device had something the account didn't.
-        if merged.count != row.messages.count || remoteCleared != clearedAt { schedulePush(now: true) }
+        let ids = Set(result.map(\.id))
+        result += messages.filter { !ids.contains($0.id) && $0.date > since && !sent.contains($0) }
+        result.sort { $0.date < $1.date }
+        if result != messages { setMessagesFromSync(result) }
     }
+
+    /// Brings in what the user's other devices wrote.
+    func pullConversation() async { await syncConversation() }
 
     /// Saves the conversation in the account a moment after the last change.
     func schedulePush(now: Bool = false) {
@@ -102,24 +101,8 @@ extension InsightsEngine {
         pushTaskHolder = Task { [weak self] in
             if !now { try? await Task.sleep(nanoseconds: 2_000_000_000) }
             guard !Task.isCancelled, let self else { return }
-            await self.pushConversation()
+            await self.syncConversation()
         }
-    }
-
-    private func pushConversation() async {
-        guard let user = supabase.auth.currentUser else { return }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let list = messages.suffix(200).map(SyncedMessage.init)
-        struct Upsert: Encodable {
-            let user_id: String
-            let messages: [SyncedMessage]
-            let cleared_at: String?
-            let updated_at: String
-        }
-        let row = Upsert(user_id: user.id.uuidString.lowercased(), messages: list,
-                         cleared_at: clearedAt.map { formatter.string(from: $0) }, updated_at: formatter.string(from: Date()))
-        _ = try? await supabase.from("ai_conversations").upsert(row, onConflict: "user_id").execute()
     }
 }
 

@@ -23,8 +23,10 @@ abstract class AIAccount {
   Future<void> saveKey(String provider, String? key, String model, String baseURL);
   Future<void> deleteKey(String provider);
   Future<List<SavedAIKey>> keys();
-  Future<SavedConversation?> conversation();
-  Future<void> saveConversation(List<Map<String, dynamic>> messages, DateTime? clearedAt);
+
+  /// Sends this device's conversation; the server merges it with what it keeps (by message id, nothing is
+  /// overwritten) and returns the one conversation every device shows.
+  Future<SavedConversation> mergeConversation(List<Map<String, dynamic>> messages, DateTime? clearedAt);
 }
 
 class SupabaseAIAccount implements AIAccount {
@@ -50,23 +52,10 @@ class SupabaseAIAccount implements AIAccount {
   }
 
   @override
-  Future<SavedConversation?> conversation() async {
-    final rows = await _c.from('ai_conversations').select('messages,cleared_at');
-    if (rows.isEmpty) return null;
-    final row = rows.first;
-    final list = (row['messages'] as List? ?? const []).whereType<Map>().map((m) => m.cast<String, dynamic>()).toList();
-    return SavedConversation(list, DateTime.tryParse('${row['cleared_at'] ?? ''}'));
-  }
-
-  @override
-  Future<void> saveConversation(List<Map<String, dynamic>> messages, DateTime? clearedAt) async {
-    final user = _c.auth.currentUser;
-    if (user == null) return;
-    await _c.from('ai_conversations').upsert({
-      'user_id': user.id,
-      'messages': messages,
-      'cleared_at': clearedAt?.toUtc().toIso8601String(),
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    }, onConflict: 'user_id');
+  Future<SavedConversation> mergeConversation(List<Map<String, dynamic>> messages, DateTime? clearedAt) async {
+    final r = await _c.rpc('ai_conversation_merge',
+        params: {'p_messages': messages, 'p_cleared_at': clearedAt?.toUtc().toIso8601String()}) as Map;
+    final list = (r['messages'] as List? ?? const []).whereType<Map>().map((m) => m.cast<String, dynamic>()).toList();
+    return SavedConversation(list, DateTime.tryParse('${r['cleared_at'] ?? ''}'));
   }
 }

@@ -98,6 +98,11 @@ struct InsightsView: View {
             .task {
                 await ai.loadModels()
                 await ai.pullConversation()
+                // While the screen is open, what the other devices write shows up within half a minute.
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 30_000_000_000)
+                    if !ai.isRunning { await ai.pullConversation() }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: Platform.didBecomeActive)) { _ in
                 Task { await ai.pullConversation() }

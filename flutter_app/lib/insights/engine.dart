@@ -272,59 +272,52 @@ type: bar, line או pie.
     final acc = account;
     if (acc == null || !acc.signedIn) return;
     _pushTimer?.cancel();
-    _pushTimer = Timer(now ? Duration.zero : const Duration(seconds: 2), () async {
-      final list = messages.length > 200 ? messages.sublist(messages.length - 200) : messages;
-      try {
-        await acc.saveConversation([for (final m in list) m.toJson(withImages: false)], clearedAt);
-      } catch (_) {}
-    });
+    _pushTimer = Timer(now ? Duration.zero : const Duration(seconds: 2), pullConversation);
   }
 
-  /// Brings in what the user's other devices wrote, merged with this device's messages (by id).
+  /// Sends this device's conversation and takes the account's: the server merges them by message id (nothing is
+  /// overwritten), drops what came before the newest "new conversation", and returns the one conversation every
+  /// device shows.
   Future<void> pullConversation() async {
     final acc = account;
     if (acc == null || !acc.signedIn) return;
-    SavedConversation? saved;
+    final sent = messages.length > 200 ? messages.sublist(messages.length - 200) : List.of(messages);
+    SavedConversation merged;
     try {
-      saved = await acc.conversation();
+      merged = await acc.mergeConversation([for (final m in sent) m.toJson(withImages: false)], clearedAt);
     } catch (_) {
       return;
     }
-    if (saved == null) {
-      if (messages.isNotEmpty) _schedulePush(now: true);
-      return;
-    }
-    final remoteCleared = saved.clearedAt;
+    final remoteCleared = merged.clearedAt;
     final localCleared = clearedAt;
     if (remoteCleared != null && (localCleared == null || remoteCleared.isAfter(localCleared))) clearedAt = remoteCleared;
     final since = clearedAt;
-    bool keep(InsightMessage m) => since == null || m.date.isAfter(since);
-    final byID = <String, InsightMessage>{for (final m in messages.where(keep)) m.id.toUpperCase(): m};
-    for (final j in saved.messages) {
+    // This device keeps its pictures; messages written here while the request was on its way stay too.
+    final local = {for (final m in messages) m.id.toUpperCase(): m};
+    final result = <InsightMessage>[];
+    for (final j in merged.messages) {
       final m = InsightMessage.fromJson(j);
-      if (!keep(m)) continue;
-      final local = byID[m.id];
-      if (local == null) {
-        byID[m.id] = m;
-      } else {
-        // Same message on both: keep this device's pictures, take the newest decision on its changes.
-        if (local.applied == null && m.applied != null) {
-          local.applied = m.applied;
-          local.actionError = m.actionError;
-        }
-        if (m.dismissed) local.dismissed = true;
-      }
+      final mine = local[m.id];
+      result.add(mine != null && mine.images.isNotEmpty
+          ? InsightMessage(
+              role: m.role, text: m.text, id: m.id, date: m.date, auto: m.auto, model: m.model, label: m.label,
+              images: mine.images, imageCount: m.imageCount, applied: m.applied, dismissed: m.dismissed, actionError: m.actionError)
+          : m);
     }
-    final merged = byID.values.toList()..sort((a, b) => a.date.compareTo(b.date));
-    final list = merged.length > 200 ? merged.sublist(merged.length - 200) : merged;
-    final changed = list.length != messages.length ||
-        [for (var i = 0; i < list.length; i++) list[i].id != messages[i].id || list[i].applied != messages[i].applied].any((x) => x);
+    final ids = {for (final m in result) m.id};
+    final sentIds = {for (final m in sent) m.id.toUpperCase()};
+    result.addAll(messages.where(
+        (m) => !ids.contains(m.id.toUpperCase()) && !sentIds.contains(m.id.toUpperCase()) && (since == null || m.date.isAfter(since))));
+    result.sort((a, b) => a.date.compareTo(b.date));
+    final changed = result.length != messages.length ||
+        [for (var i = 0; i < result.length; i++) result[i].id != messages[i].id || result[i].text != messages[i].text ||
+            result[i].applied?.join(',') != messages[i].applied?.join(',') || result[i].dismissed != messages[i].dismissed]
+            .any((x) => x);
     if (changed) {
-      messages = list;
+      messages = result;
       _save(push: false);
       notifyListeners();
     }
-    if (list.length != saved.messages.length || remoteCleared != clearedAt) _schedulePush(now: true);
   }
 
   /// Waits for the conversation to reach the disk (tests).
