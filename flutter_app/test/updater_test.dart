@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/support/announcements.dart';
+import 'package:maskoret/update/update_trust.dart';
 import 'package:maskoret/update/updater.dart';
 import 'package:maskoret/update/whats_new.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -40,6 +41,42 @@ void main() {
     u.latest = Release({'version': '4.3.1', 'build': 38, 'platforms': {'android': {'url': 'x'}, 'windows_setup': {'url': 'y'}}});
     expect(u.shouldPrompt, isTrue);
     expect((Updater()..currentBuild = 36..latest = u.latest).shouldPrompt, isTrue, reason: 'a new launch asks again');
+  });
+
+  group('signed updates (tools/manifest_sig.py)', () {
+    // Signed by tools/manifest_sig.py with the release key, so this also checks Python and Dart agree.
+    const sha = 'c049629df822a1b53916c327865808b497c98668c276a0a9fcfbcbcb328bc962';
+    const androidSig = 'Jld0A25Z4zWUKVU5sdCxMy5geSDfBDuz4aosPGsRMbn7EwBtexy0/4JxHRVmRT0T7xxn6AdIIL1+0u04RtH7Cg==';
+    const windowsSig = 'PylDWM2Jb1bmmxk36HTdi0opfVKByC5TJ183EC5K5do/F+x8ol6vLdA08NCv8SrXjbkLghc4blmzZLqh68jmCQ==';
+    ReleaseFile entry({String? sig = androidSig, String url = 'https://github.com/shlomoappdev-netizen/maskoret/releases/download/v4.22.4/maskoret-android.apk',
+            String? sha256 = sha, int build = 75}) =>
+        ReleaseFile({'url': url, 'sha256': sha256, 'version': '4.22.4', 'build': build, 'sig': ?sig});
+
+    test('a signed entry is trusted', () async {
+      expect(await entry().isTrusted('android'), isTrue);
+      expect(await entry(sig: windowsSig, url: 'https://github.com/shlomoappdev-netizen/maskoret/releases/download/v4.22.4/maskoret-windows-setup.exe')
+          .isTrusted('windows_setup'), isTrue);
+    });
+
+    test('anything else is refused', () async {
+      expect(await entry(sig: null).isTrusted('android'), isFalse, reason: 'no signature');
+      expect(await entry(sig: windowsSig).isTrusted('android'), isFalse, reason: 'another platform\'s signature');
+      expect(await entry().isTrusted('windows_setup'), isFalse, reason: 'signed for android');
+      expect(await entry(build: 76).isTrusted('android'), isFalse, reason: 'another build');
+      expect(await entry(sha256: 'd${sha.substring(1)}').isTrusted('android'), isFalse, reason: 'another file');
+      expect(await entry(sha256: null).isTrusted('android'), isFalse, reason: 'no sha256');
+      expect(await entry(sig: 'AAAA').isTrusted('android'), isFalse, reason: 'not a signature');
+      expect(await entry(url: 'https://evil.example/shlomoappdev-netizen/maskoret/releases/download/v1/a.apk').isTrusted('android'),
+          isFalse, reason: 'another host');
+      expect(await entry(url: 'https://github.com/someone/maskoret/releases/download/v1/a.apk').isTrusted('android'), isFalse,
+          reason: 'another repository');
+      expect(await entry(url: 'http://github.com/shlomoappdev-netizen/maskoret/releases/download/v1/a.apk').isTrusted('android'),
+          isFalse, reason: 'not https');
+    });
+
+    test('the message is the one the Mac and the signer use', () {
+      expect(UpdateTrust.message('mac', '4.22.4', 75, 'AB'), 'maskoret-update-v1\nmac\n4.22.4\n75\nab');
+    });
   });
 
   group('what\'s new', () {

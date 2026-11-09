@@ -8,7 +8,7 @@ maskoret-windows-setup.exe, maskoret-mac.dmg — any of them may be missing (eac
 build is ready). A missing one keeps its entry from the previous latest.json. Every platform entry carries its own
 version and build; the top-level version/build are the oldest of them, so a copy that only reads those is never offered
 a file that isn't newer than itself. Writes there:
-  latest.json     what the apps read to offer an update (url, sha256 and size per platform)
+  latest.json     what the apps read to offer an update (url, sha256, size and signature per platform)
   changelog.json  every version, newest first, for the "מה חדש" screen after an update
   notes.md        the release notes on GitHub
 """
@@ -17,6 +17,8 @@ import json
 import os
 import re
 import sys
+
+from manifest_sig import sign
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 out, repo, tag = sys.argv[1:4]
@@ -31,7 +33,8 @@ base = f"https://github.com/{repo}/releases/download/{tag}/"
 
 
 def asset(key, name):
-    """This build's file, or — when it wasn't built this time — the platform's previous entry."""
+    """This build's file (signed), or — when it wasn't built this time — the platform's previous entry, as it was:
+    an entry is signed only when its file was built in this run, never because the site already listed it."""
     path = os.path.join(out, name)
     if not os.path.exists(path):
         old = dict(previous.get("platforms", {}).get(key) or {})
@@ -40,8 +43,8 @@ def asset(key, name):
             old.setdefault("build", previous.get("build"))
         return old or None
     data = open(path, "rb").read()
-    return {"url": base + name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data),
-            "version": version["version"], "build": version["build"]}
+    return sign(key, {"url": base + name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data),
+                      "version": version["version"], "build": version["build"]})
 
 
 platforms = {

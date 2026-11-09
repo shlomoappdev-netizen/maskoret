@@ -71,7 +71,16 @@ final class Updater: ObservableObject {
     private struct Manifest: Decodable {
         /// Each platform goes out as soon as its build is ready, so it carries its own version and build
         /// (the top-level ones are the oldest of them).
-        struct Asset: Decodable { let url: URL; let sha256: String; let size: Int?; let version: String?; let build: Int? }
+        struct Asset: Decodable {
+            let url: URL; let sha256: String; let size: Int?; let version: String?; let build: Int?
+            /// Ed25519 signature of the release key (UpdateTrust); an entry without a valid one is never installed.
+            let sig: String?
+
+            var isTrusted: Bool {
+                UpdateTrust.isAllowedDownload(url)
+                    && UpdateTrust.isSigned(platform: "mac", version: version, build: build, sha256: sha256, signature: sig)
+            }
+        }
         let version: String
         let build: Int
         let date: String?
@@ -129,6 +138,13 @@ final class Updater: ObservableObject {
                     self.message = "לא ניתן לבדוק עדכונים כרגע (אין חיבור לשרת)"
                     return
                 }
+                // Not signed with the release key (or not from this project's releases): not offered at all.
+                guard mac.isTrusted else {
+                    self.remoteMac = nil
+                    self.latest = nil
+                    self.message = "לא ניתן לאמת את העדכון שבשרת — הוא לא יותקן. נסה שוב מאוחר יותר."
+                    return
+                }
                 self.remoteMac = mac
                 self.latest = ReleaseInfo(version: mac.version ?? manifest.version, build: mac.build ?? manifest.build,
                                           date: manifest.date, notes: manifest.notes)
@@ -139,7 +155,7 @@ final class Updater: ObservableObject {
 
     /// Downloads the newest Mac build, checks it's the exact published file, and installs it like a local build.
     private func downloadAndInstall() {
-        guard let asset = remoteMac else {
+        guard let asset = remoteMac, asset.isTrusted else {
             phase = .failed("לא נמצאה גרסה להורדה. נסה ״בדוק עכשיו״.")
             return
         }
@@ -181,11 +197,17 @@ final class Updater: ObservableObject {
                 _ = Updater.output("/usr/bin/ditto", [app.path, stage.appendingPathComponent(app.lastPathComponent).path])
             }
             _ = Updater.output("/usr/bin/hdiutil", ["detach", mount.path, "-force"])
+            // The app itself must carry the owner's signature, unchanged.
+            let staged = apps.first.map { stage.appendingPathComponent($0.lastPathComponent) }
+            let trusted = staged.map { UpdateTrust.isTrustedApp(at: $0) } ?? false
             DispatchQueue.main.async {
                 if apps.isEmpty {
                     self.phase = .failed("לא נמצאה אפליקציה בקובץ שהורד.")
+                } else if !trusted {
+                    try? fm.removeItem(at: work)
+                    self.phase = .failed("האפליקציה שהורדה לא חתומה בחתימה של מחשבון שכר — ההתקנה בוטלה.")
                 } else {
-                    self.installBuilt(from: stage)
+                    self.installBuilt(from: stage, downloaded: true)
                 }
             }
         }
@@ -469,7 +491,9 @@ final class Updater: ObservableObject {
         }
     }
 
-    private func installBuilt(from releaseDir: URL) {
+    /// `downloaded`: a release from the server, already checked by UpdateTrust — installed exactly as it is.
+    /// Otherwise a build made on this Mac from the project folder, which is signed here with the local certificate.
+    private func installBuilt(from releaseDir: URL, downloaded: Bool = false) {
         phase = .installing
         let items = (try? FileManager.default.contentsOfDirectory(at: releaseDir, includingPropertiesForKeys: nil)) ?? []
         guard let builtApp = items.first(where: { $0.pathExtension == "app" }) else {
@@ -483,8 +507,8 @@ final class Updater: ObservableObject {
         let script = """
         #!/bin/bash
         PID="$1"; SRC="$2"; DST="$3"; NAME="\(Updater.signingName)"
-        # Published builds come signed already; signing again only makes macOS ask for the keychain password.
-        if ! /usr/bin/codesign -dvv "$SRC" 2>&1 | grep -qF "Authority=$NAME" \\
+        # Only a local build is signed here; a downloaded one must stay exactly as published (checked before).
+        if [ "\(downloaded ? 1 : 0)" = 0 ] && ! /usr/bin/codesign -dvv "$SRC" 2>&1 | grep -qF "Authority=$NAME" \\
             && /usr/bin/security find-identity -p codesigning | grep -qF "\\"$NAME\\""; then
           /usr/bin/codesign --force --sign "$NAME" "$SRC"
         fi

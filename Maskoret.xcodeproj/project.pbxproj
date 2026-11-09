@@ -36,6 +36,7 @@
 		91AF7153B4626D4D77FBABC0 /* TaxSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3DAA193FB3541B53FD0E966 /* TaxSettingsView.swift */; };
 		F472176BA2C54E4FC0C46D63 /* TrackedItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3068DC4E999A027A77846C35 /* TrackedItemsView.swift */; };
 		F199E6E019A2A780ACEB76BE /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9562E10B1809F11AF96CD5AA /* Updater.swift */; };
+		5A1E7C3D2B9F4E6A8C0D1F2A /* UpdateTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1E7C3D2B9F4E6A8C0D1F2B /* UpdateTrust.swift */; };
 		8BF37EC5DFC603E5A12FC4BF /* UpdatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6286866AC5CBC052DD99B902 /* UpdatesView.swift */; };
 		54A4B683A6DF59786E5C3DB6 /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D9F88FE1658B02B9BAFDCB /* Money.swift */; };
 		7D40F9409A30CFCC83F2099D /* AccountsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E8BCF80EDC5643ED049E00 /* AccountsView.swift */; };
@@ -141,6 +142,7 @@
 		D3DAA193FB3541B53FD0E966 /* TaxSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaxSettingsView.swift; sourceTree = "<group>"; };
 		3068DC4E999A027A77846C35 /* TrackedItemsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackedItemsView.swift; sourceTree = "<group>"; };
 		9562E10B1809F11AF96CD5AA /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
+		5A1E7C3D2B9F4E6A8C0D1F2B /* UpdateTrust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateTrust.swift; sourceTree = "<group>"; };
 		6286866AC5CBC052DD99B902 /* UpdatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesView.swift; sourceTree = "<group>"; };
 		D3D9F88FE1658B02B9BAFDCB /* Money.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Money.swift; sourceTree = "<group>"; };
 		B6E8BCF80EDC5643ED049E00 /* AccountsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsView.swift; sourceTree = "<group>"; };
@@ -229,6 +231,7 @@
 				D3D9F88FE1658B02B9BAFDCB /* Money.swift */,
 				6286866AC5CBC052DD99B902 /* UpdatesView.swift */,
 				9562E10B1809F11AF96CD5AA /* Updater.swift */,
+				5A1E7C3D2B9F4E6A8C0D1F2B /* UpdateTrust.swift */,
 				3068DC4E999A027A77846C35 /* TrackedItemsView.swift */,
 				D3DAA193FB3541B53FD0E966 /* TaxSettingsView.swift */,
 				77F3E4ACAE2D72E18428B9E3 /* TaxRates.swift */,
@@ -410,6 +413,7 @@
 				54A4B683A6DF59786E5C3DB6 /* Money.swift in Sources */,
 				8BF37EC5DFC603E5A12FC4BF /* UpdatesView.swift in Sources */,
 				F199E6E019A2A780ACEB76BE /* Updater.swift in Sources */,
+				5A1E7C3D2B9F4E6A8C0D1F2A /* UpdateTrust.swift in Sources */,
 				F472176BA2C54E4FC0C46D63 /* TrackedItemsView.swift in Sources */,
 				91AF7153B4626D4D77FBABC0 /* TaxSettingsView.swift in Sources */,
 				9500BB61832349A640AF7F6F /* TaxRates.swift in Sources */,
@@ -549,7 +553,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 74;
+				CURRENT_PROJECT_VERSION = 75;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -563,7 +567,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.22.3;
+				MARKETING_VERSION = 4.22.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -581,7 +585,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 74;
+				CURRENT_PROJECT_VERSION = 75;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -595,7 +599,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.22.3;
+				MARKETING_VERSION = 4.22.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -611,7 +615,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 74;
+				CURRENT_PROJECT_VERSION = 75;
 				DEVELOPMENT_TEAM = 79K93494T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -630,7 +634,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.22.3;
+				MARKETING_VERSION = 4.22.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;
@@ -649,7 +653,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 74;
+				CURRENT_PROJECT_VERSION = 75;
 				DEVELOPMENT_TEAM = 79K93494T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -668,7 +672,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.22.3;
+				MARKETING_VERSION = 4.22.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;

@@ -4,6 +4,7 @@
 #   1. the permanent Android signing key   (flutter_app/android/maskoret-release.jks + key.properties)
 #   2. the "Maskoret Signing" certificate  (exported from Keychain Access as a .p12 — the script asks for it)
 #   3. a new SSH key that may push only to the download site (shlomoappdev-netizen/maskoret-releases)
+#   4. the key that signs latest.json (חשוב/maskoret-manifest-signing.pem; its public half is built into the apps)
 # Run it yourself in Terminal; nothing is printed or saved besides the secrets in GitHub.
 set -e
 ROOT=${0:A:h:h}
@@ -11,13 +12,13 @@ REPO=shlomoappdev-netizen/maskoret
 SITE=shlomoappdev-netizen/maskoret-releases
 export GH_TOKEN=$(gh auth token -u shlomoappdev-netizen)
 
-echo "== 1/3 מפתח החתימה של אנדרואיד"
+echo "== 1/4 מפתח החתימה של אנדרואיד"
 android=$ROOT/flutter_app/android
 base64 -i $android/maskoret-release.jks | gh secret set ANDROID_KEYSTORE_BASE64 -R $REPO
 grep '^storePassword=' $android/key.properties | cut -d= -f2- | tr -d '\n' | gh secret set ANDROID_KEYSTORE_PASSWORD -R $REPO
 
 echo
-echo "== 2/3 תעודת החתימה של המק (Maskoret Signing)"
+echo "== 2/4 תעודת החתימה של המק (Maskoret Signing)"
 echo "   ב״גישה למחזיק מפתחות״ (Keychain Access): המחזיק ״login״ ← ״התעודות שלי״ ← לחיצה ימנית על ״Maskoret Signing״"
 echo "   ← ״ייצא…״ ← שמירה בשולחן העבודה בשם maskoret-signing.p12, עם סיסמה חדשה לקובץ."
 open -a "Keychain Access"
@@ -31,12 +32,16 @@ unset P12PW
 echo "   הקובץ נמחק משולחן העבודה."
 
 echo
-echo "== 3/3 מפתח לעדכון אתר ההורדות"
+echo "== 3/4 מפתח לעדכון אתר ההורדות"
 tmp=$(mktemp -d)
 ssh-keygen -q -t ed25519 -N "" -C "maskoret release" -f $tmp/key
 gh repo deploy-key add $tmp/key.pub -R $SITE --allow-write --title "release from $REPO"
 gh secret set SITE_DEPLOY_KEY -R $REPO < $tmp/key
 rm -rf $tmp
+
+echo
+echo "== 4/4 מפתח החתימה של העדכונים (latest.json)"
+gh secret set MANIFEST_SIGNING_KEY -R $REPO < $ROOT/חשוב/maskoret-manifest-signing.pem
 
 echo
 gh secret list -R $REPO

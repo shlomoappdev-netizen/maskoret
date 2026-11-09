@@ -64,14 +64,19 @@ cp "$WINSETUP" "$WORK/out/maskoret-windows-setup.exe"
 python3 - "$ROOT/version.json" "$WORK/out" "$REPO" "$TAG" <<'PY'
 import json, sys, hashlib, os
 vj, out, repo, tag = sys.argv[1:]
+sys.path.insert(0, os.path.dirname(os.path.abspath(vj)) + "/tools")
+from manifest_sig import sign   # the apps install only signed entries
 v = json.load(open(vj, encoding="utf-8"))
 base = f"https://github.com/{repo}/releases/download/{tag}/"
-def asset(name):
+def asset(key, name):
     p = os.path.join(out, name)
-    return {"url": base + name, "sha256": hashlib.sha256(open(p, "rb").read()).hexdigest(), "size": os.path.getsize(p)}
+    return sign(key, {"url": base + name, "sha256": hashlib.sha256(open(p, "rb").read()).hexdigest(),
+                      "size": os.path.getsize(p), "version": v["version"], "build": v["build"]})
 manifest = {"version": v["version"], "build": v["build"], "date": v.get("date"), "notes": v.get("notes", []),
-            "platforms": {"android": asset("maskoret-android.apk"), "windows": asset("maskoret-windows.zip"),
-                          "windows_setup": asset("maskoret-windows-setup.exe"), "mac": asset("maskoret-mac.dmg")}}
+            "platforms": {"android": asset("android", "maskoret-android.apk"),
+                          "windows": asset("windows", "maskoret-windows.zip"),
+                          "windows_setup": asset("windows_setup", "maskoret-windows-setup.exe"),
+                          "mac": asset("mac", "maskoret-mac.dmg")}}
 json.dump(manifest, open(os.path.join(out, "latest.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 notes = f"## מחשבון שכר {v['version']}\n\n" + "\n".join("- " + n for n in v.get("notes", []))
 notes += "\n\n**התקנה:** אנדרואיד — maskoret-android.apk · Windows — maskoret-windows-setup.exe (תוכנת התקנה) · Mac — maskoret-mac.dmg\n"

@@ -13,6 +13,7 @@
 #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD  the permanent Android signing key
 #   MAC_CERT_P12, MAC_CERT_PASSWORD                     the "Maskoret Signing" certificate (base64 of a .p12)
 #   SITE_DEPLOY_KEY                                     SSH key that may push only to maskoret-releases
+#   MANIFEST_SIGNING_KEY                                Ed25519 key (PEM) that signs latest.json (tools/manifest_sig.py)
 name: Release
 
 on:
@@ -187,6 +188,9 @@ jobs:
         with:
           path: dl
       - name: Collect the files
+        env:
+          # Ed25519 key that signs every new entry of latest.json; the apps refuse an entry without a valid signature.
+          MANIFEST_SIGNING_KEY: ${{ secrets.MANIFEST_SIGNING_KEY }}
         run: |
           mkdir out
           # Whichever platforms built; a missing one keeps its previous file on the site.

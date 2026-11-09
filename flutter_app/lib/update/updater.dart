@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'update_trust.dart';
+
 
 /// A published version: the shared manifest of every platform (written when a release is published to
 /// github.com/shlomoappdev-netizen/maskoret-releases). `build` is one counter for all the apps (version.json).
@@ -32,7 +34,8 @@ class Release {
   final Map<String, ReleaseFile?> platforms;
 
   /// Windows installs with the setup; "windows" (a ZIP) is only for copies of 4.1.x, which update by unpacking it.
-  ReleaseFile? get forThisDevice => platforms[Platform.isWindows ? 'windows_setup' : 'android'];
+  static String get thisDeviceKey => Platform.isWindows ? 'windows_setup' : 'android';
+  ReleaseFile? get forThisDevice => platforms[thisDeviceKey];
 }
 
 class ReleaseFile {
@@ -41,13 +44,21 @@ class ReleaseFile {
         sha256 = (j['sha256'] as String?)?.toLowerCase(),
         size = (j['size'] as num?)?.toInt(),
         version = j['version'] as String?,
-        build = (j['build'] as num?)?.toInt();
+        build = (j['build'] as num?)?.toInt(),
+        sig = j['sig'] as String?;
   final String url;
   final String? sha256;
   final int? size;
   /// This platform's own version (missing in manifests from before platforms were published separately).
   final String? version;
   final int? build;
+  /// Ed25519 signature of the release key (UpdateTrust); an entry without a valid one is never installed.
+  final String? sig;
+
+  /// Signed with the release key, and downloaded only from this project's GitHub releases.
+  Future<bool> isTrusted(String platform) async =>
+      UpdateTrust.isAllowedDownload(url) &&
+      await UpdateTrust.isSigned(platform: platform, version: version, build: build, sha256: sha256, signature: sig);
 }
 
 /// verifying: checking the downloaded file is exactly the published one (sha256; takes a few seconds on a phone).
@@ -189,9 +200,9 @@ class Updater extends ChangeNotifier {
     return File('${dir.path}/maskoret-$build.${Platform.isWindows ? 'exe' : 'apk'}');
   }
 
-  /// The file is exactly the published one.
+  /// The file is exactly the published one (an entry without a sha256 is never trusted, see ReleaseFile.isTrusted).
   static Future<bool> _matches(File file, String? sha256) async {
-    if (sha256 == null) return true;
+    if (sha256 == null) return false;
     final digest = await Sha256().hash(await file.readAsBytes());
     return digest.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join() == sha256;
   }
@@ -214,7 +225,19 @@ class Updater extends ChangeNotifier {
       final request = await client.getUrl(Uri.parse('$latestUrl?t=${DateTime.now().millisecondsSinceEpoch}'));
       final response = await request.close();
       if (response.statusCode == 200) {
-        latest = Release(jsonDecode(await response.transform(utf8.decoder).join()) as Map<String, dynamic>);
+        final release = Release(jsonDecode(await response.transform(utf8.decoder).join()) as Map<String, dynamic>);
+        final file = release.forThisDevice;
+        // Not signed with the release key (or not from this project's releases): not offered at all.
+        if (file != null && !await file.isTrusted(Release.thisDeviceKey)) {
+          client.close();
+          latest = null;
+          lastCheck = DateTime.now();
+          phase = UpdatePhase.idle;
+          error = 'לא ניתן לאמת את העדכון שבשרת — הוא לא יותקן. נסה שוב מאוחר יותר.';
+          notifyListeners();
+          return;
+        }
+        latest = release;
       } else if (response.statusCode != 400 && response.statusCode != 404) {
         // 400/404: nothing published yet.
         throw HttpException('HTTP ${response.statusCode}');
@@ -234,6 +257,12 @@ class Updater extends ChangeNotifier {
     final target = latest?.forThisDevice;
     final build = latest?.build;
     if (target == null || build == null || busy) return;
+    if (!await target.isTrusted(Release.thisDeviceKey)) {
+      phase = UpdatePhase.failed;
+      error = 'לא ניתן לאמת את העדכון — ההתקנה בוטלה.';
+      notifyListeners();
+      return;
+    }
     _waitingForPermission = false;
     _resumeDownload = false;
     phase = UpdatePhase.downloading;
