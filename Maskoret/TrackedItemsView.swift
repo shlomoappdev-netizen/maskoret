@@ -96,16 +96,6 @@ struct TrackedItemsView: View {
                         Text(verbatim: "≈ " + Fmt.moneyRounded(store.budget.periodicTotal * 12) + " בשנה · נכלל ביתרה בסיכום")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        let excluded = items.filter { !$0.includeInBudget && $0.monthlyCost > 0 }
-                        if !excluded.isEmpty {
-                            Label(excluded.count == 1
-                                  ? "״\(excluded[0].name)״ לא נכלל ביתרה (\(Fmt.moneyRounded(excluded[0].monthlyCost))/חודש) — אפשר לכלול אותו בפריט"
-                                  : "\(excluded.count) פריטים לא נכללים ביתרה (\(Fmt.moneyRounded(excluded.reduce(0) { $0 + $1.monthlyCost }))/חודש)",
-                                  systemImage: "exclamationmark.circle")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
                     }
                     .padding(.vertical, 6)
                     .selectionDisabled()
@@ -164,11 +154,6 @@ struct TrackedRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                if !item.includeInBudget {
-                    Text("לא נכלל ביתרה")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.orange)
-                }
                 if let wear = item.wear {
                     ProgressView(value: min(max(wear, 0), 1))
                         .tint(wearColor(wear))
@@ -249,24 +234,6 @@ struct TrackedItemDetailView: View {
                         Button("עריכת פריט") { editingItem = true }
                     }
                 }
-
-                Toggle(isOn: Binding(get: { item.includeInBudget }, set: { on in
-                    var changed = item
-                    changed.includeInBudget = on
-                    store.upsertTracked(changed)
-                })) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("כלול ביתרה החודשית")
-                        Text(item.includeInBudget
-                             ? "העלות החודשית של הפריט יורדת מהיתרה בסיכום ובתחזית"
-                             : "כרגע העלות של הפריט לא נספרת בסיכום ובתחזית")
-                            .font(.caption)
-                            .foregroundStyle(item.includeInBudget ? Color.secondary : Color.orange)
-                    }
-                }
-                .toggleStyle(.switch)
-                .padding(12)
-                .background(Palette.card, in: RoundedRectangle(cornerRadius: 12))
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
                     StatTile(
