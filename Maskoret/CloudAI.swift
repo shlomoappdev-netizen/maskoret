@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import Supabase
+import UserNotifications
 
 // MARK: - Providers
 
@@ -333,6 +334,14 @@ extension InsightsEngine {
             }
             self.streaming = ""
             self.isRunning = false
+            if self.notifyWhenDone {
+                self.notifyWhenDone = false
+                if !answer.isEmpty {
+                    AINotifier.post(title: "ניתוח פירוט האשראי", body: AINotifier.headline(of: answer))
+                } else if let failure {
+                    AINotifier.post(title: "ניתוח פירוט האשראי לא הצליח", body: failure)
+                }
+            }
             if let failure { self.status = "הבקשה נכשלה: " + failure } else { self.refreshStatus() }
         }
     }
@@ -379,5 +388,36 @@ extension InsightsEngine {
     func cancelManual() {
         awaitingPaste = false
         refreshStatus()
+    }
+}
+
+// MARK: - Notifications
+
+/// The AI's analysis after a card import, as a system notification (Mac; on the iPhone too when allowed).
+enum AINotifier {
+    static func requestPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+
+    static func post(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "ai-" + UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    /// The answer's first line without markdown — the summary the model was asked to start with.
+    static func headline(of answer: String) -> String {
+        let text = InsightSegment.parse(answer).compactMap { seg -> String? in
+            if case .text(let t) = seg { return t }
+            return nil
+        }.joined(separator: "\n")
+        let first = text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " #*_`>-•")) }
+            .first { !$0.isEmpty } ?? ""
+        let line = first.isEmpty ? "הניתוח מוכן" : first
+        return (line.count > 180 ? String(line.prefix(177)) + "…" : line) + "\nהפרטים בתובנות AI."
     }
 }

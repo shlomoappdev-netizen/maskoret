@@ -1,6 +1,8 @@
 import 'package:file_picker/file_picker.dart';
+
 import 'package:flutter/material.dart';
 
+import '../insights/ai_context.dart';
 import '../data/card.dart';
 import '../data/maaser.dart';
 import '../data/receivables.dart';
@@ -66,6 +68,7 @@ class _CardScreenState extends State<CardScreen> {
           message = record.summary;
           selectedKey = CardData(store.money).cardStatementKeys.firstOrNull;
         });
+        context.scope.insights.analyzeCardImport(aiContext(store));
       } catch (e) {
         setState(() {
           isError = true;

@@ -278,6 +278,29 @@ void main() {
       expect(content.last['text'], 'מה בתמונה?');
     });
 
+    test('after a card import the analysis runs by itself and its first line comes as a notification', () async {
+      final posted = <(String, String)>[];
+      ai.notify = (t, b) async => posted.add((t, b));
+      ai.setCloudBaseURL(base());
+      ai.setCloudModel('good-model');
+      await ai.saveAPIKey('k');
+      chunks = [
+        'data: {"choices":[{"delta":{"content":"<thought>x</thought>**חרגת ב-300 ₪ במסעדות החודש.**\\n\\n## פירוט\\nעוד"}}]}',
+        'data: [DONE]',
+      ];
+      ai.analyzeCardImport('נתונים');
+      await Future<void>.delayed(Duration.zero);
+      await untilDone();
+      expect(ai.messages.first.shownText, '📊 ניתוח אחרי ייבוא פירוט אשראי');
+      expect(posted.single.$1, 'ניתוח פירוט האשראי');
+      expect(posted.single.$2, startsWith('חרגת ב-300 ₪ במסעדות החודש.'));
+      // Turned off: nothing is sent.
+      ai.analyzeAfterImport = false;
+      final before = requests.length;
+      ai.analyzeCardImport('נתונים');
+      expect(requests.length, before);
+    });
+
     test('"בדוק חיבור" really asks the provider and checks the model', () async {
       ai.setCloudBaseURL(base());
       await ai.saveAPIKey('k');

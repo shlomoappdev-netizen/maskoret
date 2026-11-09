@@ -973,6 +973,12 @@ class _InsightsSettingsScreenState extends State<InsightsSettingsScreen> {
             ]),
           ),
           SwitchListTile(
+            title: const Text('אחרי ייבוא פירוט אשראי: ניתוח מצב והתראה'),
+            subtitle: const Text('ה-AI מנתח את המצב ושולח את עיקר הדברים בהתראה'),
+            value: ai.analyzeAfterImport,
+            onChanged: ai.setAnalyzeAfterImport,
+          ),
+          SwitchListTile(
             title: const Text('שמור את המפתח בחשבון'),
             subtitle: const Text('זמין בכל המכשירים שלך, מוצפן'),
             value: ai.keyInAccount,

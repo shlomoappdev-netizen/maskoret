@@ -307,6 +307,10 @@ final class InsightsEngine: ObservableObject {
     @Published var hasCloudKey = false
     /// Save the key in the account too, so the user's other devices get it.
     @Published var keyInAccount: Bool { didSet { UserDefaults.standard.set(keyInAccount, forKey: "aiKeyInAccount") } }
+    /// After a card statement is imported, the model looks at the situation and the answer comes as a notification.
+    @Published var analyzeAfterImport: Bool { didSet { UserDefaults.standard.set(analyzeAfterImport, forKey: "aiAfterImport") } }
+    /// The answer on its way should also come as a notification.
+    var notifyWhenDone = false
     /// The result of "בדוק חיבור", shown under the button.
     @Published var connectionCheck: (ok: Bool, text: String)? = nil
     @Published var checkingConnection = false
@@ -354,6 +358,7 @@ final class InsightsEngine: ObservableObject {
         cloudBaseURL = UserDefaults.standard.string(forKey: "aiCloudBase") ?? provider.defaultBaseURL
         cloudModel = UserDefaults.standard.string(forKey: "aiCloudModel") ?? ""
         keyInAccount = UserDefaults.standard.object(forKey: "aiKeyInAccount") as? Bool ?? true
+        analyzeAfterImport = UserDefaults.standard.object(forKey: "aiAfterImport") as? Bool ?? true
         manualSite = UserDefaults.standard.string(forKey: "aiManualSite") ?? ManualSite.all[0].name
         if let data = SecureFile.read(InsightsEngine.fileURL),
            let saved = try? JSONDecoder().decode([InsightMessage].self, from: data) {
@@ -467,6 +472,22 @@ final class InsightsEngine: ObservableObject {
     """
 
     static let defaultAnalysis = "תסתכל על כל הנתונים ותן לי 3–5 תובנות חשובות על המצב הכספי שלי החודש: מה בולט, איפה אני חורג, ואיפה אפשר לשפר. הוסף תרשים אחד שממחיש את הנקודה הכי חשובה, ואם יש שינוי שכדאי לעשות — הצע אותו כפעולה."
+
+    static let importAnalysis = """
+    ייבאתי עכשיו פירוט אשראי חדש. תן ניתוח קצר של המצב: האם אני בתקציב החודש, מה בולט בחיובים (בתי עסק, קטגוריות, \
+    חריגות לעומת החודשים הקודמים), איך זה משפיע על מה שיישאר בסוף החודש ועל המגמות עם תקרה, ומה כדאי לעשות. \
+    אם יש שינוי שכדאי לעשות — הצע אותו כפעולה.
+    השורה הראשונה בתשובה: משפט אחד קצר (עד 100 תווים, בלי כותרת ובלי עיצוב) שמסכם את הדבר הכי חשוב — הוא יוצג בהתראה.
+    """
+
+    /// After a card statement was imported: the analysis runs by itself, and its first line comes as a notification.
+    /// Only with a cloud model that is set up (the manual mode needs the user), and only when it's turned on.
+    func analyzeCardImport(context: String) {
+        guard analyzeAfterImport, engine == .cloud, canSend, !isRunning else { return }
+        AINotifier.requestPermission()
+        notifyWhenDone = true
+        send(InsightsEngine.importAnalysis, label: "📊 ניתוח אחרי ייבוא פירוט אשראי", context: context)
+    }
 
     /// `label` is what the conversation shows instead of a long prompt.
     func send(_ prompt: String, label: String? = nil, images: [Data] = [], context: String, auto: Bool = false) {

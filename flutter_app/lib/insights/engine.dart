@@ -13,6 +13,7 @@ import '../state/secure_file.dart';
 import '../state/store.dart';
 import 'ai_account.dart';
 import 'ai_actions.dart';
+import 'ai_notifier.dart';
 import 'segments.dart';
 
 /// Where answers come from: a cloud model with the user's own API key, or copy-paste to a chat website.
@@ -155,6 +156,7 @@ class InsightsEngine extends ChangeNotifier {
   InsightsEngine(this.prefs, this.secure, this.keys, {Future<void> Function(String)? copy, this.account})
       : _copy = copy ?? ((t) => Clipboard.setData(ClipboardData(text: t))) {
     keyInAccount = prefs.getBool('aiKeyInAccount') ?? true;
+    analyzeAfterImport = prefs.getBool('aiAfterImport') ?? true;
     engine = AIEngine.values.firstWhere((e) => e.name == prefs.getString('aiEngine'), orElse: () => AIEngine.cloud);
     cloudProvider = CloudProvider.values.firstWhere((p) => p.name == prefs.getString('aiCloudProvider'), orElse: () => CloudProvider.openai);
     cloudBaseURL = prefs.getString('aiCloudBase') ?? cloudProvider.defaultBaseURL;
@@ -218,6 +220,37 @@ type: bar, line או pie.
 
   /// Save the key in the account too, so the user's other devices get it.
   late bool keyInAccount;
+
+  /// After a card statement is imported, the model looks at the situation and the answer comes as a notification.
+  late bool analyzeAfterImport;
+
+  /// The answer on its way should also come as a notification.
+  bool _notifyWhenDone = false;
+
+  /// Posts a notification (replaced in tests).
+  Future<void> Function(String title, String body) notify = AINotifier.post;
+
+  void setAnalyzeAfterImport(bool v) {
+    analyzeAfterImport = v;
+    prefs.setBool('aiAfterImport', v);
+    if (v) AINotifier.requestPermission();
+    notifyListeners();
+  }
+
+  static const importAnalysis =
+      'ייבאתי עכשיו פירוט אשראי חדש. תן ניתוח קצר של המצב: האם אני בתקציב החודש, מה בולט בחיובים (בתי עסק, קטגוריות, '
+      'חריגות לעומת החודשים הקודמים), איך זה משפיע על מה שיישאר בסוף החודש ועל המגמות עם תקרה, ומה כדאי לעשות. '
+      'אם יש שינוי שכדאי לעשות — הצע אותו כפעולה.\n'
+      'השורה הראשונה בתשובה: משפט אחד קצר (עד 100 תווים, בלי כותרת ובלי עיצוב) שמסכם את הדבר הכי חשוב — הוא יוצג בהתראה.';
+
+  /// After a card statement was imported: the analysis runs by itself, and its first line comes as a notification.
+  /// Only with a cloud model that is set up (the manual mode needs the user), and only when it's turned on.
+  void analyzeCardImport(String context) {
+    if (!analyzeAfterImport || engine != AIEngine.cloud || !canSend || isRunning) return;
+    AINotifier.requestPermission();
+    _notifyWhenDone = true;
+    send(importAnalysis, label: '📊 ניתוח אחרי ייבוא פירוט אשראי', context: context);
+  }
 
   /// The result of "בדוק חיבור", shown under the button.
   (bool, String)? connectionCheck;
@@ -849,6 +882,14 @@ type: bar, line או pie.
     }
     streaming = '';
     isRunning = false;
+    if (_notifyWhenDone) {
+      _notifyWhenDone = false;
+      if (answer.isNotEmpty) {
+        notify('ניתוח פירוט האשראי', AINotifier.headline(answer));
+      } else if (failure != null) {
+        notify('ניתוח פירוט האשראי לא הצליח', failure);
+      }
+    }
     if (failure != null) {
       onFailure?.call();
       status = 'הבקשה נכשלה: $failure';

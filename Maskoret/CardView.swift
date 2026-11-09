@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct CardView: View {
     @EnvironmentObject private var store: Store
+    @EnvironmentObject private var ai: InsightsEngine
 
     @State private var selectedKey: Int?
     @State private var filter: Filter = .all
@@ -451,6 +452,7 @@ struct CardView: View {
             let record = try store.importCardFile(url)
             isError = false
             message = record.summary
+            ai.analyzeCardImport(context: store.aiContext())
             if let first = store.money.cardStatementKeys.first { selectedKey = first }
         } catch {
             isError = true

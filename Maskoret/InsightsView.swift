@@ -495,6 +495,8 @@ struct InsightsView: View {
                     Button("מחק", role: .destructive) { ai.saveAPIKey("") }
                 }
             }
+            Toggle("אחרי ייבוא פירוט אשראי: ניתוח מצב והתראה", isOn: $ai.analyzeAfterImport)
+                .onChange(of: ai.analyzeAfterImport) { _, on in if on { AINotifier.requestPermission() } }
             Toggle("שמור את המפתח בחשבון — זמין בכל המכשירים שלך", isOn: $ai.keyInAccount)
                 .onChange(of: ai.keyInAccount) { _, on in
                     if on, let key = ai.apiKey { ai.pushKeySettings(key: key) }
