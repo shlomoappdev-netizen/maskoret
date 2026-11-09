@@ -284,9 +284,9 @@ void main() {
       await ai.testConnection();
       expect(ai.connectionCheck!.$1, isFalse);
       expect(ai.connectionCheck!.$2, contains('missing-model'));
-      ai.setCloudModel('good-model');
+      ai.setCloudModel('models/good-model');
       await ai.testConnection();
-      expect(ai.connectionCheck, (true, 'החיבור תקין ✓'));
+      expect(ai.connectionCheck, (true, 'החיבור תקין ✓'), reason: 'Gemini names come as models/…');
       status = 401;
       await ai.testConnection();
       expect(ai.connectionCheck!.$2, contains('דחה את המפתח'));

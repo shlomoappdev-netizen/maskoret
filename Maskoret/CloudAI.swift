@@ -181,7 +181,8 @@ extension InsightsEngine {
             let ids = (json?["data"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
                 .map { $0.replacingOccurrences(of: "models/", with: "") }
             if !ids.isEmpty { cloudModels = filteredModels(ids) }
-            let model = cloudModel.trimmingCharacters(in: .whitespaces)
+            // Gemini lists its models as "models/…"; either way of writing the name is the same model.
+            let model = cloudModel.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "models/", with: "")
             if model.isEmpty {
                 connectionCheck = (true, "המפתח תקין ✓ — עכשיו בחר מודל.")
             } else if !ids.isEmpty && !ids.contains(model) {

@@ -462,7 +462,8 @@ type: bar, line או pie.
     try {
       final ids = _ids(await _getJson(uri, _authHeaders(key), const Duration(seconds: 15)));
       if (ids.isNotEmpty) cloudModels = _filtered(ids);
-      final model = cloudModel.trim();
+      // Gemini lists its models as "models/…"; either way of writing the name is the same model.
+      final model = cloudModel.trim().replaceFirst('models/', '');
       if (model.isEmpty) {
         connectionCheck = (true, 'המפתח תקין ✓ — עכשיו בחר מודל.');
       } else if (ids.isNotEmpty && !ids.contains(model)) {
