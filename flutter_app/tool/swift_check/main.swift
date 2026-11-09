@@ -87,6 +87,7 @@ if CommandLine.arguments[1] == "parse" {
             case .text(let t): return ["k": "text", "v": t]
             case .broken(let t): return ["k": "broken", "v": t]
             case .chart(let c): return ["k": "chart", "type": c.type, "title": c.title ?? "", "labels": c.data.map(\.label), "values": c.data.map(\.value)]
+            case .actions(let plan, _): return ["k": "actions", "summary": plan.summary, "types": plan.actions.map(\.type), "titles": plan.actions.map(\.title), "details": plan.actions.map(\.details)]
             }
         }
     }

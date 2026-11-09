@@ -44,6 +44,10 @@
 		AA3B31D92824AA93D36A7820 /* Sync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9DB2372302A19B5040A11F /* Sync.swift */; };
 		45607F649856AE65E3CA60A8 /* BackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C0E622B32BF9965177CEAB /* BackupView.swift */; };
 		DCCDE73625CC4F2C957604AD /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = C826CD1AEC894B53B8A536C0 /* Platform.swift */; };
+		7BE96C0B61A14A2E87E4F703 /* AIConversationSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53691F22FEE74C81B45903BC /* AIConversationSync.swift */; };
+		5519DCD23E934D7C8A1E56C3 /* AIConversationSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53691F22FEE74C81B45903BC /* AIConversationSync.swift */; };
+		A4E791C7ADE74F7E8DED7D0D /* AIActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86CCA72AF1B044D3A041FCCD /* AIActions.swift */; };
+		ED4623F775E44BC2B13506F9 /* AIActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86CCA72AF1B044D3A041FCCD /* AIActions.swift */; };
 		C21BE70C035E4BA3BA618178 /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = C826CD1AEC894B53B8A536C0 /* Platform.swift */; };
 		F64B79A5C3424584A8F6BFDB /* ServerSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C385B5DCE8F46EB86040F6C /* ServerSync.swift */; };
 		3C068BB3C43D4198B179DF73 /* ServerSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C385B5DCE8F46EB86040F6C /* ServerSync.swift */; };
@@ -145,6 +149,8 @@
 		7A9DB2372302A19B5040A11F /* Sync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sync.swift; sourceTree = "<group>"; };
 		71C0E622B32BF9965177CEAB /* BackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupView.swift; sourceTree = "<group>"; };
 		C826CD1AEC894B53B8A536C0 /* Platform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Platform.swift; sourceTree = "<group>"; };
+		53691F22FEE74C81B45903BC /* AIConversationSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIConversationSync.swift; sourceTree = "<group>"; };
+		86CCA72AF1B044D3A041FCCD /* AIActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIActions.swift; sourceTree = "<group>"; };
 		2C385B5DCE8F46EB86040F6C /* ServerSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSync.swift; sourceTree = "<group>"; };
 		C0F5A70F67A94783B1AC5EA2 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
 		3FA59B72518C471C9B968328 /* ZipReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipReader.swift; sourceTree = "<group>"; };
@@ -227,6 +233,8 @@
 				D3DAA193FB3541B53FD0E966 /* TaxSettingsView.swift */,
 				77F3E4ACAE2D72E18428B9E3 /* TaxRates.swift */,
 				C826CD1AEC894B53B8A536C0 /* Platform.swift */,
+				53691F22FEE74C81B45903BC /* AIConversationSync.swift */,
+				86CCA72AF1B044D3A041FCCD /* AIActions.swift */,
 				2C385B5DCE8F46EB86040F6C /* ServerSync.swift */,
 				C0F5A70F67A94783B1AC5EA2 /* AccountView.swift */,
 				3FA59B72518C471C9B968328 /* ZipReader.swift */,
@@ -406,6 +414,8 @@
 				91AF7153B4626D4D77FBABC0 /* TaxSettingsView.swift in Sources */,
 				9500BB61832349A640AF7F6F /* TaxRates.swift in Sources */,
 				DCCDE73625CC4F2C957604AD /* Platform.swift in Sources */,
+				7BE96C0B61A14A2E87E4F703 /* AIConversationSync.swift in Sources */,
+				A4E791C7ADE74F7E8DED7D0D /* AIActions.swift in Sources */,
 				F64B79A5C3424584A8F6BFDB /* ServerSync.swift in Sources */,
 				53F405137E6F4474AB48A81B /* AccountView.swift in Sources */,
 				1E312CBA0D1045C8B5E2C214 /* ZipReader.swift in Sources */,
@@ -426,6 +436,8 @@
 				B1C0FFEE0000000000000003 /* Support.swift in Sources */,
 				B1C0FFEE0000000000000023 /* Announcements.swift in Sources */,
 				C21BE70C035E4BA3BA618178 /* Platform.swift in Sources */,
+				5519DCD23E934D7C8A1E56C3 /* AIConversationSync.swift in Sources */,
+				ED4623F775E44BC2B13506F9 /* AIActions.swift in Sources */,
 				3C068BB3C43D4198B179DF73 /* ServerSync.swift in Sources */,
 				F0D0D654383D42D0BE364177 /* AccountView.swift in Sources */,
 				7E49A87B6C5D426D9E2EF526 /* ZipReader.swift in Sources */,
@@ -537,7 +549,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 67;
+				CURRENT_PROJECT_VERSION = 68;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -551,7 +563,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.20.0;
+				MARKETING_VERSION = 4.21.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -569,7 +581,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 67;
+				CURRENT_PROJECT_VERSION = 68;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -583,7 +595,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.20.0;
+				MARKETING_VERSION = 4.21.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -599,7 +611,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 67;
+				CURRENT_PROJECT_VERSION = 68;
 				DEVELOPMENT_TEAM = 79K93494T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -618,7 +630,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.20.0;
+				MARKETING_VERSION = 4.21.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;
@@ -637,7 +649,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 67;
+				CURRENT_PROJECT_VERSION = 68;
 				DEVELOPMENT_TEAM = 79K93494T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -656,7 +668,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.20.0;
+				MARKETING_VERSION = 4.21.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;

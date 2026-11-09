@@ -109,14 +109,14 @@
 | Personal info → Email address | כן | Account management | חובה |
 | Personal info → Name | כן (שם תצוגה) | Account management | חובה |
 | Financial info → Other financial info | כן (התקציב שהמשתמש מזין) | App functionality | חובה |
-| Messages → Other in-app messages | כן (פניות תמיכה) | Developer communications / support | לא חובה |
+| Messages → Other in-app messages | כן (פניות תמיכה, והשיחה עם ה-AI שנשמרת בחשבון כדי להסתנכרן בין המכשירים) | Developer communications / App functionality | לא חובה |
 | App info and performance → Diagnostics | כן, רק אם המשתמש מצרף לפנייה | App functionality (תמיכה) — לא Analytics | לא חובה |
 | App info and performance → Other (גרסת האפליקציה, פעילות אחרונה) | כן | App functionality / support | חובה |
 | Location, Contacts, Photos, Files, Device IDs | לא | — | — |
 
 - תלושים וקובצי אשראי מעובדים במכשיר בלבד, ולכן לפי ההגדרה של Google הם **לא** "נאספים".
 - **Data shared with third parties:** No. (Supabase הוא ספק שירות שמעבד בשמנו — לא נחשב שיתוף. תובנות AI בענן נשלחות
-  רק לבקשת המשתמש, עם המפתח שלו.)
+  מהמכשיר ישירות לספק שהמשתמש בחר, רק לבקשתו ועם המפתח שלו. המפתח נשמר מוצפן בחשבון רק אם המשתמש בחר בזה.)
 - **Encrypted in transit:** Yes.
 - **Users can request deletion:** Yes — מתוך האפליקציה, ובקישור:
   https://shlomoappdev-netizen.github.io/maskoret-releases/delete-account.html

@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import Supabase
 
 // MARK: - Providers
 
@@ -103,7 +104,105 @@ extension InsightsEngine {
         cachedKey = trimmed.isEmpty ? nil : trimmed
         hasCloudKey = !trimmed.isEmpty
         connected = hasCloudKey
+        connectionCheck = nil
         refreshStatus()
+        let provider = cloudProvider.rawValue
+        if trimmed.isEmpty {
+            Task { _ = try? await supabase.rpc("ai_key_delete", params: ["p_provider": provider]).execute() }
+        } else if keyInAccount {
+            pushKeySettings(key: trimmed)
+        }
+    }
+
+    /// Saves the key (or, without one, only the model and address) in the account.
+    func pushKeySettings(key: String? = nil) {
+        guard keyInAccount, supabase.auth.currentUser != nil, key != nil || hasCloudKey else { return }
+        let params: [String: AnyJSON] = [
+            "p_provider": .string(cloudProvider.rawValue),
+            "p_key": key.map { .string($0) } ?? .null,
+            "p_model": .string(cloudModel.trimmingCharacters(in: .whitespaces)),
+            "p_base_url": .string(cloudProvider == .custom ? cloudBaseURL : "")
+        ]
+        Task { _ = try? await supabase.rpc("ai_key_save", params: params).execute() }
+    }
+
+    private struct SavedKey: Decodable {
+        let provider: String
+        let api_key: String
+        let model: String
+        let base_url: String
+    }
+
+    /// No key on this device: take the one saved in the account (the chosen provider's, else the newest).
+    func pullKeyFromAccount() async {
+        guard supabase.auth.currentUser != nil,
+              let keys = try? await supabase.rpc("ai_keys").decoded([SavedKey].self), !keys.isEmpty else { return }
+        let pick = keys.first { $0.provider == cloudProvider.rawValue } ?? keys[0]
+        guard let provider = CloudProvider(rawValue: pick.provider), !pick.api_key.isEmpty else { return }
+        if provider != cloudProvider { cloudProvider = provider }
+        cloudBaseURL = pick.base_url.isEmpty ? provider.defaultBaseURL : pick.base_url
+        if !pick.model.isEmpty { cloudModel = pick.model }
+        KeychainStore.save(pick.api_key, account: keyAccount)
+        cachedKey = pick.api_key
+    }
+
+    /// "בדוק חיבור": asks the provider for its models with the key, and says whether the chosen model is there.
+    func testConnection() async {
+        connectionCheck = nil
+        if engine == .manual {
+            connectionCheck = (true, "במצב ידני אין חיבור לבדוק — השאלה מועתקת ללוח.")
+            return
+        }
+        guard let key = apiKey, !key.isEmpty else {
+            connectionCheck = (false, "אין מפתח API שמור")
+            return
+        }
+        guard let url = URL(string: cloudBase + "/models") else {
+            connectionCheck = (false, "כתובת ה-API לא תקינה")
+            return
+        }
+        checkingConnection = true
+        defer { checkingConnection = false }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        authorize(&request, key: key)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if code == 401 || code == 403 {
+                connectionCheck = (false, "הספק דחה את המפתח (\(code)). בדוק שהעתקת אותו נכון.")
+                return
+            }
+            if code >= 400 {
+                connectionCheck = (false, "הספק החזיר שגיאה \(code).")
+                return
+            }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let ids = (json?["data"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+                .map { $0.replacingOccurrences(of: "models/", with: "") }
+            if !ids.isEmpty { cloudModels = filteredModels(ids) }
+            let model = cloudModel.trimmingCharacters(in: .whitespaces)
+            if model.isEmpty {
+                connectionCheck = (true, "המפתח תקין ✓ — עכשיו בחר מודל.")
+            } else if !ids.isEmpty && !ids.contains(model) {
+                connectionCheck = (false, "המפתח תקין, אבל המודל ״\(model)״ לא קיים אצל הספק. בחר מהרשימה.")
+            } else {
+                connectionCheck = (true, "החיבור תקין ✓")
+            }
+            hasCloudKey = true
+            connected = true
+            refreshStatus()
+        } catch {
+            connectionCheck = (false, "אין חיבור לספק: " + error.localizedDescription)
+        }
+    }
+
+    private func filteredModels(_ ids: [String]) -> [String] {
+        ids.filter { id in
+            let l = id.lowercased()
+            return !l.contains("embed") && !l.contains("whisper") && !l.contains("tts") && !l.contains("dall")
+                && !l.contains("image") && !l.contains("aqa") && !l.contains("imagen") && !l.contains("veo")
+        }.sorted()
     }
 
     private var cloudBase: String {
@@ -136,17 +235,27 @@ extension InsightsEngine {
             }
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             let ids = (json?["data"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
-            cloudModels = ids.filter { id in
-                let l = id.lowercased()
-                return !l.contains("embed") && !l.contains("whisper") && !l.contains("tts") && !l.contains("dall") && !l.contains("image")
-            }.sorted()
+                .map { $0.replacingOccurrences(of: "models/", with: "") }
+            cloudModels = filteredModels(ids)
             status = cloudModels.isEmpty ? "לא התקבלה רשימת מודלים — כתוב את שם המודל ידנית" : "נמצאו \(cloudModels.count) מודלים"
         } catch {
             status = "לא הצלחתי להתחבר: " + error.localizedDescription
         }
     }
 
-    func runCloud(system: String, turns: [(role: String, text: String)]) {
+    private func content(_ turn: AITurn, anthropic: Bool) -> Any {
+        guard !turn.images.isEmpty, turn.role == "user" else { return turn.text }
+        var parts: [[String: Any]] = turn.images.map { data in
+            let b64 = data.base64EncodedString()
+            return anthropic
+                ? ["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": b64]]
+                : ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64," + b64]]
+        }
+        parts.append(["type": "text", "text": turn.text])
+        return parts
+    }
+
+    func runCloud(system: String, turns: [AITurn]) {
         guard let key = apiKey, !key.isEmpty else {
             status = "אין מפתח API"
             return
@@ -161,10 +270,10 @@ extension InsightsEngine {
             var list = turns
             while list.first?.role == "assistant" { list.removeFirst() }
             body["system"] = system
-            body["max_tokens"] = 4096
-            body["messages"] = list.map { ["role": $0.role, "content": $0.text] }
+            body["max_tokens"] = 8192
+            body["messages"] = list.map { ["role": $0.role, "content": content($0, anthropic: true)] }
         } else {
-            body["messages"] = [["role": "system", "content": system]] + turns.map { ["role": $0.role, "content": $0.text] }
+            body["messages"] = [["role": "system", "content": system]] + turns.map { ["role": $0.role, "content": content($0, anthropic: false)] }
         }
 
         var request = URLRequest(url: url)
@@ -176,7 +285,7 @@ extension InsightsEngine {
 
         isRunning = true
         streaming = ""
-        status = "שולח ל-" + cloudProvider.title + "…"
+        status = "שולח…"
         let name = activeModelName
         task = Task { [weak self] in
             var output = ""
@@ -189,7 +298,7 @@ extension InsightsEngine {
                     throw NSError(domain: "Cloud", code: http.statusCode,
                                   userInfo: [NSLocalizedDescriptionKey: "שגיאה \(http.statusCode): " + String(errorText.prefix(300))])
                 }
-                self?.status = "המודל עונה…"
+                self?.status = "חושב…"
                 for try await line in bytes.lines {
                     if Task.isCancelled { break }
                     guard line.hasPrefix("data:") else { continue }
@@ -197,10 +306,11 @@ extension InsightsEngine {
                     if payload == "[DONE]" { break }
                     guard let data = payload.data(using: .utf8),
                           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                    // Only the answer itself: thinking comes in other fields ("reasoning", "thinking_delta") and is left out.
                     var piece: String?
                     if anthropic {
                         if (json["type"] as? String) == "content_block_delta",
-                           let delta = json["delta"] as? [String: Any] {
+                           let delta = json["delta"] as? [String: Any], (delta["type"] as? String) == "text_delta" {
                             piece = delta["text"] as? String
                         }
                     } else if let choice = (json["choices"] as? [[String: Any]])?.first,
@@ -216,8 +326,9 @@ extension InsightsEngine {
                 failure = (error as NSError).code == NSURLErrorCancelled ? nil : error.localizedDescription
             }
             guard let self else { return }
-            if !output.isEmpty {
-                self.messages.append(InsightMessage(role: "assistant", text: output, model: name))
+            let answer = InsightSegment.withoutThinking(output).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !answer.isEmpty {
+                self.messages.append(InsightMessage(role: "assistant", text: answer, model: name))
             }
             self.streaming = ""
             self.isRunning = false
@@ -228,7 +339,7 @@ extension InsightsEngine {
     // MARK: Manual
 
     /// Everything a chat website needs, as one block of text.
-    func prepareManual(system: String, turns: [(role: String, text: String)]) {
+    func prepareManual(system: String, turns: [AITurn]) {
         var text = system + "\n\n"
         if turns.count > 1 {
             text += "# השיחה שלנו עד עכשיו\n"
@@ -237,6 +348,7 @@ extension InsightsEngine {
             }
         }
         text += "# השאלה שלי עכשיו\n" + (turns.last?.text ?? "")
+        if turns.last?.images.isEmpty == false { text += "\n(צירפתי תמונה — היא מצורפת להודעה הזו)" }
         manualPrompt = text
         copyManualPrompt()
         awaitingPaste = true
@@ -257,7 +369,7 @@ extension InsightsEngine {
     func submitManualAnswer(_ text: String) {
         let answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !answer.isEmpty else { return }
-        messages.append(InsightMessage(role: "assistant", text: answer, model: "ידני · " + manualSite))
+        messages.append(InsightMessage(role: "assistant", text: InsightSegment.withoutThinking(answer), model: "ידני · " + manualSite))
         awaitingPaste = false
         manualPrompt = ""
         refreshStatus()

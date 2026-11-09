@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../data/fmt.dart';
+import 'ai_actions.dart';
 
 /// A chart the model asks to draw — port of `ChartSpec` (Insights.swift):
 /// ```chart
@@ -45,19 +46,43 @@ class ChartSegment extends InsightSegment {
   final ChartSpec spec;
 }
 
+/// Changes the model proposes, applied only after the user approves them (see ai_actions.dart).
+class ActionsSegment extends InsightSegment {
+  ActionsSegment(this.plan, this.raw);
+  final AIActionPlan plan;
+  final String raw;
+}
+
 class BrokenSegment extends InsightSegment {
   BrokenSegment(this.text);
   final String text;
 }
 
-/// Splits a reply into text and ```chart blocks; hides <think> sections of reasoning models.
+/// Splits a reply into text, ```chart and ```actions blocks; leaves out the model's thinking.
 class InsightParser {
-  static List<InsightSegment> parse(String raw) {
+  /// The tags reasoning models wrap their thinking in (Gemini: `<thought>`, others: `<think>` / `<thinking>`).
+  static const thinkingTags = ['think', 'thinking', 'thought'];
+
+  /// The reply without the model's thinking; an unfinished thinking section (still streaming) is removed to the end.
+  static String withoutThinking(String raw) {
     var text = raw;
-    for (var start = text.indexOf('<think>'); start >= 0; start = text.indexOf('<think>')) {
-      final end = text.indexOf('</think>', start + 7);
-      text = end >= 0 ? text.substring(0, start) + text.substring(end + 8) : text.substring(0, start);
+    for (final tag in thinkingTags) {
+      final open = RegExp('<$tag>', caseSensitive: false);
+      final close = RegExp('</$tag>', caseSensitive: false);
+      while (true) {
+        final start = open.firstMatch(text);
+        if (start == null) break;
+        final end = close.firstMatch(text.substring(start.end));
+        text = end != null
+            ? text.substring(0, start.start) + text.substring(start.end + end.end)
+            : text.substring(0, start.start);
+      }
     }
+    return text;
+  }
+
+  static List<InsightSegment> parse(String raw) {
+    final text = withoutThinking(raw);
     final result = <InsightSegment>[];
     var rest = text;
     while (true) {
@@ -71,13 +96,16 @@ class InsightParser {
       final closeAt = after.indexOf('```', lineEnd);
       if (closeAt < 0) {
         // Still streaming (or never closed): hide an unfinished chart, keep anything else as text.
-        if (language != 'chart') _appendText(rest.substring(open), result);
+        if (language != 'chart' && language != 'actions') _appendText(rest.substring(open), result);
         rest = '';
         break;
       }
       final body = after.substring(lineEnd, closeAt);
-      final spec = decodeChart(body);
-      if (spec != null) {
+      final spec = language == 'actions' ? null : decodeChart(body);
+      if (language == 'actions') {
+        final plan = AIActionPlan.decode(body);
+        result.add(plan != null ? ActionsSegment(plan, body) : BrokenSegment(body.trim()));
+      } else if (spec != null) {
         result.add(ChartSegment(spec));
       } else if (language == 'chart') {
         result.add(BrokenSegment(body.trim()));
@@ -204,7 +232,11 @@ class InsightParser {
   }
 
   static bool isThinking(String raw) {
-    final start = raw.lastIndexOf('<think>');
-    return start >= 0 && raw.indexOf('</think>', start + 7) < 0;
+    final lower = raw.toLowerCase();
+    for (final tag in thinkingTags) {
+      final start = lower.lastIndexOf('<$tag>');
+      if (start >= 0 && lower.indexOf('</$tag>', start) < 0) return true;
+    }
+    return false;
   }
 }

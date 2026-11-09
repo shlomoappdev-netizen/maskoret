@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/rates_update.dart';
+import 'insights/ai_account.dart';
 import 'insights/engine.dart';
 import 'state/secure_file.dart';
 import 'state/store.dart';
@@ -81,7 +82,7 @@ Future<void> main() async {
   } else {
     announcements.start();
   }
-  final insights = InsightsEngine(prefs, store.secure, SystemApiKeyStore());
+  final insights = InsightsEngine(prefs, store.secure, SystemApiKeyStore(), account: demo ? null : SupabaseAIAccount());
   await insights.load();
   store.onWiped = insights.forgetConversation;
   runApp(MaskoretApp(

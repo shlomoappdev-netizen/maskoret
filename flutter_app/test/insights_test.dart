@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/data/card.dart';
 import 'package:maskoret/data/month_picture.dart';
 import 'package:maskoret/data/fmt.dart';
+import 'package:maskoret/data/json.dart';
+import 'package:maskoret/insights/ai_account.dart';
 import 'package:maskoret/insights/ai_context.dart';
 import 'package:maskoret/insights/engine.dart';
 import 'package:maskoret/state/secure_file.dart';
@@ -30,6 +32,11 @@ void main() {
     '```json\n{"data":[{"label":"בלי סוג","value":"3."},{"bad":1}]}\n```',
     '{"name":"לא תרשים","other":[1,2]}',
     'א\n\n```\n{"data":[]}\n```\n\nב',
+    '<thought>Gemini חושב באנגלית</thought>התשובה בעברית',
+    '<Thinking>a</Thinking>ב<think>c',
+    'מציע:\n```actions\n{"summary":"עדכון חיסכון","actions":[{"type":"update_account","account":"פיקדון","balance":"12,500","annual_rate":4.1,"maturity_date":"2027-03-01","why":"לפי הצילום"},{"type":"add_trend","name":"מסעדות","monthly_limit":800},{"type":"unknown"},{"type":"add_transaction","title":"מקרר","amount":6000,"date":"2026-11-20","paid_by_card":true,"installments":6}]}\n```\nסוף',
+    '```actions\n{"actions":[{"type":"nope"}]}\n```',
+    '```actions\n{"summary":"x","actions":[{"type":"add_expense"',
   ];
 
   List<Map<String, dynamic>> mine(String s) => [
@@ -37,6 +44,13 @@ void main() {
           switch (seg) {
             TextSegment(:final text) => {'k': 'text', 'v': text},
             BrokenSegment(:final text) => {'k': 'broken', 'v': text},
+            ActionsSegment(:final plan) => {
+                'k': 'actions',
+                'summary': plan.summary,
+                'types': [for (final a in plan.actions) a.type],
+                'titles': [for (final a in plan.actions) a.title],
+                'details': [for (final a in plan.actions) a.details],
+              },
             ChartSegment(:final spec) => {
                 'k': 'chart',
                 'labels': [for (final p in spec.data) p.label],
@@ -201,7 +215,7 @@ void main() {
       expect(headers['anthropic-version'], '2023-06-01');
       expect(headers.containsKey('authorization'), isFalse);
       expect(body['system'], contains('נתונים'));
-      expect(body['max_tokens'], 4096);
+      expect(body['max_tokens'], 8192);
       expect((body['messages'] as List).map((m) => m['role']), ['user']);
       expect(ai.messages.last.text, 'תשובה');
     });
@@ -240,6 +254,91 @@ void main() {
       ai.send('שאלה שנייה', context: 'נתוני הכסף');
       expect(copied, contains('# השיחה שלנו עד עכשיו'));
       expect(copied, contains('[תרשים: ]'));
+    });
+
+    test('the thinking is left out of the saved answer, and a picture goes as an image part', () async {
+      ai.setCloudBaseURL(base());
+      ai.setCloudModel('good-model');
+      await ai.saveAPIKey('k');
+      chunks = [
+        'data: {"choices":[{"delta":{"content":"<thought>Let me think"}}]}',
+        'data: {"choices":[{"delta":{"reasoning_content":"hidden"}}]}',
+        'data: {"choices":[{"delta":{"content":" more</thought>התשובה"}}]}',
+        'data: [DONE]',
+      ];
+      ai.send('מה בתמונה?', label: '📷 תמונה', images: ['aGVsbG8='], context: 'x');
+      await Future<void>.delayed(Duration.zero);
+      await untilDone();
+      expect(ai.messages.last.text, 'התשובה');
+      expect(ai.messages.first.shownText, '📷 תמונה');
+      final content = (requests.last.$3['messages'] as List).last['content'] as List;
+      expect(content.first['type'], 'image_url');
+      expect((content.first['image_url'] as Map)['url'], startsWith('data:image/'));
+      expect(content.last['text'], 'מה בתמונה?');
+    });
+
+    test('"בדוק חיבור" really asks the provider and checks the model', () async {
+      ai.setCloudBaseURL(base());
+      await ai.saveAPIKey('k');
+      ai.setCloudModel('missing-model');
+      await ai.testConnection();
+      expect(ai.connectionCheck!.$1, isFalse);
+      expect(ai.connectionCheck!.$2, contains('missing-model'));
+      ai.setCloudModel('good-model');
+      await ai.testConnection();
+      expect(ai.connectionCheck, (true, 'החיבור תקין ✓'));
+      status = 401;
+      await ai.testConnection();
+      expect(ai.connectionCheck!.$2, contains('דחה את המפתח'));
+    });
+
+    test('the key and the conversation come from the account on another device', () async {
+      final account = _FakeAccount();
+      account.saved = [SavedAIKey('gemini', 'from-account', 'gemini-2.5-flash', '')];
+      final older = InsightMessage(role: 'user', text: 'ישן', date: DateTime(2026, 1, 1));
+      final remote = InsightMessage(role: 'assistant', text: 'מהטלפון', date: DateTime(2026, 11, 9, 10));
+      account.conversationRows = [older.toJson(withImages: false), remote.toJson(withImages: false)];
+      account.cleared = DateTime(2026, 6, 1);
+      final other = InsightsEngine(await SharedPreferences.getInstance(), secure, keys, account: account);
+      await other.loadModels();
+      expect(other.cloudProvider, CloudProvider.gemini);
+      expect(other.cloudModel, 'gemini-2.5-flash');
+      expect(other.hasCloudKey, isTrue);
+      await other.pullConversation();
+      expect(other.messages.map((m) => m.text), ['מהטלפון'], reason: 'messages from before the clear stay out');
+      other.clear();
+      await Future<void>.delayed(const Duration(milliseconds: 2100));
+      expect(account.conversationRows, isEmpty);
+      expect(account.cleared!.isAfter(DateTime(2026, 6, 1)), isTrue);
+      await other.flush();
+    });
+
+    test('proposed changes are applied only when approved, and can be undone', () async {
+      final storeDir = Directory('${dir.path}/store')..createSync();
+      final store = await AppStore.open(storeDir, await SharedPreferences.getInstance(), _MemoryKeys());
+      store.edit((f) => JObj.lazy(f.json, 'money').addObject('accounts', {'id': 'D1', 'name': 'פיקדון בנק', 'kind': 'deposit', 'balances': []}));
+      const answer = 'מציע:\n```actions\n{"summary":"עדכון","actions":['
+          '{"type":"update_account","account":"פיקדון","balance":12500,"annual_rate":4.1},'
+          '{"type":"add_trend","name":"מסעדות","monthly_limit":800},'
+          '{"type":"add_expense","name":"הפקדה","amount":500,"to_account":"פיקדון בנק"},'
+          '{"type":"update_trend","trend":"לא קיים","monthly_limit":1}]}\n```';
+      ai.submitManualAnswer(answer);
+      final message = ai.messages.last;
+      final plan = InsightParser.parse(message.text).whereType<ActionsSegment>().single.plan;
+      expect(plan.actions.length, 4);
+      final before = jsonEncode(store.file.json);
+      ai.apply(plan, {0, 1, 2, 3}, message.id, store);
+      final account = store.money.accounts.firstWhere((a) => a.id == 'D1');
+      expect(account.balances.single.amount, 12500);
+      expect(account.annualRate, 4.1);
+      expect(JObj(store.money.raw).objects('trends').single['monthlyLimit'], 800);
+      expect(store.budget.expenses.last.json['targetAccountID'], 'D1');
+      expect(message.applied, [0, 1, 2]);
+      expect(message.actionError, contains('לא נמצאה מגמה'));
+      ai.undoLast(store);
+      expect(jsonEncode(store.file.json), before);
+      expect(message.applied, isNull);
+      await store.flush();
     });
 
     test('signing out forgets the conversation, also an answer still on its way', () async {
@@ -301,4 +400,26 @@ class _Keys implements ApiKeyStore {
   Future<void> write(String account, String value) async => map[account] = value;
   @override
   Future<void> delete(String account) async => map.remove(account);
+}
+
+class _FakeAccount implements AIAccount {
+  List<SavedAIKey> saved = [];
+  List<Map<String, dynamic>> conversationRows = [];
+  DateTime? cleared;
+
+  @override
+  bool get signedIn => true;
+  @override
+  Future<void> saveKey(String provider, String? key, String model, String baseURL) async {}
+  @override
+  Future<void> deleteKey(String provider) async {}
+  @override
+  Future<List<SavedAIKey>> keys() async => saved;
+  @override
+  Future<SavedConversation?> conversation() async => SavedConversation(conversationRows, cleared);
+  @override
+  Future<void> saveConversation(List<Map<String, dynamic>> messages, DateTime? clearedAt) async {
+    conversationRows = messages;
+    cleared = clearedAt;
+  }
 }

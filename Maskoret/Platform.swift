@@ -32,6 +32,23 @@ enum Platform {
         #endif
     }
 
+    static var hasPastedImage: Bool {
+        #if os(macOS)
+        return NSPasteboard.general.availableType(from: [.png, .tiff]) != nil
+        #else
+        return UIPasteboard.general.hasImages
+        #endif
+    }
+
+    /// A picture on the clipboard (e.g. a screenshot taken with ⌘⇧⌃4), as PNG or TIFF data.
+    static func pastedImage() -> Data? {
+        #if os(macOS)
+        return NSPasteboard.general.data(forType: .png) ?? NSPasteboard.general.data(forType: .tiff)
+        #else
+        return UIPasteboard.general.image?.pngData()
+        #endif
+    }
+
     static func open(_ url: URL) {
         #if os(macOS)
         NSWorkspace.shared.open(url)

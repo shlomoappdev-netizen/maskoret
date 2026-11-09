@@ -67,31 +67,61 @@ struct InsightMessage: Identifiable, Codable, Equatable {
     var date: Date = Date()
     var auto: Bool? = nil
     var model: String? = nil
+    /// What the conversation shows instead of the text sent to the model (e.g. a quick action's long prompt).
+    var label: String? = nil
+    /// Pictures the user attached (JPEG). They stay on this device; other devices see only how many there were.
+    var images: [Data]? = nil
+    var imageCount: Int? = nil
+    /// Proposed changes (```actions) the user applied, by index, or dismissed.
+    var applied: [Int]? = nil
+    var dismissed: Bool? = nil
+    var actionError: String? = nil
+
+    var shownText: String {
+        if auto == true { return "✨ תובנות אוטומטיות" }
+        return label ?? text
+    }
+
+    var pictureCount: Int { max(images?.count ?? 0, imageCount ?? 0) }
 }
 
 enum InsightSegment: Identifiable {
     case text(String)
     case chart(ChartSpec)
+    case actions(AIActionPlan, String)
     case broken(String)
 
     var id: String {
         switch self {
         case .text(let t): return "t" + String(t.hashValue)
         case .chart(let c): return "c" + String((c.title ?? "").hashValue) + String(c.data.count)
+        case .actions(_, let raw): return "a" + String(raw.hashValue)
         case .broken(let t): return "b" + String(t.hashValue)
         }
     }
 
-    /// Splits a reply into text and ```chart blocks; hides <think> sections of reasoning models.
-    static func parse(_ raw: String) -> [InsightSegment] {
+    /// The tags reasoning models wrap their thinking in (Gemini: <thought>, others: <think> / <thinking>).
+    static let thinkingTags = ["think", "thinking", "thought"]
+
+    /// The reply without the model's thinking — that isn't part of the answer. An unfinished thinking section
+    /// (still streaming) is removed to the end.
+    static func withoutThinking(_ raw: String) -> String {
         var text = raw
-        while let start = text.range(of: "<think>") {
-            if let end = text.range(of: "</think>", range: start.upperBound..<text.endIndex) {
-                text.removeSubrange(start.lowerBound..<end.upperBound)
-            } else {
-                text.removeSubrange(start.lowerBound..<text.endIndex)
+        for tag in thinkingTags {
+            while let start = text.range(of: "<\(tag)>", options: .caseInsensitive) {
+                if let end = text.range(of: "</\(tag)>", options: .caseInsensitive, range: start.upperBound..<text.endIndex) {
+                    text.removeSubrange(start.lowerBound..<end.upperBound)
+                } else {
+                    text.removeSubrange(start.lowerBound..<text.endIndex)
+                }
             }
         }
+        return text
+    }
+
+    /// Splits a reply into text, ```chart and ```actions blocks; leaves out the model's thinking.
+    static func parse(_ raw: String) -> [InsightSegment] {
+        let text = withoutThinking(raw)
         var result: [InsightSegment] = []
         var rest = Substring(text)
         while let open = rest.range(of: "```") {
@@ -100,13 +130,19 @@ enum InsightSegment: Identifiable {
             let lineEnd = afterOpen.firstIndex(of: "\n") ?? afterOpen.endIndex
             let language = afterOpen[..<lineEnd].trimmingCharacters(in: .whitespaces).lowercased()
             guard let close = afterOpen[lineEnd...].range(of: "```") else {
-                // Still streaming (or never closed): hide an unfinished chart, keep anything else as text.
-                if language != "chart" { appendText(String(rest[open.lowerBound...]), to: &result) }
+                // Still streaming (or never closed): hide an unfinished chart or change list, keep anything else as text.
+                if language != "chart" && language != "actions" { appendText(String(rest[open.lowerBound...]), to: &result) }
                 rest = ""
                 break
             }
             let body = String(afterOpen[lineEnd..<close.lowerBound])
-            if let spec = decodeChart(body) {
+            if language == "actions" {
+                if let plan = AIActionPlan.decode(body) {
+                    result.append(.actions(plan, body))
+                } else {
+                    result.append(.broken(body.trimmingCharacters(in: .whitespacesAndNewlines)))
+                }
+            } else if let spec = decodeChart(body) {
                 result.append(.chart(spec))
             } else if language == "chart" {
                 result.append(.broken(body.trimmingCharacters(in: .whitespacesAndNewlines)))
@@ -222,9 +258,15 @@ enum InsightSegment: Identifiable {
         return spec
     }
 
+    /// The model is in the middle of thinking (an opened thinking tag that isn't closed yet).
     static func isThinking(_ raw: String) -> Bool {
-        guard let start = raw.range(of: "<think>", options: .backwards) else { return false }
-        return raw.range(of: "</think>", range: start.upperBound..<raw.endIndex) == nil
+        for tag in thinkingTags {
+            if let start = raw.range(of: "<\(tag)>", options: [.backwards, .caseInsensitive]),
+               raw.range(of: "</\(tag)>", options: .caseInsensitive, range: start.upperBound..<raw.endIndex) == nil {
+                return true
+            }
+        }
+        return false
     }
 }
 
@@ -246,6 +288,13 @@ enum AIEngine: String, CaseIterable, Identifiable {
     }
 }
 
+/// One turn of the conversation as the model gets it.
+struct AITurn {
+    var role: String
+    var text: String
+    var images: [Data] = []
+}
+
 @MainActor
 final class InsightsEngine: ObservableObject {
     @Published var engine: AIEngine { didSet { UserDefaults.standard.set(engine.rawValue, forKey: "aiEngine"); Task { await loadModels() } } }
@@ -256,6 +305,11 @@ final class InsightsEngine: ObservableObject {
     @Published var cloudModel: String { didSet { UserDefaults.standard.set(cloudModel, forKey: "aiCloudModel"); refreshStatus() } }
     @Published var cloudModels: [String] = []
     @Published var hasCloudKey = false
+    /// Save the key in the account too, so the user's other devices get it.
+    @Published var keyInAccount: Bool { didSet { UserDefaults.standard.set(keyInAccount, forKey: "aiKeyInAccount") } }
+    /// The result of "בדוק חיבור", shown under the button.
+    @Published var connectionCheck: (ok: Bool, text: String)? = nil
+    @Published var checkingConnection = false
     var cachedKey: String?
 
     // Manual (copy the prompt to a chat website, paste the answer back)
@@ -268,8 +322,24 @@ final class InsightsEngine: ObservableObject {
     @Published var messages: [InsightMessage] = [] { didSet { save() } }
     @Published var streaming = ""
     @Published var isRunning = false
+    /// Undo of the last applied change list: the message, and the data from before it.
+    @Published var undo: (message: UUID, budget: Budget, money: MoneyData)? = nil
 
     var task: Task<Void, Never>?
+    /// When the conversation was last cleared (on any device) — older messages don't come back from another device.
+    var clearedAt: Date? {
+        get { UserDefaults.standard.object(forKey: "aiClearedAt") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "aiClearedAt") }
+    }
+    var pushTaskHolder: Task<Void, Never>?
+    private var applyingRemote = false
+
+    /// Messages that came from another device: saved here, not sent back.
+    func setMessagesFromSync(_ list: [InsightMessage]) {
+        applyingRemote = true
+        messages = list
+        applyingRemote = false
+    }
 
     var lastAutoAt: Date? {
         get { UserDefaults.standard.object(forKey: "aiLastAuto") as? Date }
@@ -283,15 +353,24 @@ final class InsightsEngine: ObservableObject {
         cloudProvider = provider
         cloudBaseURL = UserDefaults.standard.string(forKey: "aiCloudBase") ?? provider.defaultBaseURL
         cloudModel = UserDefaults.standard.string(forKey: "aiCloudModel") ?? ""
+        keyInAccount = UserDefaults.standard.object(forKey: "aiKeyInAccount") as? Bool ?? true
         manualSite = UserDefaults.standard.string(forKey: "aiManualSite") ?? ManualSite.all[0].name
         if let data = SecureFile.read(InsightsEngine.fileURL),
            let saved = try? JSONDecoder().decode([InsightMessage].self, from: data) {
+            applyingRemote = true
             messages = saved
+            applyingRemote = false
         }
         // The AI conversation talks about the previous account's money — it goes with it.
         NotificationCenter.default.addObserver(forName: ServerSync.deviceDataCleared, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.clear()
+                guard let self else { return }
+                self.stop()
+                self.applyingRemote = true
+                self.messages = []
+                self.applyingRemote = false
+                self.clearedAt = nil
+                self.cachedKey = nil
                 try? FileManager.default.removeItem(at: InsightsEngine.fileURL)
             }
         }
@@ -306,15 +385,17 @@ final class InsightsEngine: ObservableObject {
         if let data = try? JSONEncoder().encode(trimmed) {
             try? SecureFile.write(data, to: InsightsEngine.fileURL)
         }
+        if !applyingRemote { schedulePush() }
     }
 
     // MARK: Models
 
     func loadModels() async {
         if engine == .cloud {
+            if (apiKey ?? "").isEmpty { await pullKeyFromAccount() }
             hasCloudKey = !(apiKey ?? "").isEmpty
             connected = hasCloudKey
-            if !hasCloudKey { status = "הכנס מפתח API בהגדרות (⚙︎)" } else { refreshStatus() }
+            refreshStatus()
             return
         }
         connected = true
@@ -332,45 +413,68 @@ final class InsightsEngine: ObservableObject {
     /// The name shown next to answers and in the header.
     var activeModelName: String {
         switch engine {
-        case .cloud: return cloudModel.isEmpty ? "" : cloudModel + " · " + cloudProvider.title
+        case .cloud: return cloudModel.isEmpty ? "" : cloudModel
         case .manual: return "ידני · " + manualSite
         }
     }
 
     func refreshStatus() {
         if engine == .cloud {
-            if !hasCloudKey { status = "הכנס מפתח API בהגדרות (⚙︎)" }
-            else if cloudModel.isEmpty { status = "כתוב איזה מודל להשתמש בהגדרות (⚙︎)" }
-            else { status = "מחובר ל-" + cloudProvider.title + " · הנתונים נשלחים לשרת שלהם" }
+            if !hasCloudKey { status = "הכנס מפתח API בהגדרות" }
+            else if cloudModel.isEmpty { status = "בחר מודל בהגדרות" }
+            else { status = cloudProvider.title }
             return
         }
-        status = awaitingPaste ? "הפרומפט הועתק — הדבק אותו ב-\(manualSite), ואז הדבק כאן את התשובה" : "ידני: השאלה תועתק ללוח, ואת התשובה מדביקים כאן"
+        status = awaitingPaste ? "הדבק ב-\(manualSite) את מה שהועתק, ואז הדבק כאן את התשובה" : "ידני · " + manualSite
     }
 
     // MARK: Chat
 
     static let systemPrompt = """
-    אתה יועץ תקציב אישי של המשתמש, בתוך האפליקציה ״מחשבון שכר״. ענה תמיד בעברית, קצר, ברור וממוקד.
-    השתמש רק בנתונים שמופיעים למטה ובמה שהמשתמש כתב בשיחה. אל תמציא מספרים. סכומים בשקלים (₪).
+    אתה העוזר הפיננסי של המשתמש בתוך האפליקציה ״מחשבון שכר״. ענה תמיד בעברית, קצר, ברור וממוקד, בלי הקדמות.
+    השתמש רק בנתונים שמופיעים למטה, במה שהמשתמש כתב ובתמונות שצירף. אל תמציא מספרים. סכומים בשקלים (₪).
     הנתונים מגיעים מהאפליקציה: נטו, ניכויים, הוצאות קבועות, חשבונות וחיסכון, חיובי אשראי לפי חודש וקטגוריה, תשלומים, מגמות ותחזית.
     חיוב אשראי ש״מצומד״ להוצאה קבועה כבר נספר בהוצאה הקבועה — אל תספור אותו פעמיים.
 
-    כשתרשים יעזור להבין — הוסף תרשים בבלוק בדיוק בפורמט הזה (JSON תקין, עד 8 נקודות):
+    ## תרשימים
+    כשתרשים עוזר להבין, הוסף בלוק בדיוק בפורמט הזה (JSON תקין, עד 8 נקודות, עד 2 תרשימים בתשובה):
     ```chart
     {"type":"bar","title":"כותרת","data":[{"label":"שם","value":123}]}
     ```
-    type יכול להיות bar, line או pie. אל תוסיף יותר מ-2 תרשימים בתשובה.
+    type: bar, line או pie.
 
-    בסוף כל תשובה שאל שאלה אחת או שתיים ממוקדות שיעזרו לנהל את התקציב טוב יותר בהמשך
-    (למשל: מטרה לחיסכון, הוצאה שלא ברורה, תקרה למגמה). כתוב אותן אחרי הכותרת ״שאלות:״.
+    ## פעולות באפליקציה
+    אתה יכול להציע שינויים בנתונים, והמשתמש מאשר אותם בלחיצה לפני שהם מתבצעים. הצע שינוי כשהמשתמש מבקש להכניס או לעדכן
+    נתונים (למשל מצילום מסך של חיסכון — העתק בדיוק את מה שמופיע בתמונה), או כשההמלצה שלך דורשת שינוי (תקרה למגמה,
+    הפקדה לחיסכון, הוצאה מתוכננת). כתוב קודם במשפט או שניים מה אתה מציע ולמה, ואז בלוק אחד בפורמט הזה (JSON תקין):
+    ```actions
+    {"summary":"תיאור קצר","actions":[{"type":"update_account","account":"שם החשבון","balance":12500}]}
+    ```
+    הסוגים והשדות (רק השדות שמשתנים; תאריכים בפורמט YYYY-MM-DD; שמות בדיוק כמו בנתונים):
+    - add_account: name, kind (savings=חיסכון נזיל, deposit=פיקדון/תוכנית חיסכון, pension=פנסיה), balance, balance_date, annual_rate (אחוז), rate_type (fixed/prime), prime_minus, monthly_contribution, contribution_day, start_date, maturity_date, note
+    - update_account: account (השם הקיים), new_name, ואותם שדות כמו add_account. balance = יתרה עדכנית (נרשמת כעדכון יתרה).
+    - add_trend: name, emoji, monthly_limit
+    - update_trend: trend (השם הקיים), monthly_limit (0 = בלי תקרה), new_name, emoji
+    - add_expense: name, amount, charge_day, to_account (אם זו הפקדה קבועה לחיסכון)
+    - update_expense: expense (השם הקיים), amount, active (true/false), charge_day, new_name
+    - add_transaction: title, amount, date, kind (expense/income/transfer), account (מאיזה חשבון; ברירת מחדל עו״ש), to_account (בהעברה), paid_by_card (true/false), installments, note
+    לכל פעולה אפשר להוסיף why — משפט קצר למה.
+    כשמשתמש צריך לקנות משהו יקר ולא צפוי: בדוק מאיפה כדאי לממן (עו״ש, חיסכון נזיל, תשלומים באשראי), מה ההשפעה על התחזית,
+    והצע את השינויים: הוצאה מתוכננת, העברה מחיסכון אם צריך, והורדת תקרות במגמות לחודשים הקרובים.
+    אל תציע פעולות בלי סיבה, ואל תחזור על פעולות שכבר בוצעו.
+
+    אם חסר לך מידע חשוב — שאל שאלה אחת ממוקדת בסוף התשובה.
     """
 
-    static let defaultAnalysis = "תסתכל על כל הנתונים ותן לי 3–5 תובנות חשובות על המצב הכספי שלי החודש: מה בולט, איפה אני חורג, ואיפה אפשר לשפר. הוסף תרשים אחד שממחיש את הנקודה הכי חשובה."
+    static let defaultAnalysis = "תסתכל על כל הנתונים ותן לי 3–5 תובנות חשובות על המצב הכספי שלי החודש: מה בולט, איפה אני חורג, ואיפה אפשר לשפר. הוסף תרשים אחד שממחיש את הנקודה הכי חשובה, ואם יש שינוי שכדאי לעשות — הצע אותו כפעולה."
 
-    func send(_ prompt: String, context: String, auto: Bool = false) {
+    /// `label` is what the conversation shows instead of a long prompt.
+    func send(_ prompt: String, label: String? = nil, images: [Data] = [], context: String, auto: Bool = false) {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isRunning, canSend else { return }
-        messages.append(InsightMessage(role: "user", text: text, auto: auto ? true : nil))
+        guard !text.isEmpty || !images.isEmpty, !isRunning, canSend else { return }
+        var message = InsightMessage(role: "user", text: text.isEmpty ? "מצורפת תמונה." : text, auto: auto ? true : nil, label: label)
+        if !images.isEmpty { message.images = images; message.imageCount = images.count }
+        messages.append(message)
         if auto { lastAutoAt = Date() }
         run(context: context)
     }
@@ -382,24 +486,72 @@ final class InsightsEngine: ObservableObject {
     func clear() {
         stop()
         messages = []
+        undo = nil
+        clearedAt = Date()
     }
 
     private func run(context: String) {
         let system = InsightsEngine.systemPrompt + "\n\n# הנתונים\n" + context
-        var turns: [(role: String, text: String)] = []
-        for m in messages.suffix(12) {
-            let content = InsightSegment.parse(m.text).compactMap { seg -> String? in
-                if case .text(let t) = seg { return t }
-                if case .chart(let c) = seg { return "[תרשים: \(c.title ?? "")]" }
-                return nil
+        var turns: [AITurn] = []
+        let recent = Array(messages.suffix(12))
+        for (index, m) in recent.enumerated() {
+            var content = InsightSegment.parse(m.text).compactMap { seg -> String? in
+                switch seg {
+                case .text(let t): return t
+                case .chart(let c): return "[תרשים: \(c.title ?? "")]"
+                case .actions(let plan, let raw):
+                    let state = m.dismissed == true ? "המשתמש דחה" : (m.applied?.isEmpty == false ? "בוצע" : "ממתין לאישור")
+                    return "```actions\n" + raw.trimmingCharacters(in: .whitespacesAndNewlines) + "\n```\n[" + state + (plan.summary.isEmpty ? "" : ": " + plan.summary) + "]"
+                case .broken: return nil
+                }
             }.joined(separator: "\n")
-            turns.append((m.role, content.isEmpty ? m.text : content))
+            if content.isEmpty { content = m.text }
+            // Pictures go with the newest question only; earlier ones are already described in the answers.
+            let isLast = index == recent.count - 1
+            let images = isLast ? (m.images ?? []) : []
+            if m.role == "user", m.pictureCount > 0, images.isEmpty { content += "\n[צורפה תמונה]" }
+            turns.append(AITurn(role: m.role, text: content, images: images))
         }
         if engine == .manual {
             prepareManual(system: system, turns: turns)
         } else {
             runCloud(system: system, turns: turns)
         }
+    }
+
+    // MARK: Changes the model proposed
+
+    /// Applies the chosen changes of one answer to the member being edited; keeps an undo.
+    func apply(_ plan: AIActionPlan, only chosen: Set<Int>, in messageID: UUID, store: Store) {
+        guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        let before = (store.budget, store.money)
+        var done: [Int] = []
+        var errors: [String] = []
+        for action in plan.actions where chosen.contains(action.id) {
+            do {
+                try store.apply(action)
+                done.append(action.id)
+            } catch {
+                errors.append(action.title + ": " + error.localizedDescription)
+            }
+        }
+        messages[index].applied = done
+        messages[index].actionError = errors.isEmpty ? nil : errors.joined(separator: "\n")
+        if !done.isEmpty { undo = (messageID, before.0, before.1) }
+    }
+
+    func dismiss(_ messageID: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        messages[index].dismissed = true
+    }
+
+    func undoLast(store: Store) {
+        guard let undo, let index = messages.firstIndex(where: { $0.id == undo.message }) else { return }
+        store.budget = undo.budget
+        store.money = undo.money
+        messages[index].applied = nil
+        messages[index].actionError = nil
+        self.undo = nil
     }
 }
 
