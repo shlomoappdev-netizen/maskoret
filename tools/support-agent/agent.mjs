@@ -44,11 +44,38 @@ function readToken() {
 // On the server the code is a clone of GitHub: get the latest before anything else, so a fix pushed there reaches a
 // crashing agent on its next restart. (Never on the developer's Mac, whose working copy may hold unfinished work.)
 const PULL = process.env.MASKORET_AGENT_PULL === '1';
-function pull() {
-  try { execFileSync('git', ['-C', PROJECT_DIR, 'pull', '-q', '--ff-only'], { stdio: 'ignore' }); }
-  catch (e) { log('git pull failed:', e.message); }
+// A running process keeps the code it started with. So on the server (PULL) this file first acts as a small
+// supervisor: it pulls, runs the agent as a child process, and when the child exits after pulling new agent code
+// (exit code 75), pulls again and starts the new code. A restart of the scheduled task therefore always runs the latest code.
+const RELOAD = 75;
+const CHILD = process.env.MASKORET_AGENT_CHILD === '1';
+function agentTree() {
+  try { return execFileSync('git', ['-C', PROJECT_DIR, 'rev-parse', 'HEAD:tools/support-agent'], { encoding: 'utf8' }).trim(); }
+  catch { return ''; }
 }
-if (PULL) pull();
+function pull() {
+  const before = agentTree();
+  try { execFileSync('git', ['-C', PROJECT_DIR, 'pull', '-q', '--ff-only'], { stdio: 'ignore' }); }
+  catch (e) { log('git pull failed:', e.message); return; }
+  const after = agentTree();
+  if (CHILD && before && after && before !== after) {
+    log('new agent code pulled — restarting');
+    process.exit(RELOAD);
+  }
+}
+if (PULL && !CHILD) {
+  for (;;) {
+    pull();
+    const code = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [fileURLToPath(import.meta.url)], {
+        env: { ...process.env, MASKORET_AGENT_CHILD: '1' }, stdio: 'inherit', windowsHide: true,
+      });
+      child.on('exit', (c) => resolve(c ?? 1));
+      child.on('error', () => resolve(1));
+    });
+    if (code !== RELOAD) process.exit(code);
+  }
+}
 
 const token = readToken();
 const supabase = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
