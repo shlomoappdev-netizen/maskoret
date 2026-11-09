@@ -92,8 +92,8 @@ class _LimitsSummary extends StatelessWidget {
       final share = l.total / income;
       return bar(
         Row(children: [
-          Expanded(child: Text('$title · ${Fmt.money(income)}')),
-          Text('התקרות: ${(share * 100).round()}%', style: const TextStyle(fontFeatures: tabular)),
+          Expanded(child: Text('$title: התקרות ${Fmt.money(l.total)} מתוך ${Fmt.money(income)}')),
+          Text('${(share * 100).round()}%', style: const TextStyle(fontFeatures: tabular)),
         ]),
         l.total < income ? l.total : income,
         income,

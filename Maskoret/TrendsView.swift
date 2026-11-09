@@ -156,9 +156,9 @@ struct TrendLimitsSummary: View {
         let share = totalLimit / income
         return ProgressView(value: min(totalLimit, income), total: income) {
             HStack {
-                Text(verbatim: title + " · " + Fmt.money(income))
+                Text(verbatim: title + ": התקרות " + Fmt.money(totalLimit) + " מתוך " + Fmt.money(income))
                 Spacer()
-                Text(verbatim: "התקרות: \(Int((share * 100).rounded()))%")
+                Text(verbatim: "\(Int((share * 100).rounded()))%")
                     .monospacedDigit()
             }
             .font(.caption)
