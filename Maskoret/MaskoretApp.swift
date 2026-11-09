@@ -174,7 +174,7 @@ extension SidebarItem {
         case .maaser: return ["מעשר", "צדקה", "תרומות", "חומש"]
         case .owed: return ["חובות", "הלוואה", "החזר", "חייבים"]
         case .trends: return ["תגיות", "קטגוריות", "דייטים", "מתנות"]
-        case .insights: return ["AI", "בינה מלאכותית", "שאלות", "Claude", "LM Studio"]
+        case .insights: return ["AI", "בינה מלאכותית", "שאלות", "Claude", "ChatGPT", "Gemini"]
         case .tax: return ["מס", "מס הכנסה", "נקודות זיכוי", "ביטוח לאומי", "מדרגות"]
         case .account: return ["חשבון", "משק בית", "שיתוף", "התחברות", "Google", "סנכרון", "יציאה", "מחיקת חשבון"]
         case .support: return ["עזרה", "תקלה", "באג", "פנייה", "צור קשר"]

@@ -11,11 +11,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../state/secure_file.dart';
 import 'segments.dart';
 
-/// Where answers come from. There's no built-in model here (that's MLX, only on the Mac).
+/// Where answers come from: a cloud model with the user's own API key, or copy-paste to a chat website.
 enum AIEngine {
   cloud('מודל בענן (מפתח API)'),
-  manual('ידני — העתק והדבק מאתר צ׳אט'),
-  lmStudio('LM Studio');
+  manual('ידני — העתק והדבק מאתר צ׳אט');
 
   const AIEngine(this.title);
   final String title;
@@ -102,13 +101,9 @@ class InsightsEngine extends ChangeNotifier {
     cloudProvider = CloudProvider.values.firstWhere((p) => p.name == prefs.getString('aiCloudProvider'), orElse: () => CloudProvider.openai);
     cloudBaseURL = prefs.getString('aiCloudBase') ?? cloudProvider.defaultBaseURL;
     cloudModel = prefs.getString('aiCloudModel') ?? '';
-    serverURL = prefs.getString('aiServerURL') ?? defaultURL;
-    model = prefs.getString('aiModel') ?? '';
     manualSite = prefs.getString('aiManualSite') ?? manualSites.keys.first;
-    autoInsights = prefs.getBool('aiAuto') ?? true;
   }
 
-  static const defaultURL = 'http://127.0.0.1:1234/v1';
   static const defaultAnalysis =
       'תסתכל על כל הנתונים ותן לי 3–5 תובנות חשובות על המצב הכספי שלי החודש: מה בולט, איפה אני חורג, ואיפה אפשר לשפר. הוסף תרשים אחד שממחיש את הנקודה הכי חשובה.';
   static const systemPrompt = '''
@@ -135,13 +130,9 @@ type יכול להיות bar, line או pie. אל תוסיף יותר מ-2 תר�
   late CloudProvider cloudProvider;
   late String cloudBaseURL;
   late String cloudModel;
-  late String serverURL;
-  late String model;
   late String manualSite;
-  late bool autoInsights;
 
   List<String> cloudModels = [];
-  List<String> models = [];
   bool hasCloudKey = false;
   String? _key;
   bool? connected;
@@ -212,27 +203,10 @@ type יכול להיות bar, line או pie. אל תוסיף יותר מ-2 תר�
     refreshStatus();
   }
 
-  void setServerURL(String v) {
-    serverURL = v;
-    prefs.setString('aiServerURL', v);
-  }
-
-  void setModel(String v) {
-    model = v;
-    prefs.setString('aiModel', v);
-    refreshStatus();
-  }
-
   void setManualSite(String v) {
     manualSite = v;
     prefs.setString('aiManualSite', v);
     refreshStatus();
-  }
-
-  void setAuto(bool v) {
-    autoInsights = v;
-    prefs.setBool('aiAuto', v);
-    notifyListeners();
   }
 
   String get _keyAccount => 'api-key-${cloudProvider.name}';
@@ -270,8 +244,6 @@ type יכול להיות bar, line או pie. אל תוסיף יותר מ-2 תר�
       case AIEngine.manual:
         connected = true;
         refreshStatus();
-      case AIEngine.lmStudio:
-        await _loadLocalModels();
     }
   }
 
@@ -294,25 +266,6 @@ type יכול להיות bar, line או pie. אל תוסיף יותר מ-2 תר�
           for (final m in json['data'] as List)
             if (m is Map && m['id'] is String) m['id'] as String
       ];
-
-  Future<void> _loadLocalModels() async {
-    final uri = Uri.tryParse('${_trimmedBase(serverURL)}/models');
-    if (uri == null || !uri.hasScheme) {
-      connected = false;
-      status = 'כתובת השרת לא תקינה';
-      notifyListeners();
-      return;
-    }
-    try {
-      models = _ids(await _getJson(uri, const {}, const Duration(seconds: 5))).where((m) => !m.toLowerCase().contains('embed')).toList();
-      connected = true;
-      refreshStatus();
-    } catch (_) {
-      connected = false;
-      status = 'אין חיבור ל-LM Studio';
-      notifyListeners();
-    }
-  }
 
   /// Lists the provider's models (so the name doesn't have to be typed).
   Future<void> loadCloudModels() async {
@@ -337,14 +290,12 @@ type יכול להיות bar, line או pie. אל תוסיף יותר מ-2 תר�
 
   /// Only the chosen model may answer — no automatic fallback to another one.
   bool get canSend => switch (engine) {
-        AIEngine.lmStudio => connected == true && model.isNotEmpty && models.contains(model),
         AIEngine.cloud => hasCloudKey && cloudModel.trim().isNotEmpty,
         AIEngine.manual => !awaitingPaste,
       };
 
   /// The name shown next to answers and in the header.
   String get activeModelName => switch (engine) {
-        AIEngine.lmStudio => model,
         AIEngine.cloud => cloudModel.isEmpty ? '' : '$cloudModel · ${cloudProvider.title}',
         AIEngine.manual => 'ידני · $manualSite',
       };
@@ -361,16 +312,6 @@ type יכול להיות bar, line או pie. אל תוסיף יותר מ-2 תר�
         status = awaitingPaste
             ? 'הפרומפט הועתק — הדבק אותו ב-$manualSite, ואז הדבק כאן את התשובה'
             : 'ידני: השאלה תועתק ללוח, ואת התשובה מדביקים כאן';
-      case AIEngine.lmStudio:
-        if (connected == true) {
-          status = models.isEmpty
-              ? 'השרת פועל, אבל אין מודלים זמינים'
-              : model.isEmpty
-                  ? 'בחר מודל ברירת מחדל בהגדרות (⚙︎)'
-                  : !models.contains(model)
-                      ? 'מודל ברירת המחדל לא נמצא ב-LM Studio — לא נשלח כלום'
-                      : 'מחובר ל-LM Studio';
-        }
     }
     notifyListeners();
   }
@@ -439,41 +380,7 @@ type יכול להיות bar, line או pie. אל תוסיף יותר מ-2 תר�
         _prepareManual(system, turns);
       case AIEngine.cloud:
         _runCloud(system, turns);
-      case AIEngine.lmStudio:
-        _runLocal(system, turns);
     }
-  }
-
-  void _runLocal(String system, List<(String, String)> turns) {
-    final uri = Uri.tryParse('${_trimmedBase(serverURL)}/chat/completions');
-    if (uri == null) return;
-    final used = model;
-    String? answeredBy;
-    _stream(
-      uri,
-      const {},
-      {
-        'messages': [
-          {'role': 'system', 'content': system},
-          for (final (role, text) in turns) {'role': role, 'content': text},
-        ],
-        'stream': true,
-        'temperature': 0.4,
-        'model': used,
-      },
-      working: 'המודל חושב…',
-      piece: (json) {
-        final m = json['model'];
-        if (answeredBy == null && m is String && m.isNotEmpty) answeredBy = m;
-        return _openAIPiece(json);
-      },
-      // Flag it if LM Studio answered with a different model than the default.
-      label: () {
-        final by = answeredBy;
-        return by != null && !by.contains(used) && !used.contains(by) ? '$by ⚠︎ לא מודל ברירת המחדל' : used;
-      },
-      onFailure: () => connected = false,
-    );
   }
 
   Future<void> _runCloud(String system, List<(String, String)> turns) async {

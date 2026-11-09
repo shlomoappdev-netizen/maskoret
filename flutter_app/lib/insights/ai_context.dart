@@ -188,12 +188,3 @@ String aiContext(AppStore store, {DateTime? at}) {
   }
   return lines.join('\n');
 }
-
-/// New data since the last automatic insight (or a week passed).
-bool insightsDue(MoneyData money, DateTime? lastAuto) {
-  if (lastAuto == null) return true;
-  if (DateTime.now().difference(lastAuto) > const Duration(days: 7)) return true;
-  final imported = JObj(money.raw).objects('cardImports').firstOrNull;
-  final at = imported == null ? null : JObj(imported).date('importedAt');
-  return at != null && at.isAfter(lastAuto);
-}

@@ -22,7 +22,6 @@
 		9EFAC245ED773A22D304F16D /* MaaserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC7AA93F603E3D1084244D8B /* MaaserView.swift */; };
 		49612AB9F4260632B56A5EC8 /* Maaser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F453DBB62815B6ADB31204A /* Maaser.swift */; };
 		0AE15480394334CB14786AFE /* CloudAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B160B5B25DB8A68557DA576 /* CloudAI.swift */; };
-		85B40E4C5C3770BC8C55D260 /* LocalAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24DB2A307408C5E41E2D2B00 /* LocalAI.swift */; };
 		C820E03A661B812D8D3BAFC4 /* FamilyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E341422700FAA7E7B9593029 /* FamilyView.swift */; };
 		09A1D3AA4250A5AD120F77D3 /* Family.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1BF73B91D0A64438766742F /* Family.swift */; };
 		EC8C503666286866B32EF6BB /* MarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE94F1F627007A7E95942A3 /* MarkdownView.swift */; };
@@ -44,9 +43,6 @@
 		DA81D9A762E87BDEA3756367 /* ForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81BC4F6B6D53B231332A1C53 /* ForecastView.swift */; };
 		AA3B31D92824AA93D36A7820 /* Sync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9DB2372302A19B5040A11F /* Sync.swift */; };
 		45607F649856AE65E3CA60A8 /* BackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C0E622B32BF9965177CEAB /* BackupView.swift */; };
-		E407B34E0651598745F23FD0 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 8BA568E59E6C15D8E513A9D5 /* MLXLLM */; };
-		CC622AACCC1C5540F6B386BF /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 60AD823C30EA4C979201C381 /* MLXLMCommon */; };
-		65D86C0907EAB01938D4B92E /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = 699562D35D5B9212560E7D26 /* Tokenizers */; };
 		DCCDE73625CC4F2C957604AD /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = C826CD1AEC894B53B8A536C0 /* Platform.swift */; };
 		C21BE70C035E4BA3BA618178 /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = C826CD1AEC894B53B8A536C0 /* Platform.swift */; };
 		F64B79A5C3424584A8F6BFDB /* ServerSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C385B5DCE8F46EB86040F6C /* ServerSync.swift */; };
@@ -70,7 +66,6 @@
 		52A1CBECCC1846CD8DEA51E9 /* MaaserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC7AA93F603E3D1084244D8B /* MaaserView.swift */; };
 		AE2C1EA7419249CE8DD9F339 /* Maaser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F453DBB62815B6ADB31204A /* Maaser.swift */; };
 		06D9BD39A98F42F198B3ECEB /* CloudAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B160B5B25DB8A68557DA576 /* CloudAI.swift */; };
-		4748A14940A14D90870ACA80 /* LocalAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24DB2A307408C5E41E2D2B00 /* LocalAI.swift */; };
 		A459FB6C07CA461C9B638FE5 /* FamilyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E341422700FAA7E7B9593029 /* FamilyView.swift */; };
 		8C3BC3A3A214426EB9F3D186 /* Family.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1BF73B91D0A64438766742F /* Family.swift */; };
 		CD0F24CF5E354D5587F0FB38 /* MarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE94F1F627007A7E95942A3 /* MarkdownView.swift */; };
@@ -126,7 +121,6 @@
 		CC7AA93F603E3D1084244D8B /* MaaserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaaserView.swift; sourceTree = "<group>"; };
 		3F453DBB62815B6ADB31204A /* Maaser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Maaser.swift; sourceTree = "<group>"; };
 		0B160B5B25DB8A68557DA576 /* CloudAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudAI.swift; sourceTree = "<group>"; };
-		24DB2A307408C5E41E2D2B00 /* LocalAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAI.swift; sourceTree = "<group>"; };
 		E341422700FAA7E7B9593029 /* FamilyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyView.swift; sourceTree = "<group>"; };
 		C1BF73B91D0A64438766742F /* Family.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Family.swift; sourceTree = "<group>"; };
 		6BE94F1F627007A7E95942A3 /* MarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownView.swift; sourceTree = "<group>"; };
@@ -171,9 +165,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E407B34E0651598745F23FD0 /* MLXLLM in Frameworks */,
-				CC622AACCC1C5540F6B386BF /* MLXLMCommon in Frameworks */,
-				65D86C0907EAB01938D4B92E /* Tokenizers in Frameworks */,
 				4967BAF244604CC9B7B37221 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -215,7 +206,6 @@
 				CC7AA93F603E3D1084244D8B /* MaaserView.swift */,
 				3F453DBB62815B6ADB31204A /* Maaser.swift */,
 				0B160B5B25DB8A68557DA576 /* CloudAI.swift */,
-				24DB2A307408C5E41E2D2B00 /* LocalAI.swift */,
 				E341422700FAA7E7B9593029 /* FamilyView.swift */,
 				C1BF73B91D0A64438766742F /* Family.swift */,
 				6BE94F1F627007A7E95942A3 /* MarkdownView.swift */,
@@ -281,9 +271,6 @@
 			);
 			name = Maskoret;
 			packageProductDependencies = (
-				8BA568E59E6C15D8E513A9D5 /* MLXLLM */,
-				60AD823C30EA4C979201C381 /* MLXLMCommon */,
-				699562D35D5B9212560E7D26 /* Tokenizers */,
 				7F3AB443C7E34A06AF4F6209 /* Supabase */,
 			);
 			productName = Maskoret;
@@ -339,9 +326,6 @@
 			);
 			mainGroup = 2B731CEFC6751AAE0EC69B98;
 			packageReferences = (
-				BCCC566C1AB00CC057FA0C7A /* XCRemoteSwiftPackageReference "swift-collections" */,
-				11066BF1483FE44A430E4BAD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
-				CCA8389949C5DD0D3D762447 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 				E57D8630252E4660870E5F6D /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				A1C0FFEE00000000000000A3 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
@@ -401,7 +385,6 @@
 				9EFAC245ED773A22D304F16D /* MaaserView.swift in Sources */,
 				49612AB9F4260632B56A5EC8 /* Maaser.swift in Sources */,
 				0AE15480394334CB14786AFE /* CloudAI.swift in Sources */,
-				85B40E4C5C3770BC8C55D260 /* LocalAI.swift in Sources */,
 				C820E03A661B812D8D3BAFC4 /* FamilyView.swift in Sources */,
 				09A1D3AA4250A5AD120F77D3 /* Family.swift in Sources */,
 				EC8C503666286866B32EF6BB /* MarkdownView.swift in Sources */,
@@ -461,7 +444,6 @@
 				52A1CBECCC1846CD8DEA51E9 /* MaaserView.swift in Sources */,
 				AE2C1EA7419249CE8DD9F339 /* Maaser.swift in Sources */,
 				06D9BD39A98F42F198B3ECEB /* CloudAI.swift in Sources */,
-				4748A14940A14D90870ACA80 /* LocalAI.swift in Sources */,
 				A459FB6C07CA461C9B638FE5 /* FamilyView.swift in Sources */,
 				8C3BC3A3A214426EB9F3D186 /* Family.swift in Sources */,
 				CD0F24CF5E354D5587F0FB38 /* MarkdownView.swift in Sources */,
@@ -569,7 +551,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.19.1;
+				MARKETING_VERSION = 4.20.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -601,7 +583,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.19.1;
+				MARKETING_VERSION = 4.20.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -636,7 +618,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.19.1;
+				MARKETING_VERSION = 4.20.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;
@@ -674,7 +656,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.19.1;
+				MARKETING_VERSION = 4.20.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;
@@ -728,31 +710,6 @@
 				minimumVersion = 2.55.5;
 			};
 		};
-		11066BF1483FE44A430E4BAD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 3.31.3;
-			};
-		};
-		CCA8389949C5DD0D3D762447 /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/huggingface/swift-transformers";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.3.0;
-			};
-		};
-		BCCC566C1AB00CC057FA0C7A /* XCRemoteSwiftPackageReference "swift-collections" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/apple/swift-collections.git";
-			requirement = {
-				kind = versionRange;
-				maximumVersion = 1.5.0;
-				minimumVersion = 1.1.4;
-			};
-		};
 		A1C0FFEE00000000000000A3 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
@@ -773,21 +730,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = E57D8630252E4660870E5F6D /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
-		};
-		8BA568E59E6C15D8E513A9D5 /* MLXLLM */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 11066BF1483FE44A430E4BAD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
-			productName = MLXLLM;
-		};
-		60AD823C30EA4C979201C381 /* MLXLMCommon */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 11066BF1483FE44A430E4BAD /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
-			productName = MLXLMCommon;
-		};
-		699562D35D5B9212560E7D26 /* Tokenizers */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = CCA8389949C5DD0D3D762447 /* XCRemoteSwiftPackageReference "swift-transformers" */;
-			productName = Tokenizers;
 		};
 		A1C0FFEE00000000000000A2 /* GoogleSignIn */ = {
 			isa = XCSwiftPackageProductDependency;

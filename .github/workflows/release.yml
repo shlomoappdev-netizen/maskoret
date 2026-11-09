@@ -153,7 +153,6 @@ jobs:
         run: |
           export DEVELOPER_DIR="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)/Contents/Developer"
           xcodebuild -version
-          xcodebuild -downloadComponent MetalToolchain || true   # MLX compiles Metal shaders
           version=$(jq -r .version version.json); build=$(jq -r .build version.json)
           set -o pipefail
           xcodebuild -project Maskoret.xcodeproj -scheme Maskoret -configuration Release -destination 'generic/platform=macOS' \

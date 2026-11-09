@@ -47,10 +47,6 @@ class _InsightsScreenState extends State<InsightsScreen> {
     final scope = context.scope;
     final ai = scope.insights;
     await ai.loadModels();
-    // Automatic insights only with a model running locally — never to the cloud by itself.
-    if (mounted && ai.autoInsights && ai.engine == AIEngine.lmStudio && ai.canSend && !ai.isRunning && insightsDue(scope.store.money, ai.lastAutoAt)) {
-      ai.send(InsightsEngine.defaultAnalysis, context: aiContext(scope.store), auto: true);
-    }
   }
 
   @override
@@ -275,31 +271,23 @@ class _SetupHelp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final local = ai.engine == AIEngine.lmStudio;
     return PageList(padding: const EdgeInsets.all(20), children: [
       Glass(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(local ? 'אין חיבור ל-LM Studio' : 'חסר מפתח API — הוסף אותו בהגדרות',
+          Text('חסר מפתח API — הוסף אותו בהגדרות',
               style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          if (local) ...[
-            const Text('1. פתח את LM Studio וטען מודל (מומלץ מודל שמבין עברית, 7B ומעלה).'),
-            const Text('2. בלשונית Developer (או ״Local Server״) לחץ Start Server — ברירת המחדל היא פורט 1234.'),
-            const Text('3. חזור לכאן ולחץ ״בדוק חיבור״.'),
-            Text('כתובת נוכחית: ${ai.serverURL}', style: theme.textTheme.bodySmall),
-          ] else ...[
-            const Text('בוחרים ספק, מדביקים מפתח API אישי וכותבים את שם המודל. המפתח נשמר רק במכשיר הזה.'),
-            const SizedBox(height: 4),
-            const Text('בלי מפתח? אפשר לעבור ל״ידני״: הפרומפט מועתק ללוח, מדביקים אותו באתר צ׳אט, ומחזירים לכאן את התשובה.'),
-          ],
+          const Text('בוחרים ספק, מדביקים מפתח API אישי וכותבים את שם המודל. המפתח נשמר רק במכשיר הזה.'),
+          const SizedBox(height: 4),
+          const Text('בלי מפתח? אפשר לעבור ל״ידני״: הפרומפט מועתק ללוח, מדביקים אותו באתר צ׳אט, ומחזירים לכאן את התשובה.'),
           const SizedBox(height: 12),
           Wrap(spacing: 8, children: [
             FilledButton(
               onPressed: () => Navigator.push(context, glassRoute((_) => const InsightsSettingsScreen())),
               child: const Text('הגדרות…'),
             ),
-            if (local) OutlinedButton(onPressed: retry, child: const Text('בדוק חיבור')),
+            OutlinedButton(onPressed: retry, child: const Text('בדוק שוב')),
           ]),
         ]),
       ),
@@ -364,14 +352,7 @@ class _InsightsSettingsScreenState extends State<InsightsSettingsScreen> {
                 const EmptyHint('כשאתה שואל, כל הנתונים והשאלה מועתקים ללוח כפרומפט אחד. מדביקים אותו באתר (בלי מפתח API, גם בחשבון '
                     'חינמי), ואז מדביקים כאן את התשובה — היא נשמרת בשיחה עם תרשימים ועיצוב, והשיחה ממשיכה משם.'),
               ]),
-            if (ai.engine == AIEngine.lmStudio) ..._local(ai),
             SectionCard(children: [
-              SwitchListTile(
-                title: const Text('תובנות אוטומטיות (פעם בשבוע, ואחרי ייבוא אשראי)'),
-                subtitle: const Text('רק עם LM Studio. לענן לא נשלח כלום בלי שתשאל.'),
-                value: ai.autoInsights,
-                onChanged: ai.setAuto,
-              ),
               ListTile(
                 leading: Icon(Icons.delete_outline, color: theme.colorScheme.error),
                 title: Text('נקה שיחה', style: TextStyle(color: theme.colorScheme.error)),
@@ -498,51 +479,6 @@ class _InsightsSettingsScreenState extends State<InsightsSettingsScreen> {
         ]),
       ];
 
-  List<Widget> _local(InsightsEngine ai) => [
-        SectionCard(title: 'LM Studio', children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: DropdownButtonFormField<String>(
-              key: ValueKey('${ai.model}-${ai.models.length}'),
-              initialValue: ai.model.isEmpty ? '' : ai.model,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'מודל ברירת מחדל', border: OutlineInputBorder()),
-              items: [
-                const DropdownMenuItem(value: '', child: Text('— בחר —')),
-                if (ai.model.isNotEmpty && !ai.models.contains(ai.model))
-                  DropdownMenuItem(value: ai.model, child: Text('${ai.model} (לא זמין כרגע)')),
-                for (final m in ai.models) DropdownMenuItem(value: m, child: Text(m)),
-              ],
-              onChanged: (v) => ai.setModel(v ?? ''),
-            ),
-          ),
-          const EmptyHint('רק המודל הזה מקבל את הנתונים. אם הוא לא זמין ב-LM Studio — שום דבר לא נשלח, גם לא למודל אחר.'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: TextFormField(
-              key: ValueKey('server-$_version'),
-              initialValue: ai.serverURL,
-              textDirection: TextDirection.ltr,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(labelText: 'כתובת השרת', border: OutlineInputBorder()),
-              onChanged: ai.setServerURL,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Wrap(spacing: 8, children: [
-              FilledButton(onPressed: ai.loadModels, child: const Text('בדוק חיבור')),
-              OutlinedButton(
-                onPressed: () {
-                  ai.setServerURL(InsightsEngine.defaultURL);
-                  setState(() => _version++);
-                },
-                child: const Text('ברירת מחדל'),
-              ),
-            ]),
-          ),
-        ]),
-      ];
 }
 
 class _Bubble extends StatelessWidget {

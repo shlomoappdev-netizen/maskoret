@@ -3,10 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maskoret/data/card.dart';
-import 'package:maskoret/data/models.dart';
 import 'package:maskoret/data/month_picture.dart';
 import 'package:maskoret/data/fmt.dart';
-import 'package:maskoret/data/json.dart';
 import 'package:maskoret/insights/ai_context.dart';
 import 'package:maskoret/insights/engine.dart';
 import 'package:maskoret/state/secure_file.dart';
@@ -228,24 +226,6 @@ void main() {
       expect(ai.cloudModels, ['good-model']);
     });
 
-    test('LM Studio: only the chosen model is used', () async {
-      ai.setEngine(AIEngine.lmStudio);
-      ai.setServerURL(base());
-      await ai.loadModels();
-      expect(ai.models, ['good-model', 'whisper-1']);
-      ai.setModel('gone');
-      expect(ai.canSend, isFalse, reason: 'never falls back to another model');
-      ai.setModel('good-model');
-      expect(ai.canSend, isTrue);
-      chunks = ['data: {"model":"other","choices":[{"delta":{"content":"ת"}}]}'];
-      ai.send('ש', context: 'x');
-      await Future<void>.delayed(Duration.zero);
-      await untilDone();
-      expect(requests.last.$3['model'], 'good-model');
-      expect(requests.last.$2.containsKey('authorization'), isFalse, reason: 'no key goes to a local server');
-      expect(ai.messages.last.model, contains('לא מודל ברירת המחדל'));
-    });
-
     test('manual: the prompt goes to the clipboard, the pasted answer joins the conversation', () async {
       ai.setEngine(AIEngine.manual);
       await ai.loadModels();
@@ -298,8 +278,6 @@ void main() {
     expect(text, contains('## תחזית'));
     final s = CardMonthSummary.of(CardData(store.money).chargedIn(CardData(store.money).cardBillingKeys.first));
     expect(text, contains('סה״כ ${Fmt.money(s.total)}'));
-    expect(insightsDue(store.money, null), isTrue);
-    expect(insightsDue(MoneyData(JObj({})), DateTime.now()), isFalse);
     await store.flush();
     dir.deleteSync(recursive: true);
   });

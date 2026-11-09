@@ -228,25 +228,18 @@ enum InsightSegment: Identifiable {
     }
 }
 
-// MARK: - Engine (built-in MLX, or LM Studio's OpenAI-compatible API)
+// MARK: - Engine (a cloud model with the user's API key, or copy-paste to a chat website)
 
 enum AIEngine: String, CaseIterable, Identifiable {
-    case builtIn
-    case lmStudio
     case cloud
     case manual
 
     var id: String { rawValue }
 
-    /// The engines this device can run (no built-in MLX model on iPhone/iPad).
-    static var available: [AIEngine] {
-        Platform.isMac ? allCases : [.cloud, .manual, .lmStudio]
-    }
+    static var available: [AIEngine] { allCases }
 
     var title: String {
         switch self {
-        case .builtIn: return "מובנה באפליקציה (MLX של Apple)"
-        case .lmStudio: return "LM Studio"
         case .cloud: return "מודל בענן (מפתח API)"
         case .manual: return "ידני — העתק והדבק מאתר צ׳אט"
         }
@@ -255,12 +248,7 @@ enum AIEngine: String, CaseIterable, Identifiable {
 
 @MainActor
 final class InsightsEngine: ObservableObject {
-    static let defaultURL = "http://127.0.0.1:1234/v1"
-
     @Published var engine: AIEngine { didSet { UserDefaults.standard.set(engine.rawValue, forKey: "aiEngine"); Task { await loadModels() } } }
-    /// Built-in engine: the default model's folder. Nothing is ever sent to any other model.
-    @Published var localModelPath: String { didSet { UserDefaults.standard.set(localModelPath, forKey: "aiLocalModel"); refreshStatus() } }
-    @Published var localModels: [LocalModel] = []
 
     // Cloud (API key)
     @Published var cloudProvider: CloudProvider { didSet { UserDefaults.standard.set(cloudProvider.rawValue, forKey: "aiCloudProvider"); cloudModels = []; cachedKey = nil; refreshStatus() } }
@@ -275,11 +263,6 @@ final class InsightsEngine: ObservableObject {
     @Published var awaitingPaste = false
     @Published var manualPrompt = ""
 
-    @Published var serverURL: String { didSet { UserDefaults.standard.set(serverURL, forKey: "aiServerURL") } }
-    /// The default model. Nothing is ever sent to any other model.
-    @Published var model: String { didSet { UserDefaults.standard.set(model, forKey: "aiModel"); refreshStatus() } }
-    @Published var autoInsights: Bool { didSet { UserDefaults.standard.set(autoInsights, forKey: "aiAuto") } }
-    @Published var models: [String] = []
     @Published var connected: Bool? = nil
     @Published var status = ""
     @Published var messages: [InsightMessage] = [] { didSet { save() } }
@@ -294,17 +277,13 @@ final class InsightsEngine: ObservableObject {
     }
 
     init() {
-        serverURL = UserDefaults.standard.string(forKey: "aiServerURL") ?? InsightsEngine.defaultURL
-        model = UserDefaults.standard.string(forKey: "aiModel") ?? ""
         let savedEngine = AIEngine(rawValue: UserDefaults.standard.string(forKey: "aiEngine") ?? "") ?? AIEngine.available[0]
         engine = AIEngine.available.contains(savedEngine) ? savedEngine : AIEngine.available[0]
-        localModelPath = UserDefaults.standard.string(forKey: "aiLocalModel") ?? ""
         let provider = CloudProvider(rawValue: UserDefaults.standard.string(forKey: "aiCloudProvider") ?? "") ?? .openai
         cloudProvider = provider
         cloudBaseURL = UserDefaults.standard.string(forKey: "aiCloudBase") ?? provider.defaultBaseURL
         cloudModel = UserDefaults.standard.string(forKey: "aiCloudModel") ?? ""
         manualSite = UserDefaults.standard.string(forKey: "aiManualSite") ?? ManualSite.all[0].name
-        autoInsights = UserDefaults.standard.object(forKey: "aiAuto") as? Bool ?? true
         if let data = SecureFile.read(InsightsEngine.fileURL),
            let saved = try? JSONDecoder().decode([InsightMessage].self, from: data) {
             messages = saved
@@ -329,12 +308,6 @@ final class InsightsEngine: ObservableObject {
         }
     }
 
-    private var base: String {
-        var s = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        while s.hasSuffix("/") { s.removeLast() }
-        return s
-    }
-
     // MARK: Models
 
     func loadModels() async {
@@ -344,43 +317,13 @@ final class InsightsEngine: ObservableObject {
             if !hasCloudKey { status = "הכנס מפתח API בהגדרות (⚙︎)" } else { refreshStatus() }
             return
         }
-        if engine == .manual {
-            connected = true
-            refreshStatus()
-            return
-        }
-        if engine == .builtIn {
-            localModels = LocalModel.scan()
-            connected = !localModels.isEmpty
-            if localModels.isEmpty { status = "לא נמצאו מודלים בפורמט MLX — הוסף תיקיית מודל בהגדרות (⚙︎)" }
-            refreshStatus()
-            return
-        }
-        guard let url = URL(string: base + "/models") else {
-            connected = false
-            status = "כתובת השרת לא תקינה"
-            return
-        }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 5
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            let ids = (json?["data"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
-            models = ids.filter { !$0.lowercased().contains("embed") }
-            connected = true
-            refreshStatus()
-        } catch {
-            connected = false
-            status = "אין חיבור ל-LM Studio"
-        }
+        connected = true
+        refreshStatus()
     }
 
     /// Only the chosen default model may answer — no automatic fallback to another one.
     var canSend: Bool {
         switch engine {
-        case .builtIn: return !localModelPath.isEmpty && localModels.contains { $0.path == localModelPath }
-        case .lmStudio: return connected == true && !model.isEmpty && models.contains(model)
         case .cloud: return hasCloudKey && !cloudModel.trimmingCharacters(in: .whitespaces).isEmpty
         case .manual: return !awaitingPaste
         }
@@ -389,21 +332,9 @@ final class InsightsEngine: ObservableObject {
     /// The name shown next to answers and in the header.
     var activeModelName: String {
         switch engine {
-        case .builtIn: return localModelPath.isEmpty ? "" : URL(fileURLWithPath: localModelPath).lastPathComponent
-        case .lmStudio: return model
         case .cloud: return cloudModel.isEmpty ? "" : cloudModel + " · " + cloudProvider.title
         case .manual: return "ידני · " + manualSite
         }
-    }
-
-    func addModelFolder(_ url: URL) {
-        var extra = LocalModel.extraFolders
-        if !extra.contains(url.path) { extra.append(url.path) }
-        LocalModel.extraFolders = extra
-        localModels = LocalModel.scan()
-        connected = !localModels.isEmpty
-        if LocalModel.isMLXModel(url) { localModelPath = url.path }
-        refreshStatus()
     }
 
     func refreshStatus() {
@@ -413,31 +344,7 @@ final class InsightsEngine: ObservableObject {
             else { status = "מחובר ל-" + cloudProvider.title + " · הנתונים נשלחים לשרת שלהם" }
             return
         }
-        if engine == .manual {
-            status = awaitingPaste ? "הפרומפט הועתק — הדבק אותו ב-\(manualSite), ואז הדבק כאן את התשובה" : "ידני: השאלה תועתק ללוח, ואת התשובה מדביקים כאן"
-            return
-        }
-        if engine == .builtIn {
-            guard !localModels.isEmpty else { return }
-            if localModelPath.isEmpty {
-                status = "בחר מודל ברירת מחדל בהגדרות (⚙︎)"
-            } else if !canSend {
-                status = "מודל ברירת המחדל לא נמצא במחשב — לא נשלח כלום"
-            } else {
-                status = "מודל מובנה · רץ אצלך במחשב"
-            }
-            return
-        }
-        guard connected == true else { return }
-        if models.isEmpty {
-            status = "השרת פועל, אבל אין מודלים זמינים"
-        } else if model.isEmpty {
-            status = "בחר מודל ברירת מחדל בהגדרות (⚙︎)"
-        } else if !models.contains(model) {
-            status = "מודל ברירת המחדל לא נמצא ב-LM Studio — לא נשלח כלום"
-        } else {
-            status = "מחובר ל-LM Studio"
-        }
+        status = awaitingPaste ? "הפרומפט הועתק — הדבק אותו ב-\(manualSite), ואז הדבק כאן את התשובה" : "ידני: השאלה תועתק ללוח, ואת התשובה מדביקים כאן"
     }
 
     // MARK: Chat
@@ -472,43 +379,6 @@ final class InsightsEngine: ObservableObject {
         task?.cancel()
     }
 
-    // MARK: Built-in engine
-
-    private func runLocal(system: String, history: [(role: String, text: String)], prompt: String) {
-        isRunning = true
-        streaming = ""
-        let path = localModelPath
-        let name = activeModelName
-        status = LocalModelRunner.shared.loadedModelPath == path ? "המודל חושב…" : "טוען את המודל לזיכרון… (כמה שניות)"
-        task = Task { [weak self] in
-            var output = ""
-            var failure: String? = nil
-            do {
-                let stream = try await LocalModelRunner.shared.stream(path: path, system: system, history: history, prompt: prompt)
-                self?.status = "המודל חושב…"
-                for try await piece in stream {
-                    if Task.isCancelled { break }
-                    output += piece
-                    self?.streaming = output
-                }
-            } catch {
-                if !(error is CancellationError) { failure = error.localizedDescription }
-            }
-            LocalModelRunner.shared.scheduleUnload()
-            guard let self else { return }
-            if !output.isEmpty {
-                self.messages.append(InsightMessage(role: "assistant", text: output, model: name + " · מובנה"))
-            }
-            self.streaming = ""
-            self.isRunning = false
-            if let failure {
-                self.status = "המודל לא נטען: " + failure + " — נסה מודל אחר בהגדרות"
-            } else {
-                self.refreshStatus()
-            }
-        }
-    }
-
     func clear() {
         stop()
         messages = []
@@ -525,82 +395,10 @@ final class InsightsEngine: ObservableObject {
             }.joined(separator: "\n")
             turns.append((m.role, content.isEmpty ? m.text : content))
         }
-        if engine == .builtIn, let last = turns.popLast() {
-            runLocal(system: system, history: turns, prompt: last.text)
-            return
-        }
         if engine == .manual {
             prepareManual(system: system, turns: turns)
-            return
-        }
-        if engine == .cloud {
+        } else {
             runCloud(system: system, turns: turns)
-            return
-        }
-        guard let url = URL(string: base + "/chat/completions") else { return }
-        var history: [[String: String]] = [["role": "system", "content": system]]
-        for t in turns { history.append(["role": t.role, "content": t.text]) }
-        var body: [String: Any] = ["messages": history, "stream": true, "temperature": 0.4]
-        body["model"] = model
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 900
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        isRunning = true
-        streaming = ""
-        status = "המודל חושב…"
-        let usedModel = model
-        task = Task { [weak self] in
-            var output = ""
-            var failure: String? = nil
-            var answeredBy: String? = nil
-            do {
-                let (bytes, response) = try await URLSession.shared.bytes(for: request)
-                if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
-                    var errorText = ""
-                    for try await line in bytes.lines { errorText += line }
-                    throw NSError(domain: "LMStudio", code: http.statusCode,
-                                  userInfo: [NSLocalizedDescriptionKey: "שגיאה \(http.statusCode): " + String(errorText.prefix(300))])
-                }
-                for try await line in bytes.lines {
-                    if Task.isCancelled { break }
-                    guard line.hasPrefix("data:") else { continue }
-                    let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                    if payload == "[DONE]" { break }
-                    guard let data = payload.data(using: .utf8),
-                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-                    if answeredBy == nil, let m = json["model"] as? String, !m.isEmpty { answeredBy = m }
-                    guard let choice = (json["choices"] as? [[String: Any]])?.first,
-                          let delta = choice["delta"] as? [String: Any],
-                          let piece = delta["content"] as? String else { continue }
-                    output += piece
-                    self?.streaming = output
-                }
-            } catch {
-                failure = (error as NSError).code == NSURLErrorCancelled ? nil : error.localizedDescription
-            }
-            do {
-                guard let self else { return }
-                if !output.isEmpty {
-                    // Flag it if LM Studio answered with a different model than the default.
-                    var shown = usedModel
-                    if let answeredBy, !answeredBy.contains(usedModel), !usedModel.contains(answeredBy) {
-                        shown = answeredBy + " ⚠︎ לא מודל ברירת המחדל"
-                    }
-                    self.messages.append(InsightMessage(role: "assistant", text: output, model: shown))
-                }
-                self.streaming = ""
-                self.isRunning = false
-                if let failure {
-                    self.connected = false
-                    self.status = "הבקשה נכשלה: " + failure
-                } else {
-                    self.status = "מחובר ל-LM Studio"
-                }
-            }
         }
     }
 }
@@ -608,7 +406,7 @@ final class InsightsEngine: ObservableObject {
 // MARK: - Everything the model gets to see
 
 extension Store {
-    /// A compact text summary of the whole app, for the local model.
+    /// A compact text summary of the whole app, for the AI model.
     func aiContext() -> String {
         let now = Date()
         func m(_ v: Double) -> String { Fmt.money(v) }
@@ -747,13 +545,5 @@ extension Store {
             }
         }
         return lines.joined(separator: "\n")
-    }
-
-    /// New data since the last automatic insight (or a week passed).
-    func insightsDue(lastAuto: Date?) -> Bool {
-        guard let lastAuto else { return true }
-        if Date().timeIntervalSince(lastAuto) > 7 * 86_400 { return true }
-        if let imported = money.cardImports.first?.importedAt, imported > lastAuto { return true }
-        return false
     }
 }

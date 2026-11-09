@@ -49,9 +49,7 @@ struct InsightsView: View {
                 if ai.connected == true && !ai.canSend && !ai.awaitingPaste {
                     HStack {
                         Image(systemName: "star.circle.fill").foregroundStyle(.orange)
-                        Text(ai.model.isEmpty
-                             ? "בחר מודל ברירת מחדל — רק הוא יקבל את הנתונים שלך."
-                             : "מודל ברירת המחדל (\(ai.activeModelName)) לא זמין. בחר מודל אחר בהגדרות.")
+                        Text("כתוב בהגדרות איזה מודל להשתמש — רק הוא יקבל את הנתונים שלך.")
                         Spacer()
                         Button("בחירת מודל…") { showSettings = true }
                         Button("בדוק שוב") { Task { await ai.loadModels() } }
@@ -72,18 +70,13 @@ struct InsightsView: View {
             .navigationTitle("תובנות AI")
             .task {
                 await ai.loadModels()
-                // Automatic insights only with models that run on this Mac.
-                if ai.autoInsights, ai.engine == .builtIn || ai.engine == .lmStudio,
-                   ai.canSend, !ai.isRunning, store.insightsDue(lastAuto: ai.lastAutoAt) {
-                    ai.send(InsightsEngine.defaultAnalysis, context: store.aiContext(), auto: true)
-                }
             }
         }
     }
 
     private var subtitle: String {
-        if ai.isRunning { return "המודל חושב… (מודל מקומי יכול לקחת קצת זמן)" }
-        return ai.status.isEmpty ? "מודל מקומי דרך LM Studio — הנתונים לא יוצאים מהמחשב" : ai.status
+        if ai.isRunning { return "המודל חושב…" }
+        return ai.status
     }
 
     // MARK: Setup
@@ -91,24 +84,15 @@ struct InsightsView: View {
     private var setupHelp: some View {
         ScrollView {
             Card {
-                Label(ai.engine == .builtIn ? "לא נמצאו מודלים במחשב" : (ai.engine == .cloud ? "חסר מפתח API — הוסף אותו בהגדרות (⚙︎)" : "אין חיבור ל-LM Studio"), systemImage: "bolt.horizontal.circle")
+                Label("חסר מפתח API — הוסף אותו בהגדרות (⚙︎)", systemImage: "bolt.horizontal.circle")
                     .font(.headline)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("1. פתח את LM Studio וטען מודל (מומלץ מודל שמבין עברית, 7B ומעלה).")
-                    Text("2. בלשונית Developer (או ״Local Server״) לחץ Start Server — ברירת המחדל היא פורט 1234.")
-                    Text("3. חזור לכאן ולחץ ״בדוק חיבור״.")
-                    Text(verbatim: "כתובת נוכחית: " + ai.serverURL)
-                        .foregroundStyle(.secondary)
-                }
-                .font(.callout)
+                Text("אפשר גם לבחור בהגדרות ״ידני״: השאלה והנתונים מועתקים ללוח, מדביקים אותם באתר צ׳אט (גם בחשבון חינמי), ואת התשובה מדביקים כאן.")
+                    .font(.callout)
                 HStack {
-                    Button("בדוק חיבור") { Task { await ai.loadModels() } }
+                    Button("בדוק שוב") { Task { await ai.loadModels() } }
                         .buttonStyle(.borderedProminent)
                     Button("הגדרות…") { showSettings = true }
                 }
-                Text("כל הנתונים נשלחים רק למודל שרץ אצלך במחשב — שום דבר לא יוצא לאינטרנט.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             .padding(20)
             .frame(maxWidth: 700)
@@ -122,27 +106,7 @@ struct InsightsView: View {
             Picker("מנוע", selection: $ai.engine) {
                 ForEach(AIEngine.available) { Text($0.title).tag($0) }
             }
-            if ai.engine == .builtIn {
-                Picker("מודל ברירת מחדל", selection: $ai.localModelPath) {
-                    Text("— בחר —").tag("")
-                    ForEach(ai.localModels) { m in
-                        Text(verbatim: m.name + " · " + Fmt.number((m.sizeGB * 10).rounded() / 10) + " GB").tag(m.path)
-                    }
-                }
-#if os(macOS)
-                Button("הוסף תיקיית מודל…") {
-                    let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
-                    panel.canChooseFiles = false
-                    panel.prompt = "בחר"
-                    panel.message = "בחר תיקייה של מודל MLX (או תיקייה שמכילה כמה מודלים)"
-                    if panel.runModal() == .OK, let url = panel.url { ai.addModelFolder(url) }
-                }
-                #endif
-                Text("המודל רץ בתוך האפליקציה עם MLX של Apple — בלי LM Studio ובלי אינטרנט. המודלים שכבר הורדת ב-LM Studio (בפורמט MLX) מופיעים כאן לבד. הטעינה הראשונה לוקחת כמה שניות, והמודל משתחרר מהזיכרון אחרי 10 דקות בלי שימוש. רק המודל שנבחר מקבל את הנתונים.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if ai.engine == .cloud {
+            if ai.engine == .cloud {
                 cloudSettings
             } else if ai.engine == .manual {
                 Picker("אתר", selection: $ai.manualSite) {
@@ -151,23 +115,9 @@ struct InsightsView: View {
                 Text("כשאתה שואל, כל הנתונים והשאלה מועתקים ללוח כפרומפט אחד. מדביקים אותו באתר (בלי מפתח API, גם בחשבון חינמי), ואז מדביקים כאן את התשובה — היא נשמרת בשיחה עם תרשימים ועיצוב, והשיחה ממשיכה משם.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else {
-            Picker("מודל ברירת מחדל", selection: $ai.model) {
-                Text("— בחר —").tag("")
-                if !ai.model.isEmpty && !ai.models.contains(ai.model) {
-                    Text(verbatim: ai.model + " (לא זמין כרגע)").tag(ai.model)
-                }
-                ForEach(ai.models, id: \.self) { Text(verbatim: $0).tag($0) }
             }
-            Text("רק המודל הזה מקבל את הנתונים. אם הוא לא זמין ב-LM Studio — שום דבר לא נשלח, גם לא למודל אחר.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            FormTextField("כתובת השרת", text: $ai.serverURL)
-            }
-            Toggle("תובנות אוטומטיות (פעם בשבוע, ואחרי ייבוא אשראי)", isOn: $ai.autoInsights)
             HStack {
                 Button("בדוק חיבור") { Task { await ai.loadModels() } }
-                Button("ברירת מחדל") { ai.serverURL = InsightsEngine.defaultURL }
                 Spacer()
                 Button("נקה שיחה", role: .destructive) { ai.clear() }
             }
