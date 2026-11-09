@@ -627,6 +627,9 @@ class _Statement extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 110),
       children: [
         const _QuickEntry(),
+        // Planned purchases and moves (also ones paid by card, which the statement folds into the card charge),
+        // each on its own line so it can be found and changed.
+        const _Planned(),
         if (future.isNotEmpty)
           SectionCard(
             title: 'צפוי — לפי ההכנסות, ההוצאות הקבועות והאשראי',
@@ -695,6 +698,35 @@ Future<void> showActualCharge(BuildContext context, LedgerLine line) async {
 }
 
 /// Without a checking account: the recorded transactions only.
+class _Planned extends StatelessWidget {
+  const _Planned();
+
+  @override
+  Widget build(BuildContext context) {
+    final money = context.store.money;
+    final planned = money.transactions.where((t) => t.isPlanned).toList()..sort((a, b) => a.date.compareTo(b.date));
+    if (planned.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return SectionCard(title: 'מתוכנן — קניות ותנועות עתידיות (לחיצה לעריכה)', children: [
+      for (final t in planned)
+        ListTile(
+          leading: const Icon(Icons.event_note),
+          title: Text(t.title.isEmpty ? t.kind.title : t.title),
+          subtitle: Text([
+            Fmt.date(t.date),
+            if (t.paidByCard) 'באשראי${t.cardInstallments > 1 ? ' · ${t.cardInstallments} תשלומים' : ''}',
+          ].join(' · ')),
+          trailing: Text(Fmt.money(t.amount),
+              textDirection: TextDirection.rtl,
+              style: TextStyle(
+                  fontFeatures: tabular,
+                  color: t.kind == TransactionKind.income ? Colors.green.shade700 : theme.colorScheme.onSurface)),
+          onTap: () => editTransaction(context, t),
+        ),
+    ]);
+  }
+}
+
 class _LegacyTransactions extends StatelessWidget {
   const _LegacyTransactions();
 

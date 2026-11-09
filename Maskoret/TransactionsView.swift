@@ -134,6 +134,15 @@ struct TransactionsView: View {
         let months = Dictionary(grouping: past) { cal.component(.year, from: $0.date) * 100 + cal.component(.month, from: $0.date) }
         return List {
             header
+            // Planned purchases and moves (also ones paid by card, which the statement folds into the card charge),
+            // each on its own line so it can be found and changed.
+            if !planned.isEmpty {
+                Section {
+                    ForEach(planned) { t in row(t) }
+                } header: {
+                    Label("מתוכנן — קניות ותנועות עתידיות (לחיצה לעריכה)", systemImage: "calendar.badge.plus")
+                }
+            }
             if !future.isEmpty {
                 Section {
                     ForEach(future) { line in ledgerRow(line, expected: true) }

@@ -70,6 +70,19 @@ class _TrackedScreenState extends State<TrackedScreen> {
                   textDirection: TextDirection.rtl,
                   style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700, fontFeatures: tabular)),
               Text('≈ ${Fmt.money(store.budget.periodicTotal * 12)} בשנה · נכלל ביתרה בסיכום', style: theme.textTheme.bodySmall),
+              ...() {
+                final excluded = store.budget.trackedItems.where((t) => !t.includeInBudget && t.monthlyCost > 0).toList();
+                if (excluded.isEmpty) return const <Widget>[];
+                final sum = excluded.fold(0.0, (a, t) => a + t.monthlyCost);
+                return [
+                  const SizedBox(height: 6),
+                  Text(
+                      excluded.length == 1
+                          ? '״${excluded.first.name}״ לא נכלל ביתרה (${Fmt.money(sum)}/חודש) — אפשר לכלול אותו בפריט'
+                          : '${excluded.length} פריטים לא נכללים ביתרה (${Fmt.money(sum)}/חודש)',
+                      style: theme.textTheme.bodySmall?.copyWith(color: Colors.orange.shade800)),
+                ];
+              }(),
             ]),
           ),
           const SizedBox(height: 14),
@@ -145,6 +158,8 @@ class _Row extends StatelessWidget {
                 fontFeatures: tabular,
                 color: item.includeInBudget ? null : theme.colorScheme.onSurfaceVariant)),
         Text(_subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+        if (!item.includeInBudget)
+          Text('לא נכלל ביתרה', style: TextStyle(color: Colors.orange.shade800, fontSize: 11, fontWeight: FontWeight.w600)),
         if (wear != null)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -224,6 +239,22 @@ class _Detail extends StatelessWidget {
           OutlinedButton(
             onPressed: () => editTracked(context, deepCopy(item.json) as Json, isNew: false),
             child: const Text('עריכת פריט'),
+          ),
+        ]),
+        const SizedBox(height: 14),
+        SectionCard(children: [
+          SwitchListTile(
+            title: const Text('כלול ביתרה החודשית'),
+            subtitle: Text(
+                item.includeInBudget
+                    ? 'העלות החודשית של הפריט יורדת מהיתרה בסיכום ובתחזית'
+                    : 'כרגע העלות של הפריט לא נספרת בסיכום ובתחזית',
+                style: item.includeInBudget ? null : TextStyle(color: Colors.orange.shade800)),
+            value: item.includeInBudget,
+            onChanged: (v) => store.edit((f) {
+              final t = f.budget.trackedItems.where((t) => t.id == item.id).firstOrNull;
+              if (t != null) t.json['includeInBudget'] = v;
+            }),
           ),
         ]),
         const SizedBox(height: 14),
