@@ -303,8 +303,8 @@ extension MoneyPeriods on MoneyData {
     var y = from.year, m = from.month;
     final endKey = monthOf(to);
     final primarySetting = cards.setting(primary);
-    final cardDay = primarySetting?.chargeDay ?? cards.usualChargeDay;
-    final cardDelay = primarySetting?.delayDays ?? 0;
+    final cardDay = cards.cardChargeDay;
+    final cardDelay = cards.cardChargeDelay;
     final average = cards.averageCardVariable();
     final tx = transactions;
     while (y * 100 + m <= endKey) {
@@ -336,7 +336,7 @@ extension MoneyPeriods on MoneyData {
       for (final item in budget.expenses.where((e) => e.isActive)) {
         final amount = item.amount(budget.expenseBase);
         if (amount == 0) continue;
-        final onCard = cards.cardTransactions.any((t) => t.linkedExpenseID == item.id && !t.ignored);
+        final onCard = cards.isPaidByCard(item.id);
         if (onCard && statement.any((t) => t.linkedExpenseID == item.id && !t.ignored)) continue;
         var d = day(onCard ? (cardDay ?? payDay) : (item.chargeDay ?? payDay), y, m);
         if (onCard) d = plusDays(d, cardDelay);

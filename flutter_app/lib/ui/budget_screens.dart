@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/card.dart';
 import '../data/fmt.dart';
 import '../data/json.dart';
 import '../data/models.dart';
@@ -377,6 +378,12 @@ String? sharedCostText(CostItem item, MoneyData money) {
   return text;
 }
 
+/// When a card charge leaves the checking account, like CardDay.label on the Mac.
+String cardDayLabel(int? day, int delay) {
+  if (day == null) return 'עם חיוב הכרטיס';
+  return 'עם חיוב הכרטיס (ב-$day לחודש${delay > 0 ? ', ועוד $delay ימים' : ''})';
+}
+
 /// Editing a manual deduction (percent of gross) or a fixed expense (percent of net).
 Future<void> editCost(BuildContext context, CostItem? existing, {required bool deductions}) async {
   final store = context.store;
@@ -385,6 +392,9 @@ Future<void> editCost(BuildContext context, CostItem? existing, {required bool d
   final savings = store.money.accounts.where((a) => a.kind == AccountKind.pension).toList();
   // The "shared" switch is on while the name is still empty.
   var sharingOn = false;
+  // Linked to a card charge: it leaves the checking account with the card, not on a day of its own.
+  final cards = CardData(store.money);
+  final onCard = !deductions && existing != null && cards.isPaidByCard(existing.id);
   await showEditor(
     context,
     title: existing == null ? (deductions ? 'ניכוי חדש' : 'הוצאה חדשה') : existing.name,
@@ -407,7 +417,14 @@ Future<void> editCost(BuildContext context, CostItem? existing, {required bool d
         value: draft.value,
         onChanged: (v) => draft.value = v,
       ),
-      if (!deductions)
+      if (onCard)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('יום החיוב בבנק'),
+          subtitle: Text('${cardDayLabel(cards.cardChargeDay, cards.cardChargeDelay)}\n'
+              'ההוצאה מקושרת לחיוב בכרטיס האשראי, ולכן היא יורדת מהעו״ש עם חיוב הכרטיס. היום מתעדכן לפי קובץ האשראי.'),
+        ),
+      if (!deductions && !onCard)
         ListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('יום החיוב בבנק'),

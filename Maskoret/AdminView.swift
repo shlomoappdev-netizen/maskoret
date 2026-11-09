@@ -257,6 +257,8 @@ private struct AdminDevTasksList: View {
     @State private var expanded: Set<Int64> = []
     @State private var error: String?
     @State private var channel: RealtimeChannelV2?
+    /// Bumped on every change in the tasks or their messages, so open conversations reload.
+    @State private var changes = 0
 
     var body: some View {
         List {
@@ -271,7 +273,7 @@ private struct AdminDevTasksList: View {
                     Text(error).foregroundStyle(.orange).font(.callout)
                 }
             } footer: {
-                Text("משימה נרשמת כשבוחרים בהצעה של Claude לתיקון בקוד. על המק תקפוץ התראה, וכשתפתח את Claude Code בתיקיית הפרויקט הוא יציג את המשימות הפתוחות ויציע לטפל בהן (או הקלד ‎/support).")
+                Text("משימה נרשמת כשבוחרים בהצעה של Claude לתיקון בקוד. פותחים משימה כדי לכתוב ל-Claude: לשאול אם היא עדיין נחוצה, לבקש תוכנית תיקון, או לבקש לסגור אותה. Claude בודק בקוד, ומסמן אותה כבוצעה רק כשהקוד כבר עושה את מה שהיא מבקשת. את התיקון עצמו עושים ב-Claude Code בתיקיית הפרויקט (‎/support).")
             }
             Section("\(shown.count) משימות") {
                 if shown.isEmpty {
@@ -308,7 +310,8 @@ private struct AdminDevTasksList: View {
                         .frame(width: 22)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: "#\(task.id) \(task.title)").font(.callout.weight(.semibold))
-                        Text(verbatim: AdminAPI.date(task.created_at) + (task.status == "open" ? " · ממתינה ל-Claude Code" : ""))
+                        Text(verbatim: AdminAPI.date(task.created_at)
+                             + (task.ai_pending == true ? " · Claude עונה…" : (task.status == "open" ? " · פתוחה" : "")))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -321,6 +324,7 @@ private struct AdminDevTasksList: View {
             if expanded.contains(task.id) {
                 Text(verbatim: task.details).font(.callout).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                DevTaskChat(task: task, reload: changes)
                 HStack(spacing: 12) {
                     if let thread = task.thread_id {
                         NavigationLink(value: AdminRoute.thread(thread)) {
@@ -356,10 +360,14 @@ private struct AdminDevTasksList: View {
     private func start() async {
         await load()
         let channel = supabase.channel("admin-dev-tasks")
-        let changes = channel.postgresChange(AnyAction.self, schema: "public", table: "dev_tasks")
+        let tasks = channel.postgresChange(AnyAction.self, schema: "public", table: "dev_tasks")
+        let messages = channel.postgresChange(AnyAction.self, schema: "public", table: "dev_task_messages")
         self.channel = channel
         await channel.subscribe()
-        for await _ in changes { await load() }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { for await _ in tasks { await load() } }
+            group.addTask { for await _ in messages { await MainActor.run { changes += 1 } } }
+        }
     }
 
     private func load() async {
@@ -369,6 +377,108 @@ private struct AdminDevTasksList: View {
         } catch is CancellationError {
         } catch {
             self.error = UserAccount.describe(error)
+        }
+    }
+}
+
+/// The conversation with Claude inside a development task.
+private struct DevTaskChat: View {
+    let task: DevTask
+    let reload: Int
+    @State private var messages: [DevTaskMessage] = []
+    @State private var draft = ""
+    @State private var sending = false
+    @State private var error: String?
+    @State private var bot: BotStatus?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(messages) { message in
+                bubble(message)
+            }
+            if task.ai_pending == true {
+                HStack(spacing: 8) {
+                    if bot?.isAlive ?? true {
+                        ProgressView().controlSize(.small)
+                        Text("Claude בודק בקוד…").font(.caption)
+                    } else {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                    }
+                    Spacer()
+                    if let bot {
+                        Text(verbatim: bot.label).font(.caption2).foregroundStyle(bot.isAlive ? Color.secondary : Color.red)
+                    }
+                }
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("כתוב ל-Claude, למשל: ״זה עדיין נחוץ?״ או ״סגור אם זה כבר בקוד״", text: $draft, axis: .vertical)
+                    .lineLimit(1...5)
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    send()
+                } label: {
+                    Image(systemName: "paperplane.fill")
+                }
+                .disabled(sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            HStack(spacing: 8) {
+                ForEach(["זה עדיין נחוץ?", "סגור אם זה כבר בקוד", "איך היית מתקן?"], id: \.self) { quick in
+                    Button(quick) { draft = quick; send() }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .disabled(sending)
+                }
+            }
+            .font(.caption)
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .padding(.top, 4)
+        .task(id: reload) { await load() }
+        .task(id: task.ai_pending) { bot = try? await AdminAPI.botStatus() }
+    }
+
+    private func bubble(_ message: DevTaskMessage) -> some View {
+        HStack {
+            if message.from_admin { Spacer(minLength: 40) }
+            VStack(alignment: .leading, spacing: 4) {
+                if !message.from_admin {
+                    Label("Claude", systemImage: "sparkles").font(.caption2.weight(.semibold)).foregroundStyle(.purple)
+                }
+                Text(verbatim: message.body).font(.callout).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: AdminAPI.date(message.created_at)).font(.caption2).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background((message.from_admin ? Color.accentColor : Color.purple).opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            if !message.from_admin { Spacer(minLength: 40) }
+        }
+    }
+
+    private func load() async {
+        do {
+            messages = try await AdminAPI.taskMessages(task.id)
+        } catch is CancellationError {
+        } catch {
+            self.error = UserAccount.describe(error)
+        }
+    }
+
+    private func send() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        sending = true
+        Task {
+            do {
+                try await AdminAPI.sayToClaude(task: task.id, text)
+                draft = ""
+                error = nil
+                await load()
+            } catch {
+                self.error = UserAccount.describe(error)
+            }
+            sending = false
         }
     }
 }
@@ -910,6 +1020,22 @@ enum AdminAPI {
     static func devTasks() async throws -> [DevTask] {
         try await supabase.from("dev_tasks").select().order("id", ascending: false).limit(200)
             .decoded([DevTask].self)
+    }
+
+    static func taskMessages(_ task: Int64) async throws -> [DevTaskMessage] {
+        try await supabase.from("dev_task_messages").select()
+            .eq("task_id", value: Int(task)).order("id", ascending: true)
+            .decoded([DevTaskMessage].self)
+    }
+
+    /// Writes to Claude in a development task; the agent answers, and closes the task if asked to.
+    static func sayToClaude(task: Int64, _ body: String) async throws {
+        struct Params: Encodable { let p_task: Int64, p_body: String }
+        try await supabase.rpc("admin_dev_task_say", params: Params(p_task: task, p_body: body)).execute()
+    }
+
+    static func botStatus() async throws -> BotStatus? {
+        try await supabase.rpc("admin_bot_status").decoded(BotStatus?.self)
     }
 
     static func setTaskStatus(_ task: Int64, _ status: String) async throws {

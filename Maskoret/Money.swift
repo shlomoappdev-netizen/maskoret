@@ -552,8 +552,8 @@ extension MoneyData {
 
         var y = cal.component(.year, from: from), m = cal.component(.month, from: from)
         let endKey = cal.component(.year, from: to) * 100 + cal.component(.month, from: to)
-        let cardDay = setting(card: primary)?.chargeDay ?? usualChargeDay
-        let cardDelay = setting(card: primary)?.delayDays ?? 0
+        let cardDay = cardChargeDay
+        let cardDelay = cardChargeDelay
         let average = averageCardVariable()
         while y * 100 + m <= endKey {
             let key = y * 100 + m
@@ -583,7 +583,7 @@ extension MoneyData {
             for item in budget.expenses where item.isActive {
                 let amount = item.amount(base: budget.expenseBase)
                 guard amount != 0 else { continue }
-                let onCard = cardTransactions.contains { $0.linkedExpenseID == item.id && !$0.ignored }
+                let onCard = isPaidByCard(item.id)
                 if onCard, statement.contains(where: { $0.linkedExpenseID == item.id && !$0.ignored }) { continue }
                 var d = day(onCard ? (cardDay ?? payDay) : (item.chargeDay ?? payDay), year: y, month: m)
                 if onCard { d = cal.date(byAdding: .day, value: cardDelay, to: d) ?? d }

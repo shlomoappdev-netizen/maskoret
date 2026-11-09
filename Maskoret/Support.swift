@@ -286,6 +286,33 @@ struct DevTask: Decodable, Identifiable, Hashable {
     let status: String
     let created_at: String
     let done_at: String?
+    /// Claude owes an answer to the admin's message in this task.
+    var ai_pending: Bool? = nil
+}
+
+/// One message in the conversation between the admin and Claude inside a development task.
+struct DevTaskMessage: Decodable, Identifiable, Hashable {
+    let id: Int64
+    let task_id: Int64
+    let from_admin: Bool
+    let body: String
+    let created_at: String
+}
+
+/// When the support agent was last alive and where it runs (admin_bot_status).
+struct BotStatus: Decodable {
+    let last_poll_at: String?
+    let host: String?
+
+    var lastSeen: Date? { last_poll_at.flatMap(ISO8601DateFormatter.flexible) }
+    /// It polls every 2 minutes (older versions every 15): quiet for longer than that means it stopped.
+    var isAlive: Bool { lastSeen.map { Date().timeIntervalSince($0) < 20 * 60 } ?? false }
+
+    var label: String {
+        guard let lastSeen else { return "הסוכן עוד לא דיווח" }
+        if isAlive { return "רץ על " + (host ?? "המחשב של הסוכן") }
+        return "הסוכן לא פעיל מאז " + lastSeen.formatted(.dateTime.day().month().hour().minute().locale(Fmt.locale))
+    }
 }
 
 struct AdminStats: Decodable {

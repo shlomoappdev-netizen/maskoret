@@ -203,6 +203,8 @@ struct SupportChatView: View {
     // Admin: the conversation with Claude beside the subscriber's — every proposal and question, in order.
     @State private var proposals: [SupportProposal] = []
     @State private var questions: [SupportAIQuestion] = []
+    /// Whether the support agent is alive (admin only).
+    @State private var bot: BotStatus?
     /// The option whose reply is in the message box (its action runs when it is sent).
     @State private var chosen: SupportProposal.Option?
     /// The option shown open in Claude's card ("<proposal>-<option>"; nil opens the recommended one).
@@ -290,6 +292,9 @@ struct SupportChatView: View {
             }
         }
         .task { await start() }
+        .task(id: thread?.ai_pending) {
+            if asAdmin, thread?.ai_pending == true { bot = try? await AdminAPI.botStatus() }
+        }
         .onDisappear {
             if let channel { Task { await supabase.removeChannel(channel) } }
         }
@@ -503,11 +508,18 @@ struct SupportChatView: View {
             if thread.ai_pending == true {
                 HStack(spacing: 10) {
                     ClaudeBadge()
-                    ProgressView().controlSize(.small)
+                    if bot?.isAlive ?? true {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                    }
                     Text(questions.contains { $0.answered_at == nil } ? "Claude בודק את השאלה שלך…" : "Claude מנתח את הפנייה…")
                         .font(.callout)
                     Spacer()
-                    Text("רץ על המק כשהוא דלוק").font(.caption2).foregroundStyle(.secondary)
+                    if let bot {
+                        Text(verbatim: bot.label).font(.caption2)
+                            .foregroundStyle(bot.isAlive ? Color.secondary : Color.red)
+                    }
                 }
                 .padding(12)
                 .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))

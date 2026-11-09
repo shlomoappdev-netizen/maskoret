@@ -276,6 +276,15 @@ class CardData {
 
   CardSetting? setting(String card) => cardSettings.where((s) => s.key == card).firstOrNull;
 
+  /// The day of the month the main card is charged: the one set for it, else the usual day in the imported files.
+  int? get cardChargeDay => setting(primaryCard)?.chargeDay ?? usualChargeDay;
+
+  /// Days the bank takes after the card's charge day.
+  int get cardChargeDelay => setting(primaryCard)?.delayDays ?? 0;
+
+  /// A fixed expense linked to a card charge leaves with the card statement, on the card's day.
+  bool isPaidByCard(String expenseID) => cardTransactions.any((t) => t.linkedExpenseID == expenseID && !t.ignored);
+
   String cardName(String card) => setting(card)?.displayName ?? (card.isEmpty ? 'כרטיס אשראי' : 'כרטיס $card');
 
   /// The card most charges are on — purchases recorded by hand and the estimate go to it.

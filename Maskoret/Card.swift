@@ -1180,6 +1180,16 @@ extension CardSetting {
 extension MoneyData {
     func setting(card: String) -> CardSetting? { cardSettings.first { $0.key == card } }
 
+    /// The day of the month the main card is charged: the one set for it, else the usual day in the imported files.
+    var cardChargeDay: Int? { setting(card: primaryCard)?.chargeDay ?? usualChargeDay }
+    /// Days the bank takes after the card's charge day.
+    var cardChargeDelay: Int { setting(card: primaryCard)?.delayDays ?? 0 }
+
+    /// A fixed expense linked to a card charge leaves with the card statement, on the card's day.
+    func isPaidByCard(_ expense: UUID) -> Bool {
+        cardTransactions.contains { $0.linkedExpenseID == expense && !$0.ignored }
+    }
+
     func cardName(_ card: String) -> String {
         setting(card: card)?.displayName ?? (card.isEmpty ? "כרטיס אשראי" : "כרטיס " + card)
     }

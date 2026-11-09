@@ -184,7 +184,9 @@ struct CostsView: View {
                     isNew: !items.contains { $0.id == item.id },
                     section: section,
                     budget: store.budget,
-                    accounts: store.money.accounts
+                    accounts: store.money.accounts,
+                    cardDay: store.money.isPaidByCard(item.id)
+                        ? CardDay(day: store.money.cardChargeDay, delay: store.money.cardChargeDelay) : nil
                 ) { saved in
                     store.upsertCost(saved, in: section.keyPath)
                 }
@@ -314,6 +316,17 @@ struct CostRow: View {
     }
 }
 
+/// When a card charge leaves the checking account.
+struct CardDay {
+    var day: Int?
+    var delay: Int
+
+    var label: String {
+        guard let day else { return "עם חיוב הכרטיס" }
+        return "עם חיוב הכרטיס (ב-\(day) לחודש" + (delay > 0 ? ", ועוד \(delay) ימים" : "") + ")"
+    }
+}
+
 struct CostEditor: View {
     @State private var item: CostItem
     /// The "shared" switch is on while the name is still empty.
@@ -322,10 +335,13 @@ struct CostEditor: View {
     let section: CostSection
     let budget: Budget
     let accounts: [Account]
+    /// Set when the expense is linked to a card charge: then it's charged with the card, not on a day of its own.
+    let cardDay: CardDay?
     let onSave: (CostItem) -> Void
 
     init(item: CostItem, isNew: Bool, section: CostSection, budget: Budget, accounts: [Account] = [],
-         onSave: @escaping (CostItem) -> Void) {
+         cardDay: CardDay? = nil, onSave: @escaping (CostItem) -> Void) {
+        self.cardDay = cardDay
         _item = State(initialValue: item)
         self.isNew = isNew
         self.section = section
@@ -398,7 +414,15 @@ struct CostEditor: View {
                 AmountField(title: "אחוז " + section.baseLabel, value: $item.value, suffix: "%")
             }
 
-            if section == .expenses {
+            if section == .expenses, let cardDay {
+                HStack {
+                    Text("יום החיוב בבנק")
+                    Spacer()
+                    Text(verbatim: cardDay.label)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            } else if section == .expenses {
                 Stepper(value: Binding(get: { item.chargeDay ?? 0 }, set: { item.chargeDay = $0 == 0 ? nil : $0 }), in: 0...31) {
                     HStack {
                         Text("יום החיוב בבנק")
@@ -417,8 +441,13 @@ struct CostEditor: View {
                 }
             }
         } footer: {
-            if item.kind == .percent {
-                Text(verbatim: "לפי הנתונים הנוכחיים: " + Fmt.money((previewAmount * 100).rounded() / 100) + " בחודש")
+            VStack(alignment: .leading, spacing: 4) {
+                if item.kind == .percent {
+                    Text(verbatim: "לפי הנתונים הנוכחיים: " + Fmt.money((previewAmount * 100).rounded() / 100) + " בחודש")
+                }
+                if section == .expenses, cardDay != nil {
+                    Text("ההוצאה מקושרת לחיוב בכרטיס האשראי, ולכן היא יורדת מהעו״ש עם חיוב הכרטיס. היום מתעדכן לפי קובץ האשראי.")
+                }
             }
         }
     }
