@@ -68,11 +68,14 @@ struct AdminView: View {
                     }
                 }
                 #if os(macOS)
-                // In the Mac's detail column the system back button doesn't show (the stack isn't the column's root).
+                // In the Mac's detail column the system back button shows as an empty circle (the stack isn't the
+                // column's root), so it is hidden and this bar goes back instead.
+                .navigationBarBackButtonHidden(true)
                 .safeAreaInset(edge: .top, spacing: 0) { backBar }
                 #endif
             }
             .task { await account.refreshAdminAccess(); await loadStats() }
+            .environment(\.adminOpen) { path.append($0) }
             .onChange(of: support.adminUnread) { _, _ in Task { await loadStats() } }
         }
     }
@@ -134,6 +137,51 @@ enum AdminRoute: Hashable {
     case thread(UUID)
 }
 
+private struct AdminOpenKey: EnvironmentKey {
+    static let defaultValue: ((AdminRoute) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    /// Opens a subscriber or a ticket in the admin screen's stack.
+    var adminOpen: ((AdminRoute) -> Void)? {
+        get { self[AdminOpenKey.self] }
+        set { self[AdminOpenKey.self] = newValue }
+    }
+}
+
+/// A row that opens a subscriber or a ticket. On the Mac a NavigationLink in a list keeps its row selected after going
+/// back, so the same row can't be opened again; there it is a plain button that pushes onto the stack.
+struct AdminLink<Label: View>: View {
+    let route: AdminRoute
+    let label: Label
+    @Environment(\.adminOpen) private var open
+
+    init(_ route: AdminRoute, @ViewBuilder label: () -> Label) {
+        self.route = route
+        self.label = label()
+    }
+
+    var body: some View {
+        #if os(macOS)
+        Button {
+            open?(route)
+        } label: {
+            HStack(spacing: 6) {
+                label
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.forward")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        #else
+        NavigationLink(value: route) { label }
+        #endif
+    }
+}
+
 // MARK: - Subscribers
 
 private struct AdminSubscribersList: View {
@@ -161,7 +209,7 @@ private struct AdminSubscribersList: View {
             }
             Section("\(total) מנויים") {
                 ForEach(users) { user in
-                    NavigationLink(value: AdminRoute.user(user.id)) {
+                    AdminLink(AdminRoute.user(user.id)) {
                         AdminUserRowView(user: user)
                     }
                 }
@@ -262,7 +310,7 @@ private struct AdminInboxList: View {
             }
             Section("\(total) פניות") {
                 ForEach(threads) { t in
-                    NavigationLink(value: AdminRoute.thread(t.id)) {
+                    AdminLink(AdminRoute.thread(t.id)) {
                         VStack(alignment: .leading, spacing: 3) {
                             ThreadRow(thread: t.thread, unread: t.admin_unread,
                                       subtitle: "#\(t.member_no) \(t.display_name.isEmpty ? (t.email ?? "") : t.display_name)")
@@ -379,7 +427,7 @@ private struct AdminDevTasksList: View {
                 DevTaskChat(task: task, reload: changes)
                 HStack(spacing: 12) {
                     if let thread = task.thread_id, account.adminCan(.support) {
-                        NavigationLink(value: AdminRoute.thread(thread)) {
+                        AdminLink(AdminRoute.thread(thread)) {
                             Label("לפנייה", systemImage: "bubble.left.and.text.bubble.right")
                         }
                     }
@@ -697,7 +745,7 @@ private struct AdminUserCard: View {
                 Section("פניות (\(user.threads.count))") {
                     if user.threads.isEmpty { Text("אין פניות").foregroundStyle(.secondary) }
                     ForEach(user.threads) { t in
-                        NavigationLink(value: AdminRoute.thread(t.id)) {
+                        AdminLink(AdminRoute.thread(t.id)) {
                             ThreadRow(thread: t.asThread(user: user.id), unread: t.admin_unread)
                         }
                     }
@@ -770,7 +818,7 @@ private struct AdminUserCard: View {
         DisclosureGroup {
             ForEach(h.members) { m in
                 HStack {
-                    NavigationLink(value: AdminRoute.user(m.id)) {
+                    AdminLink(AdminRoute.user(m.id)) {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
                                 Text(verbatim: m.display_name.isEmpty ? (m.email ?? "—") : m.display_name)
