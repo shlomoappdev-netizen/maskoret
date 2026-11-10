@@ -6,7 +6,7 @@
 <out-dir> holds the files that were built this time: maskoret-android.apk, maskoret-windows.zip +
 maskoret-windows-setup.exe, maskoret-mac.dmg — any of them may be missing (each platform goes out as soon as its own
 build is ready). A missing one keeps its entry from the previous latest.json. Every platform entry carries its own
-version and build; the top-level version/build are the oldest of them, so a copy that only reads those is never offered
+version and build; the top-level version/build are the oldest of them (Android, frozen at the last APK, aside), so a copy that only reads those is never offered
 a file that isn't newer than itself. Writes there:
   latest.json     what the apps read to offer an update (url, sha256, size and signature per platform)
   changelog.json  every version, newest first, for the "מה חדש" screen after an update
@@ -58,7 +58,10 @@ platforms = {k: v for k, v in platforms.items() if v}
 built = [k for k, v in platforms.items() if v.get("build") == version["build"]]
 if not built:
     sys.exit("Nothing new was built — no platform has this version's file.")
-oldest = min(platforms.values(), key=lambda v: v.get("build") or 0)
+# Android stopped at the last APK (4.23.1, build 77) — it comes from Google Play now — so it doesn't hold back the
+# top-level version (else the site would show 4.23.1 forever and every push would look like an unreleased build).
+current_platforms = [v for k, v in platforms.items() if k != "android"] or list(platforms.values())
+oldest = min(current_platforms, key=lambda v: v.get("build") or 0)
 latest = {
     "version": oldest.get("version") or version["version"], "build": oldest.get("build") or version["build"],
     "date": version.get("date"), "notes": version.get("notes", []),

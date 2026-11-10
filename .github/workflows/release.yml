@@ -57,7 +57,7 @@ jobs:
           manifest=$(curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)")
           # The oldest platform on the site (each platform carries its own build; older manifests only the top one).
           # Android is not counted: since 4.23.1 (build 77) it comes from Google Play, and its entry stays as it was.
-          site=$(echo "$manifest" | jq -r '[.platforms | to_entries[]? | select(.key != "android") | .value.build // empty] + [.build] | min')
+          site=$(echo "$manifest" | jq -r '([(.platforms // {}) | to_entries[] | select(.key != "android") | .value.build // empty] | min) // .build')
           site_mac=$(echo "$manifest" | jq -r '.platforms.mac.build // .build')
           echo "version=$version" >> "$GITHUB_OUTPUT"
           # The Mac is built again only if the site doesn't have this build for it yet.
