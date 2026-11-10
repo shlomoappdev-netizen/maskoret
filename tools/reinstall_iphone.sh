@@ -42,9 +42,9 @@ echo "  נמצא: $UDID"
 
 SRC="$ROOT"
 if [ "${1:-}" != "--main" ]; then
-  echo "▶ בודק מה הגרסה האחרונה שפורסמה…"
+  echo "▶ בודק מה הגרסה האחרונה שפורסמה למק (ה-iPhone יוצא איתה; אנדרואיד נשאר בגרסה של Google Play)…"
   PUBLISHED=$(curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)" \
-    | /usr/bin/python3 -c "import json,sys;print(json.load(sys.stdin)['version'])") || PUBLISHED=""
+    | /usr/bin/python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('platforms',{}).get('mac',{}).get('version') or d['version'])") || PUBLISHED=""
   if [ -z "$PUBLISHED" ]; then
     echo "✖ לא הצלחתי לבדוק את הגרסה שפורסמה (אין אינטרנט?). נסה שוב."
     exit 1
