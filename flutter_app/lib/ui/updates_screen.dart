@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../update/updater.dart';
 import '../update/whats_new.dart';
+import 'app_prompts.dart' show playBetaPage;
 import 'common.dart';
 
 /// "יש גרסה חדשה" at the top of the app.
@@ -113,6 +117,16 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
           final theme = Theme.of(context);
           final latest = updater.latest;
           return PageList(children: [
+            if (Platform.isAndroid)
+              SectionCard(title: 'עוברים ל-Google Play', children: [
+                ListTile(
+                  leading: const Icon(Icons.shop_outlined),
+                  title: const Text('העדכונים לאנדרואיד מגיעים מעכשיו רק דרך Google Play'),
+                  subtitle: const Text('נרשמים לבטא באתר ומתקינים מ-Google Play מעל האפליקציה הזו. הנתונים נשארים.'),
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: () => launchUrl(Uri.parse(playBetaPage), mode: LaunchMode.externalApplication),
+                ),
+              ]),
             SectionCard(title: 'הגרסה שלך', children: [
               ListTile(
                 title: Text(updater.currentVersion.isEmpty ? '…' : 'גרסה ${updater.currentVersion}'),

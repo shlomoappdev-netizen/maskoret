@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../support/announcements.dart';
 import '../update/updater.dart';
@@ -144,4 +146,52 @@ class _Card extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// The site's page for joining the Google Play beta (the Android app moves from the APK on the site to Google Play).
+const playBetaPage = 'https://shlomoappdev-netizen.github.io/maskoret-releases/#beta';
+
+/// The APK from the site gets no more updates: Android updates come through Google Play. Asked once every few days
+/// until the user moves (the Play build signs with the same key, so it installs over this one and keeps the data).
+class MoveToPlay {
+  static const askedKey = 'movePlayAskedAt';
+  static const every = Duration(days: 3);
+
+  static bool due(SharedPreferences prefs, {DateTime? now}) {
+    final last = prefs.getInt(askedKey);
+    if (last == null) return true;
+    return (now ?? DateTime.now()).difference(DateTime.fromMillisecondsSinceEpoch(last)) >= every;
+  }
+
+  static Future<void> markAsked(SharedPreferences prefs, {DateTime? now}) =>
+      prefs.setInt(askedKey, (now ?? DateTime.now()).millisecondsSinceEpoch);
+}
+
+Future<void> showMoveToPlay(BuildContext context, SharedPreferences prefs) async {
+  await MoveToPlay.markAsked(prefs);
+  if (!context.mounted) return;
+  final theme = Theme.of(context);
+  final go = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      icon: const Icon(Icons.shop_outlined, color: AppColors.teal, size: 36),
+      title: const Text('מחשבון שכר עובר ל-Google Play'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          const Text('מעכשיו העדכונים לאנדרואיד מגיעים רק דרך Google Play. הגרסה הזו לא תתעדכן יותר מהאתר.'),
+          const SizedBox(height: 10),
+          const _Bullet('נרשמים לבטא בדף באתר (דקה אחת)'),
+          const _Bullet('מתקינים מ-Google Play — מעל האפליקציה הזו, בלי להסיר אותה'),
+          const SizedBox(height: 8),
+          Text('הנתונים שמורים בשרת ונשארים כמו שהם.', style: theme.textTheme.bodySmall),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('אחר כך')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('לעבור ל-Google Play')),
+      ],
+    ),
+  );
+  if (go == true) await launchUrl(Uri.parse(playBetaPage), mode: LaunchMode.externalApplication);
 }

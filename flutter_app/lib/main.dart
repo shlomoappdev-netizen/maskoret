@@ -175,8 +175,20 @@ class _MaskoretAppState extends State<MaskoretApp> {
       await _whatsNew();
     } finally {
       _whatsNewChecked = true;
+      await _offerPlay();
       _offerUpdate();
     }
+  }
+
+  /// The APK from the site: tells the user that Android updates now come through Google Play.
+  Future<void> _offerPlay() async {
+    if (demo || !Platform.isAndroid || Updater.fromPlayStore || _dialogOpen) return;
+    if (!MoveToPlay.due(widget.prefs)) return;
+    final context = _navigator.currentState?.overlay?.context;
+    if (context == null || !context.mounted) return;
+    _dialogOpen = true;
+    await showMoveToPlay(context, widget.prefs);
+    _dialogOpen = false;
   }
 
   Future<void> _whatsNew() async {
