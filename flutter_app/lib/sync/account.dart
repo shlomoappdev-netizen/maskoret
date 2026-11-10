@@ -339,6 +339,12 @@ class UserAccount extends ChangeNotifier implements SyncAccount {
     var text = error.toString().toLowerCase();
     if (error is AuthException) text += ' ${error.message.toLowerCase()} ${error.code ?? ''}';
     if (error is PostgrestException) text += ' ${error.message.toLowerCase()} ${error.code ?? ''}';
+    if (text.contains('only the main admin can do this to an admin')) {
+      return 'רק המנהל הראשי יכול לבצע את הפעולה הזו על מנהל או על משק בית של מנהל.';
+    }
+    if (text.contains('admins only') || text.contains('owner only')) {
+      return 'אין לך הרשאה לכלי הניהול הזה. המנהל הראשי יכול לתת אותה במסך ״מנהלים והרשאות״.';
+    }
     if (error is SocketException || text.contains('socketexception') || text.contains('failed host lookup')) {
       return 'אין חיבור לאינטרנט, או שלא ניתן להתחבר לשרת. נסה שוב בעוד רגע.';
     }

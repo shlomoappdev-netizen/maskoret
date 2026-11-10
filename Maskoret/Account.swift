@@ -411,6 +411,12 @@ final class UserAccount: ObservableObject {
         if text.contains("provider is not enabled") || text.contains("unsupported provider") {
             return "ההתחברות עם Google עוד לא הופעלה בשרת. בינתיים אפשר להתחבר עם מייל וסיסמה."
         }
+        if text.contains("only the main admin can do this to an admin") {
+            return "רק המנהל הראשי יכול לבצע את הפעולה הזו על מנהל או על משק בית של מנהל."
+        }
+        if text.contains("admins only") || text.contains("owner only") {
+            return "אין לך הרשאה לכלי הניהול הזה. המנהל הראשי יכול לתת אותה במסך ״מנהלים״."
+        }
         if text.contains("invalid login credentials") { return "המייל או הסיסמה לא נכונים." }
         if text.contains("email not confirmed") { return "המייל עוד לא אומת — הכנס את הקוד שקיבלת במייל." }
         if text.contains("already registered") || text.contains("already been registered") || text.contains("user_already_exists") {
