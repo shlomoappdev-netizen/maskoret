@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/card.dart';
 import '../data/max_import.dart';
+import 'admin_managers_screen.dart';
 import 'admin_screen.dart';
 import 'budget_screens.dart';
 import 'card_screen.dart';
@@ -55,6 +56,7 @@ enum Dest {
   support('תמיכה ודיווח תקלות', Icons.support_agent, ownScaffold: true),
   versions('גרסאות קודמות', Icons.history, ownScaffold: true),
   adminAnnouncements('הודעות למשתמשים', Icons.campaign_outlined, ownScaffold: true),
+  adminManagers('מנהלים והרשאות', Icons.admin_panel_settings_outlined, ownScaffold: true),
   updates('עדכונים', Icons.system_update_alt, ownScaffold: true);
 
   const Dest(this.title, this.icon, {this.ownScaffold = false});
@@ -115,16 +117,23 @@ enum Dest {
         account => const ['חשבון', 'משק בית', 'שיתוף', 'התחברות', 'Google', 'סנכרון', 'יציאה', 'מחיקת חשבון'],
         support => const ['עזרה', 'תקלה', 'באג', 'פנייה', 'צור קשר'],
         adminAnnouncements => const ['מנויים', 'משתמשים', 'הודעות לכולם', 'ניהול'],
+        adminManagers => const ['מנהל', 'מנהלים', 'הרשאות', 'ניהול'],
         versions => const ['גיבוי', 'שחזור', 'גרסה קודמת'],
         updates => const ['עדכון', 'גרסה', 'הורדה', 'מה חדש'],
         _ => const [],
       };
 
   /// The screens a search can open, in the order of the menu.
-  static List<Dest> searchable({bool admin = false}) => [
+  static List<Dest> searchable({SupportCenter? admin}) => [
         summary, ...moneyTabs, ...budgetTabs,
         forecast, history, maaser, owed, trends, insights, family, tax, account, support,
-        if (admin) adminAnnouncements, versions, if (Updater.hasScreen) updates,
+        ...adminScreens(admin), versions, if (Updater.hasScreen) updates,
+      ];
+
+  /// The admin screens this account may open: each needs its permission, "מנהלים והרשאות" the main admin.
+  static List<Dest> adminScreens(SupportCenter? s) => [
+        if (s != null && s.adminCan('announcements')) adminAnnouncements,
+        if (s != null && s.isAdmin && s.isOwnerAdmin) adminManagers,
       ];
 
   /// Where the screen sits, for the search results ("הכסף שלי ← עו״ש").
@@ -167,16 +176,17 @@ enum Dest {
         support => const SupportScreen(),
         versions => const VersionsScreen(),
         adminAnnouncements => const AdminAnnouncementsScreen(),
+        adminManagers => const AdminManagersScreen(),
         updates => const UpdatesScreen(),
       };
 
   /// The sidebar sections, like the Mac: בית, הכסף שלי, תקציב, then תכנון ותובנות and הגדרות.
-  /// [admin]: "הודעות למשתמשים" shows only for an admin (rpc am_i_admin).
-  static List<(String, List<Dest>)> sections({bool admin = false}) => [
+  /// [admin]: the admin screens show only with their permission (adminScreens).
+  static List<(String, List<Dest>)> sections({SupportCenter? admin}) => [
         ('', [summary, money, budget]),
         ('תכנון ותובנות', [forecast, history, maaser, owed, trends, insights]),
         ('הגדרות', [
-          family, tax, account, support, if (admin) adminAnnouncements, versions, if (Updater.hasScreen) updates,
+          family, tax, account, support, ...adminScreens(admin), versions, if (Updater.hasScreen) updates,
         ]),
       ];
 
@@ -297,7 +307,7 @@ class ScreenSearchResults extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final results = Dest.searchable(admin: context.scope.support.isAdmin).where((d) => d.matches(query)).toList();
+    final results = Dest.searchable(admin: context.scope.support).where((d) => d.matches(query)).toList();
     if (results.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(16),
@@ -340,7 +350,7 @@ Future<void> showScreenSearch(BuildContext context) async {
                   ),
                   onChanged: (v) => setState(() => query = v),
                   onSubmitted: (_) {
-                    final first = Dest.searchable(admin: ctx.scope.support.isAdmin).where((d) => d.matches(query)).firstOrNull;
+                    final first = Dest.searchable(admin: ctx.scope.support).where((d) => d.matches(query)).firstOrNull;
                     if (first != null) Navigator.pop(ctx, first);
                   },
                 ),
@@ -438,7 +448,10 @@ class _HomeShellState extends State<HomeShell> {
           }
         }
         // Signed out, or not an admin any more: leave the admin screen.
-        if (current == Dest.adminAnnouncements && !scope.support.isAdmin) current = Dest.summary;
+        if ((current == Dest.adminAnnouncements || current == Dest.adminManagers) &&
+            !Dest.adminScreens(scope.support).contains(current)) {
+          current = Dest.summary;
+        }
         final appBar = AppBar(
           title: _Title(),
           actions: [
@@ -696,7 +709,7 @@ class Sidebar extends StatelessWidget {
       ),
       Expanded(
         child: ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
-          for (final (title, items) in Dest.sections(admin: context.scope.support.isAdmin)) ...[
+          for (final (title, items) in Dest.sections(admin: context.scope.support)) ...[
             if (title.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
@@ -756,10 +769,10 @@ class _MoreScreenState extends State<MoreScreen> {
   @override
   Widget build(BuildContext context) {
     final support = context.scope.support;
-    return ListenableBuilder(listenable: support, builder: (context, _) => _list(context, support.isAdmin));
+    return ListenableBuilder(listenable: support, builder: (context, _) => _list(context, support));
   }
 
-  Widget _list(BuildContext context, bool admin) {
+  Widget _list(BuildContext context, SupportCenter admin) {
     final query = _search.text.trim();
     return ListView(padding: const EdgeInsets.only(bottom: 110), children: [
       // The screen search (the iPhone's search field in "עוד").

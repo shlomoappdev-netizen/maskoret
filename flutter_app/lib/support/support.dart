@@ -107,8 +107,17 @@ class SupportCenter extends ChangeNotifier {
   int? memberNo;
   bool loaded = false;
 
-  /// The server says this user is an admin (rpc am_i_admin): the "הודעות למשתמשים" screen shows.
+  /// The server says this user is an admin (rpc my_admin_access). Each admin screen also needs its permission.
   bool isAdmin = false;
+
+  /// The main admin: every permission, and appoints other admins ("מנהלים והרשאות").
+  bool isOwnerAdmin = false;
+
+  /// The admin tools this account may use (keys of private.admins.permissions: users, support, dev_tasks,
+  /// announcements). The server checks them again on every call.
+  Set<String> adminPermissions = {};
+
+  bool adminCan(String permission) => isAdmin && (isOwnerAdmin || adminPermissions.contains(permission));
 
   String? _listeningAs;
   RealtimeChannel? _channel;
@@ -121,6 +130,8 @@ class SupportCenter extends ChangeNotifier {
     unread = 0;
     memberNo = null;
     isAdmin = false;
+    isOwnerAdmin = false;
+    adminPermissions = {};
     loaded = false;
     notifyListeners();
     if (userId == null) return;
@@ -133,12 +144,7 @@ class SupportCenter extends ChangeNotifier {
     } catch (e) {
       AppLog.add('support', 'my_profile נכשל: $e');
     }
-    try {
-      isAdmin = await _c.rpc('am_i_admin') == true;
-      notifyListeners();
-    } catch (e) {
-      AppLog.add('support', 'am_i_admin נכשל: $e');
-    }
+    await refreshAdminAccess();
     // Row-level security sends each user only their own threads.
     _channel = _c.channel('support-$userId')
       ..onPostgresChanges(
@@ -148,6 +154,29 @@ class SupportCenter extends ChangeNotifier {
         callback: (_) => refresh(),
       )
       ..subscribe();
+  }
+
+  /// Reads whether this account is an admin and which admin tools it may use.
+  Future<void> refreshAdminAccess() async {
+    try {
+      final a = await _c.rpc('my_admin_access');
+      if (a is Map) {
+        isAdmin = a['admin'] == true;
+        isOwnerAdmin = a['owner'] == true;
+        adminPermissions = {for (final p in (a['permissions'] as List? ?? const [])) '$p'};
+      }
+    } catch (e) {
+      AppLog.add('support', 'my_admin_access נכשל: $e');
+      // A server without permissions yet: the old check, with every tool.
+      try {
+        isAdmin = await _c.rpc('am_i_admin') == true;
+        isOwnerAdmin = false;
+        adminPermissions = isAdmin ? {'users', 'support', 'dev_tasks', 'announcements'} : {};
+      } catch (e) {
+        AppLog.add('support', 'am_i_admin נכשל: $e');
+      }
+    }
+    notifyListeners();
   }
 
   Future<void> stop() async {

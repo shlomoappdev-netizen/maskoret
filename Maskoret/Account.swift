@@ -64,8 +64,14 @@ final class UserAccount: ObservableObject {
         didSet { UserDefaults.standard.set(activeHouseholdID?.uuidString, forKey: "activeHouseholdID") }
     }
     @Published private(set) var didLoad = false
-    /// The app's owner — sees the admin screen (the server checks it again on every call).
+    /// An admin — sees the admin screen, with the tools their permissions allow (the server checks again on every call).
     @Published private(set) var isAdmin = false
+    /// The main admin: every permission, and appoints other admins.
+    @Published private(set) var isOwnerAdmin = false
+    @Published private(set) var adminPermissions: Set<AdminPermission> = []
+    func adminCan(_ permission: AdminPermission) -> Bool { isAdmin && (isOwnerAdmin || adminPermissions.contains(permission)) }
+    /// Sees every support ticket (the badge and the inbox).
+    var isSupportAdmin: Bool { adminCan(.support) }
     /// The short subscriber number users quote when they write to support.
     @Published private(set) var memberNo: Int64?
     /// How this account can sign in ("email", "google").
@@ -115,9 +121,24 @@ final class UserAccount: ObservableObject {
         await reportSeen()
         if changed {
             await refreshHouseholds()
-            isAdmin = (try? await supabase.rpc("am_i_admin").decoded(Bool.self)) ?? false
+            await refreshAdminAccess()
             struct Profile: Decodable { let member_no: Int64? }
             memberNo = (try? await supabase.rpc("my_profile").decoded(Profile.self))?.member_no
+        }
+    }
+
+    /// Reads whether this account is an admin and what it may use.
+    func refreshAdminAccess() async {
+        struct Access: Decodable { let admin: Bool; let owner: Bool; let permissions: [String] }
+        if let access = try? await supabase.rpc("my_admin_access").decoded(Access.self) {
+            isAdmin = access.admin
+            isOwnerAdmin = access.owner
+            adminPermissions = Set(access.permissions.compactMap(AdminPermission.init(rawValue:)))
+        } else {
+            // A server without permissions yet: the old check, with every tool.
+            isAdmin = (try? await supabase.rpc("am_i_admin").decoded(Bool.self)) ?? false
+            isOwnerAdmin = false
+            adminPermissions = isAdmin ? Set(AdminPermission.allCases) : []
         }
     }
 
@@ -144,6 +165,8 @@ final class UserAccount: ObservableObject {
         displayName = ""
         households = []
         isAdmin = false
+        isOwnerAdmin = false
+        adminPermissions = []
         memberNo = nil
         signInMethods = []
     }

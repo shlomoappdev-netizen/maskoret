@@ -9,33 +9,51 @@ struct AdminView: View {
     @EnvironmentObject private var account: UserAccount
     @EnvironmentObject private var support: SupportCenter
 
-    enum Tab: Hashable { case subscribers, inbox, tasks, announcements }
+    enum Tab: Hashable { case subscribers, inbox, tasks, announcements, admins }
     @State private var tab: Tab = .subscribers
     @State private var stats: AdminStats?
+
+    /// The tabs this admin may open — the server refuses the rest anyway.
+    private var tabs: [Tab] {
+        var list: [Tab] = []
+        if account.adminCan(.users) { list.append(.subscribers) }
+        if account.adminCan(.support) { list.append(.inbox) }
+        if account.adminCan(.devTasks) { list.append(.tasks) }
+        if account.adminCan(.announcements) { list.append(.announcements) }
+        if account.isOwnerAdmin { list.append(.admins) }
+        return list
+    }
+
+    private var shownTab: Tab? { tabs.contains(tab) ? tab : tabs.first }
 
     var body: some View {
         NavigationStack {
             Group {
                 if !account.isAdmin {
-                    Text("המסך הזה זמין רק למנהל המערכת.").foregroundStyle(.secondary).padding()
+                    Text("המסך הזה זמין רק למנהלי המערכת.").foregroundStyle(.secondary).padding()
+                } else if tabs.isEmpty {
+                    Text("המנהל הראשי עוד לא נתן לך גישה לאף כלי ניהול.").foregroundStyle(.secondary).padding()
                 } else {
                     VStack(spacing: 0) {
-                        statsBar
-                        Picker("", selection: $tab) {
-                            Text("מנויים").tag(Tab.subscribers)
-                            Text(support.adminUnread > 0 ? "פניות (\(support.adminUnread))" : "פניות").tag(Tab.inbox)
-                            Text("משימות פיתוח").tag(Tab.tasks)
-                            Text("הודעות").tag(Tab.announcements)
+                        if account.adminCan(.users) { statsBar }
+                        if tabs.count > 1 {
+                            Picker("", selection: Binding(get: { shownTab ?? .subscribers }, set: { tab = $0 })) {
+                                ForEach(tabs, id: \.self) { t in
+                                    Text(verbatim: title(t)).tag(t)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .padding(.horizontal)
+                            .padding(.bottom, 6)
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .padding(.horizontal)
-                        .padding(.bottom, 6)
-                        switch tab {
+                        switch shownTab {
                         case .subscribers: AdminSubscribersList()
                         case .inbox: AdminInboxList()
                         case .tasks: AdminDevTasksList()
                         case .announcements: AdminAnnouncementsView()
+                        case .admins: AdminManagersView()
+                        case nil: EmptyView()
                         }
                     }
                 }
@@ -47,8 +65,18 @@ struct AdminView: View {
                 case .thread(let id): SupportChatView(threadID: id, asAdmin: true)
                 }
             }
-            .task { await loadStats() }
+            .task { await account.refreshAdminAccess(); await loadStats() }
             .onChange(of: support.adminUnread) { _, _ in Task { await loadStats() } }
+        }
+    }
+
+    private func title(_ tab: Tab) -> String {
+        switch tab {
+        case .subscribers: "מנויים"
+        case .inbox: support.adminUnread > 0 ? "פניות (\(support.adminUnread))" : "פניות"
+        case .tasks: "משימות פיתוח"
+        case .announcements: "הודעות"
+        case .admins: "מנהלים"
         }
     }
 
@@ -73,7 +101,7 @@ struct AdminView: View {
     }
 
     private func loadStats() async {
-        guard account.isAdmin else { return }
+        guard account.adminCan(.users) else { return }
         stats = try? await Task { try await AdminAPI.stats() }.value
     }
 }
@@ -252,6 +280,7 @@ private struct AdminInboxList: View {
 /// Code fixes approved from tickets. They wait for a Claude Code session in the project on the Mac: it lists the
 /// open ones when it starts, and /support handles them. A notification on the Mac announces each new one.
 private struct AdminDevTasksList: View {
+    @EnvironmentObject private var account: UserAccount
     @State private var status = "open"
     @State private var tasks: [DevTask] = []
     @State private var expanded: Set<Int64> = []
@@ -326,7 +355,7 @@ private struct AdminDevTasksList: View {
                     .fixedSize(horizontal: false, vertical: true)
                 DevTaskChat(task: task, reload: changes)
                 HStack(spacing: 12) {
-                    if let thread = task.thread_id {
+                    if let thread = task.thread_id, account.adminCan(.support) {
                         NavigationLink(value: AdminRoute.thread(thread)) {
                             Label("לפנייה", systemImage: "bubble.left.and.text.bubble.right")
                         }
@@ -521,7 +550,7 @@ private struct AdminAnnouncementsView: View {
             } header: {
                 Text("הודעה חדשה")
             } footer: {
-                Text("ההודעה תופיע מיד לכל המשתמשים (גם בלי חשבון) בראש מסך ״בית״, עם איקס לסגירה. מי שסגר אותה לא יראה אותה שוב באותו מכשיר.")
+                Text("ההודעה תופיע מיד לכל המשתמשים (גם בלי חשבון) בראש מסך ״בית״, עם איקס לסגירה. מי שסגר אותה לא יראה אותה שוב באותו מכשיר. כתובת אתר בהודעה (https://… או www.…) תופיע כקישור שנפתח בדפדפן.")
             }
             Section("הודעות") {
                 if list.isEmpty {
@@ -538,7 +567,8 @@ private struct AdminAnnouncementsView: View {
                                 .background((isLive(a) ? Color.green : Color.secondary).opacity(0.18), in: Capsule())
                         }
                         if !a.body.isEmpty {
-                            Text(verbatim: a.body).font(.caption).foregroundStyle(.secondary)
+                            Text(Linkified.text(a.body)).font(.caption).foregroundStyle(.secondary)
+                                .environment(\.openURL, OpenURLAction { url in Linkified.isWeb(url) ? .systemAction : .discarded })
                         }
                         HStack {
                             Text(verbatim: AdminAPI.date(a.created_at)
@@ -1092,5 +1122,208 @@ enum AdminAPI {
     static func date(_ text: String) -> String {
         guard let d = ISO8601DateFormatter.flexible(text) else { return "—" }
         return d.formatted(.dateTime.day().month().year().hour().minute().locale(Fmt.locale))
+    }
+}
+
+// MARK: - Admins and permissions (the main admin only)
+
+/// An admin tool another admin may be given (the keys match private.admins.permissions on the server).
+enum AdminPermission: String, CaseIterable, Identifiable {
+    case users, support, devTasks = "dev_tasks", announcements
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .users: "מנויים ומשתמשים"
+        case .support: "פניות תמיכה"
+        case .devTasks: "משימות פיתוח"
+        case .announcements: "הודעה לכולם"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .users: "חיפוש מנויים, כרטיס מנוי, חסימה, ניתוק, מחיקה ומשקי בית"
+        case .support: "כל הפניות, מענה, הצעות של Claude ושאלות אליו"
+        case .devTasks: "משימות הפיתוח והשיחה עם Claude בתוכה"
+        case .announcements: "שליחת הודעה לכל המשתמשים והפסקת הצגתה"
+        }
+    }
+}
+
+struct AdminManager: Decodable, Identifiable, Hashable {
+    let user_id: UUID
+    let email: String?
+    let display_name: String
+    let owner: Bool
+    let permissions: [String]
+    let created_at: String
+    var id: UUID { user_id }
+    var permissionSet: Set<AdminPermission> { Set(permissions.compactMap(AdminPermission.init(rawValue:))) }
+}
+
+extension AdminAPI {
+    static func admins() async throws -> [AdminManager] {
+        try await supabase.rpc("admin_list_admins").decoded([AdminManager].self)
+    }
+
+    static func setAdmin(_ id: UUID, permissions: Set<AdminPermission>) async throws {
+        struct Params: Encodable { let target: UUID, p_permissions: [String] }
+        try await supabase.rpc("admin_set_admin",
+                               params: Params(target: id, p_permissions: permissions.map(\.rawValue).sorted())).execute()
+    }
+
+    static func addAdmin(email: String, permissions: Set<AdminPermission>) async throws {
+        struct Params: Encodable { let p_email: String, p_permissions: [String] }
+        try await supabase.rpc("admin_add_admin_by_email",
+                               params: Params(p_email: email, p_permissions: permissions.map(\.rawValue).sorted())).execute()
+    }
+
+    static func removeAdmin(_ id: UUID) async throws {
+        try await supabase.rpc("admin_remove_admin", params: ["target": id]).execute()
+    }
+}
+
+/// The main admin appoints admins and picks the tools each one may use. The server checks every call again.
+private struct AdminManagersView: View {
+    @State private var admins: [AdminManager] = []
+    @State private var email = ""
+    @State private var newPermissions: Set<AdminPermission> = [.support]
+    @State private var busy = false
+    @State private var error: String?
+    @State private var removing: AdminManager?
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("אימייל של החשבון", text: $email)
+                    .textContentType(.emailAddress)
+                    #if os(iOS)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    #endif
+                    .autocorrectionDisabled()
+                ForEach(AdminPermission.allCases) { p in
+                    Toggle(isOn: Binding(get: { newPermissions.contains(p) },
+                                         set: { if $0 { newPermissions.insert(p) } else { newPermissions.remove(p) } })) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(verbatim: p.title)
+                            Text(verbatim: p.detail).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if let error {
+                    Text(error).foregroundStyle(.orange).font(.callout)
+                }
+                Button {
+                    add()
+                } label: {
+                    Label("הוספת מנהל", systemImage: "person.badge.plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+            } header: {
+                Text("מנהל חדש")
+            } footer: {
+                Text("החשבון צריך להיות רשום באפליקציה עם אימייל מאומת. כל מנהל רואה רק את מסכי הניהול שסימנת לו, והשרת בודק את ההרשאה בכל פעולה. רק את/ה ממנה מנהלים ומשנה הרשאות.")
+            }
+            Section("\(admins.count) מנהלים") {
+                ForEach(admins) { admin in
+                    row(admin)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .task { await load() }
+        .refreshable { await load() }
+        .confirmationDialog(Text(verbatim: "להסיר את \(removing.map(name) ?? "") מהמנהלים?"),
+                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible, presenting: removing) { admin in
+            Button("הסרה מהמנהלים", role: .destructive) {
+                run { try await AdminAPI.removeAdmin(admin.user_id) }
+            }
+            Button("ביטול", role: .cancel) {}
+        }
+    }
+
+    private func name(_ admin: AdminManager) -> String {
+        admin.display_name.isEmpty ? (admin.email ?? admin.user_id.uuidString) : admin.display_name
+    }
+
+    @ViewBuilder
+    private func row(_ admin: AdminManager) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: name(admin)).font(.callout.weight(.semibold))
+                    if let email = admin.email, !admin.display_name.isEmpty {
+                        Text(verbatim: email).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if admin.owner {
+                    Text("מנהל ראשי")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(Color.indigo.opacity(0.18), in: Capsule())
+                } else {
+                    Button("הסרה", role: .destructive) { removing = admin }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
+            }
+            if admin.owner {
+                Text("כל ההרשאות, תמיד.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(AdminPermission.allCases) { p in
+                    Toggle(p.title, isOn: Binding(get: { admin.permissionSet.contains(p) }, set: { on in
+                        var set = admin.permissionSet
+                        if on { set.insert(p) } else { set.remove(p) }
+                        run { try await AdminAPI.setAdmin(admin.user_id, permissions: set) }
+                    }))
+                    .font(.callout)
+                    .disabled(busy)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func add() {
+        let (e, perms) = (email.trimmingCharacters(in: .whitespaces), newPermissions)
+        run {
+            try await AdminAPI.addAdmin(email: e, permissions: perms)
+            email = ""
+        }
+    }
+
+    private func run(_ action: @escaping () async throws -> Void) {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await action()
+                error = nil
+            } catch {
+                self.error = Self.describe(error)
+            }
+            await load()
+        }
+    }
+
+    private static func describe(_ error: Error) -> String {
+        let text = "\(error)"
+        if text.contains("no such user") { return "לא נמצא חשבון עם האימייל הזה." }
+        if text.contains("owner") { return "אי אפשר לשנות את ההרשאות של המנהל הראשי." }
+        return UserAccount.describe(error)
+    }
+
+    private func load() async {
+        do {
+            admins = try await Task { try await AdminAPI.admins() }.value
+        } catch is CancellationError {
+        } catch {
+            self.error = UserAccount.describe(error)
+        }
     }
 }

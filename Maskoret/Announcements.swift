@@ -76,15 +76,17 @@ struct AnnouncementBanner: View {
                     .background(LinearGradient(colors: [.teal, .blue], startPoint: .topLeading, endPoint: .bottomTrailing),
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: a.title).font(.headline)
+                    Text(Linkified.text(a.title)).font(.headline)
                     if !a.body.isEmpty {
-                        Text(verbatim: a.body)
+                        Text(Linkified.text(a.body))
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
                 }
+                .tint(.blue)
+                .environment(\.openURL, OpenURLAction { url in Linkified.isWeb(url) ? .systemAction : .discarded })
                 Spacer(minLength: 8)
                 Button {
                     withAnimation(.snappy) { announcements.close(a) }
@@ -104,6 +106,38 @@ struct AnnouncementBanner: View {
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.teal.opacity(0.35)))
             .transition(.move(edge: .top).combined(with: .opacity))
         }
+    }
+}
+
+// MARK: - Links in text
+
+/// Plain text with its web addresses turned into tappable links (http and https only).
+enum Linkified {
+    private static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    static func isWeb(_ url: URL) -> Bool {
+        ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+    }
+
+    /// The web links in the text, as ranges and URLs ("www.x.co.il" becomes http://www.x.co.il).
+    static func links(in text: String) -> [(range: Range<String.Index>, url: URL)] {
+        guard let detector else { return [] }
+        let whole = NSRange(text.startIndex..., in: text)
+        return detector.matches(in: text, options: [], range: whole).compactMap { match in
+            guard let url = match.url, isWeb(url), let range = Range(match.range, in: text) else { return nil }
+            return (range, url)
+        }
+    }
+
+    static func text(_ text: String) -> AttributedString {
+        var result = AttributedString(text)
+        for link in links(in: text) {
+            guard let lower = AttributedString.Index(link.range.lowerBound, within: result),
+                  let upper = AttributedString.Index(link.range.upperBound, within: result) else { continue }
+            result[lower..<upper].link = link.url
+            result[lower..<upper].underlineStyle = .single
+        }
+        return result
     }
 }
 

@@ -52,8 +52,8 @@ struct SupportView: View {
             .navigationDestination(isPresented: Binding(get: { openThread != nil }, set: { if !$0 { openThread = nil } })) {
                 if let openThread { SupportChatView(threadID: openThread, asAdmin: false) }
             }
-            .task { await support.refresh(isAdmin: account.isAdmin) }
-            .refreshable { await support.refresh(isAdmin: account.isAdmin) }
+            .task { await support.refresh(isAdmin: account.isSupportAdmin) }
+            .refreshable { await support.refresh(isAdmin: account.isSupportAdmin) }
             .sheet(isPresented: $composing) {
                 NewSupportThreadSheet { id in openThread = id }
             }
@@ -171,7 +171,7 @@ struct NewSupportThreadSheet: View {
             do {
                 let id = try await support.openThread(subject: subject, category: category, body: body, log: log,
                                                       memberNo: account.memberNo)
-                await support.refresh(isAdmin: account.isAdmin)
+                await support.refresh(isAdmin: account.isSupportAdmin)
                 dismiss()
                 onCreated(id)
             } catch {
@@ -741,7 +741,7 @@ struct SupportChatView: View {
             let unread = asAdmin ? (thread?.admin_unread ?? 0) : (thread?.user_unread ?? 0)
             if unread > 0 {
                 await support.markRead(thread: threadID)
-                await support.refresh(isAdmin: account.isAdmin)
+                await support.refresh(isAdmin: account.isSupportAdmin)
             }
         } catch is CancellationError {
         } catch {

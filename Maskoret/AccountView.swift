@@ -484,8 +484,8 @@ struct ServerSyncLifecycle: ViewModifier {
                 Task { await sync.accountChanged() }
             }
             .onChange(of: account.households) { _, _ in Task { await sync.accountChanged() } }
-            .task(id: "\(account.userID?.uuidString ?? "")|\(account.isAdmin)") {
-                await support.start(userID: account.userID, isAdmin: account.isAdmin)
+            .task(id: "\(account.userID?.uuidString ?? "")|\(account.isSupportAdmin)") {
+                await support.start(userID: account.userID, isAdmin: account.isSupportAdmin)
             }
             .onChange(of: account.activeHouseholdID) { _, _ in Task { await sync.accountChanged() } }
             #if os(iOS)

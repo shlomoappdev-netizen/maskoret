@@ -4,6 +4,7 @@ import '../support/announcements.dart';
 import '../update/updater.dart';
 import '../update/whats_new.dart';
 import 'common.dart';
+import 'link_text.dart';
 import 'theme.dart';
 import 'updates_screen.dart';
 
@@ -135,8 +136,8 @@ class _Card extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(a.title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-            if (a.body.isNotEmpty) ...[const SizedBox(height: 4), Text(a.body)],
+            LinkText(a.title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+            if (a.body.isNotEmpty) ...[const SizedBox(height: 4), LinkText(a.body)],
           ]),
         ),
         IconButton(tooltip: 'סגור', icon: const Icon(Icons.close), onPressed: onClose),

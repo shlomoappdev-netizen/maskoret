@@ -50,7 +50,7 @@ struct PhoneRoot: View {
             case .active:
                     Task { await sync.sync() }
                 Task { await store.refreshPrime(); await store.refreshExchangeRates() }
-                Task { await support.refresh(isAdmin: account.isAdmin) }
+                Task { await support.refresh(isAdmin: account.isSupportAdmin) }
             case .background:
                 // Push the last changes before iOS suspends the app.
                 let id = UIApplication.shared.beginBackgroundTask(withName: "sync")

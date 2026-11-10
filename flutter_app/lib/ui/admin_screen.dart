@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/fmt.dart';
 import '../sync/account.dart';
 import 'common.dart';
+import 'link_text.dart';
 
 /// One row of public.announcements as the admin sees it (ended ones too).
 class AdminAnnouncement {
@@ -156,7 +157,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
               gap,
               Text(
                   'ההודעה תופיע מיד לכל המשתמשים (גם בלי חשבון) בראש מסך ״בית״, עם איקס לסגירה. '
-                  'מי שסגר אותה לא יראה אותה שוב באותו מכשיר.',
+                  'מי שסגר אותה לא יראה אותה שוב באותו מכשיר. '
+                  'כתובת אתר בהודעה (https://… או www.…) תופיע כקישור שנפתח בדפדפן.',
                   style: muted),
             ]),
           ),
@@ -172,7 +174,7 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
                   Expanded(child: Text(a.title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600))),
                   _Badge(live: a.isLive),
                 ]),
-                if (a.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: Text(a.body, style: muted)),
+                if (a.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 2), child: LinkText(a.body, style: muted)),
                 Row(children: [
                   Expanded(
                     child: Text(
