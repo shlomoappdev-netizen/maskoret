@@ -12,6 +12,7 @@ struct AdminView: View {
     enum Tab: Hashable { case subscribers, inbox, tasks, announcements, admins }
     @State private var tab: Tab = .subscribers
     @State private var stats: AdminStats?
+    @State private var path: [AdminRoute] = []
 
     /// The tabs this admin may open — the server refuses the rest anyway.
     private var tabs: [Tab] {
@@ -27,7 +28,7 @@ struct AdminView: View {
     private var shownTab: Tab? { tabs.contains(tab) ? tab : tabs.first }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if !account.isAdmin {
                     Text("המסך הזה זמין רק למנהלי המערכת.").foregroundStyle(.secondary).padding()
@@ -60,14 +61,36 @@ struct AdminView: View {
             }
             .navigationTitle("ניהול משתמשים")
             .navigationDestination(for: AdminRoute.self) { route in
-                switch route {
-                case .user(let id): AdminUserCard(userID: id)
-                case .thread(let id): SupportChatView(threadID: id, asAdmin: true)
+                Group {
+                    switch route {
+                    case .user(let id): AdminUserCard(userID: id)
+                    case .thread(let id): SupportChatView(threadID: id, asAdmin: true)
+                    }
                 }
+                #if os(macOS)
+                // In the Mac's detail column the system back button doesn't show (the stack isn't the column's root).
+                .safeAreaInset(edge: .top, spacing: 0) { backBar }
+                #endif
             }
             .task { await account.refreshAdminAccess(); await loadStats() }
             .onChange(of: support.adminUnread) { _, _ in Task { await loadStats() } }
         }
+    }
+
+    private var backBar: some View {
+        HStack {
+            Button {
+                if !path.isEmpty { path.removeLast() }
+            } label: {
+                Label(path.count > 1 ? "חזרה" : "חזרה לניהול", systemImage: "chevron.backward")
+            }
+            .keyboardShortcut("[", modifiers: .command)
+            .help("חזרה (⌘[)")
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     private func title(_ tab: Tab) -> String {
@@ -678,6 +701,9 @@ private struct AdminUserCard: View {
                             ThreadRow(thread: t.asThread(user: user.id), unread: t.admin_unread)
                         }
                     }
+                }
+                if account.isOwnerAdmin {
+                    AdminRoleSection(userID: user.id, confirmed: user.confirmed)
                 }
                 actions(user)
             } else if error == nil {
@@ -1324,6 +1350,86 @@ private struct AdminManagersView: View {
         } catch is CancellationError {
         } catch {
             self.error = UserAccount.describe(error)
+        }
+    }
+}
+
+/// In a subscriber's card, for the main admin: make the account an admin and pick its tools, or remove it.
+private struct AdminRoleSection: View {
+    let userID: UUID
+    let confirmed: Bool
+
+    @State private var entry: AdminManager?
+    @State private var loaded = false
+    @State private var busy = false
+    @State private var error: String?
+
+    var body: some View {
+        Section {
+            if !loaded {
+                ProgressView().frame(maxWidth: .infinity)
+            } else if let entry, entry.owner {
+                Text("מנהל ראשי — כל ההרשאות, תמיד.").foregroundStyle(.secondary)
+            } else {
+                Toggle("מנהל", isOn: Binding(get: { entry != nil }, set: { on in
+                    run {
+                        if on { try await AdminAPI.setAdmin(userID, permissions: [.support]) }
+                        else { try await AdminAPI.removeAdmin(userID) }
+                    }
+                }))
+                .disabled(busy)
+                if let entry {
+                    ForEach(AdminPermission.allCases) { p in
+                        Toggle(isOn: Binding(get: { entry.permissionSet.contains(p) }, set: { on in
+                            var set = entry.permissionSet
+                            if on { set.insert(p) } else { set.remove(p) }
+                            run { try await AdminAPI.setAdmin(userID, permissions: set) }
+                        })) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(verbatim: p.title)
+                                Text(verbatim: p.detail).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .disabled(busy)
+                    }
+                }
+            }
+            if let error {
+                Text(error).foregroundStyle(.orange).font(.callout)
+            }
+        } header: {
+            Text("ניהול והרשאות")
+        } footer: {
+            Text(confirmed
+                 ? "מנהל רואה רק את מסכי הניהול שסימנת לו, והשרת בודק את ההרשאה בכל פעולה."
+                 : "החשבון עוד לא אימת את האימייל — הוא יקבל גישה רק אחרי האימות.")
+        }
+        .task { await load() }
+    }
+
+    private func run(_ action: @escaping () async throws -> Void) {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await action()
+                error = nil
+            } catch {
+                self.error = "\(error)".contains("owner") ? "אי אפשר לשנות את המנהל הראשי." : UserAccount.describe(error)
+            }
+            await load()
+        }
+    }
+
+    private func load() async {
+        do {
+            let admins = try await Task { try await AdminAPI.admins() }.value
+            entry = admins.first { $0.user_id == userID }
+            loaded = true
+        } catch is CancellationError {
+        } catch {
+            self.error = UserAccount.describe(error)
+            loaded = true
         }
     }
 }
