@@ -1,9 +1,10 @@
 # Publishes a new version of מחשבון שכר to everyone, in the cloud:
 #   when version.json on main has "ready": true and a build newer than the site's latest.json —
-#   builds Windows + Android (flutter-app.yml) and the Mac app (signed with the "Maskoret Signing" certificate) —
+#   builds Windows (flutter-app.yml) and the Mac app (signed with the "Maskoret Signing" certificate) —
 #   or, when tools/upload_mac_build.sh already uploaded a DMG built on the Mac (prerelease "mac-build-<build>"),
-#   takes that one instead of waiting for a macOS runner (the same for Android: tools/upload_android_build.sh uploads
-#   "android-build-<build>", and the cloud skips its Android build) —
+#   takes that one instead of waiting for a macOS runner. Android is not published here any more: since 4.23.1 it
+#   comes only from Google Play (tools/build_play_bundle.sh, uploaded to Play Console by hand); latest.json keeps
+#   the last APK's entry, so the APK from the site stays at that version (which asks the user to move to Play) —
 #   creates the GitHub release in this repo with the files, and updates latest.json + changelog.json on the
 #   download site (shlomoappdev-netizen/maskoret-releases), which every app checks for updates.
 #   Each platform goes out as soon as its own build is ready: if one fails, the others are published anyway (the
@@ -46,7 +47,6 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       local_mac: ${{ steps.v.outputs.local_mac }}
       need_mac: ${{ steps.v.outputs.need_mac }}
-      local_android: ${{ steps.v.outputs.local_android }}
     steps:
       - uses: actions/checkout@v4
       - id: v
@@ -56,7 +56,8 @@ jobs:
           version=$(jq -r .version version.json); build=$(jq -r .build version.json); ready=$(jq -r '.ready // false' version.json)
           manifest=$(curl -fsS "https://shlomoappdev-netizen.github.io/maskoret-releases/latest.json?t=$(date +%s)")
           # The oldest platform on the site (each platform carries its own build; older manifests only the top one).
-          site=$(echo "$manifest" | jq -r '[.platforms[]?.build // empty] + [.build] | min')
+          # Android is not counted: since 4.23.1 (build 77) it comes from Google Play, and its entry stays as it was.
+          site=$(echo "$manifest" | jq -r '[.platforms | to_entries[]? | select(.key != "android") | .value.build // empty] + [.build] | min')
           site_mac=$(echo "$manifest" | jq -r '.platforms.mac.build // .build')
           echo "version=$version" >> "$GITHUB_OUTPUT"
           # The Mac is built again only if the site doesn't have this build for it yet.
@@ -66,12 +67,6 @@ jobs:
             echo "local_mac=true" >> "$GITHUB_OUTPUT"; echo "Using the Mac build uploaded from the Mac (mac-build-$build)."
           else
             echo "local_mac=false" >> "$GITHUB_OUTPUT"
-          fi
-          # An APK uploaded from the Mac (tools/upload_android_build.sh) for this build number.
-          if gh release view "android-build-$build" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx maskoret-android.apk; then
-            echo "local_android=true" >> "$GITHUB_OUTPUT"; echo "Using the Android build uploaded from the Mac (android-build-$build)."
-          else
-            echo "local_android=false" >> "$GITHUB_OUTPUT"
           fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"; echo "Dry run: building $version ($build) without publishing."
@@ -86,26 +81,9 @@ jobs:
     if: needs.check.outputs.go == 'true'
     uses: ./.github/workflows/flutter-app.yml
     with:
-      skip_android: ${{ needs.check.outputs.local_android == 'true' }}
+      # Android is published only on Google Play (tools/build_play_bundle.sh, uploaded by hand) — no APK on the site.
+      skip_android: true
     secrets: inherit
-
-  # The APK uploaded from the Mac: passed on as the same artifact the cloud build makes.
-  android_local:
-    needs: check
-    if: needs.check.outputs.go == 'true' && needs.check.outputs.local_android == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          build=$(curl -fsS "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GITHUB_SHA/version.json" | jq -r .build)
-          mkdir out && gh release download "android-build-$build" -R "$GITHUB_REPOSITORY" -p maskoret-android.apk -D out
-          mv out/maskoret-android.apk out/app-release.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: maskoret-android
-          path: out/app-release.apk
-          retention-days: 30
 
   # The Mac build uploaded from the Mac: passed on as the same artifact the cloud build makes.
   mac_local:
@@ -177,7 +155,7 @@ jobs:
           retention-days: 30
 
   publish:
-    needs: [check, apps, android_local, mac, mac_local]
+    needs: [check, apps, mac, mac_local]
     # Publishes whatever was built, even if another platform failed.
     # (release_manifest.py stops it when no platform built anything new).
     if: "!cancelled() && inputs.dry_run != true && needs.check.outputs.go == 'true'"
@@ -233,17 +211,10 @@ jobs:
           build=$(jq -r .build version.json)
           gh release delete "mac-build-$build" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
 
-      - name: Remove the uploaded Android build
-        if: needs.check.outputs.local_android == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          build=$(jq -r .build version.json)
-          gh release delete "android-build-$build" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
 
   # A failed release opens an issue (GitHub notifies the owner); the scheduled run keeps trying meanwhile.
   alert:
-    needs: [check, apps, android_local, mac, mac_local, publish]
+    needs: [check, apps, mac, mac_local, publish]
     if: failure() && inputs.dry_run != true
     runs-on: ubuntu-latest
     steps:
@@ -262,7 +233,7 @@ jobs:
 
   # A successful release closes the failure issue of that version, if one was opened.
   resolved:
-    needs: [check, apps, android_local, mac, mac_local, publish]
+    needs: [check, apps, mac, mac_local, publish]
     if: success() && inputs.dry_run != true && needs.check.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
