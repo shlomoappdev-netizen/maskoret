@@ -20,6 +20,13 @@
    (Use existing app signing key → "Export and upload a key from Java keystore", עם כלי ה-PEPK ש-Google נותנים)
    ולהעלות את `flutter_app/android/maskoret-release.jks`. כך מי שהתקין מהאתר יכול לעבור ל-Play בלי להסיר ולהתקין
    מחדש, וההתחברות עם Google ממשיכה לעבוד בלי שינוי.
+   - הצעדים: ב-Console להוריד את `pepk.jar` ואת `encryption_public_key.pem` (שניהם בדף "App signing"), לשים אותם
+     בתיקייה `flutter_app/android/`, ומשם להריץ (הסיסמאות של ה-keystore והמפתח נשאלות בטרמינל — לא לכתוב אותן בפקודה):
+     ```bash
+     java -jar pepk.jar --keystore=maskoret-release.jks --alias=maskoret --output=maskoret-signing-key.zip --include-cert --rsa-aes-encryption --encryption-key-path=encryption_public_key.pem
+     ```
+     ואז להעלות ל-Console את `maskoret-signing-key.zip`. אחרי ההעלאה למחוק את ה-zip (הוא מוצפן, אבל אין סיבה להשאיר אותו),
+     ולעולם לא להכניס אותו ל-git.
    - אם בכל זאת תבחר במפתח ש-Google יוצרים: צריך להוסיף את ה-SHA-1 של "App signing key certificate" מה-Console
      ללקוח ה-OAuth של Android ב-Google Cloud, אחרת ההתחברות עם Google לא תעבוד בגרסה מ-Play.
 
@@ -110,11 +117,14 @@
 | Personal info → Name | כן (שם תצוגה) | Account management | חובה |
 | Financial info → Other financial info | כן (התקציב שהמשתמש מזין) | App functionality | חובה |
 | Messages → Other in-app messages | כן (פניות תמיכה, והשיחה עם ה-AI שנשמרת בחשבון כדי להסתנכרן בין המכשירים) | Developer communications / App functionality | לא חובה |
+| App activity → Other user-generated content (מפתח ה-API של ה-AI) | כן, רק אם המשתמש בחר "שמור את המפתח בחשבון" — מוצפן ב-Supabase Vault | App functionality | לא חובה |
 | App info and performance → Diagnostics | כן, רק אם המשתמש מצרף לפנייה | App functionality (תמיכה) — לא Analytics | לא חובה |
 | App info and performance → Other (גרסת האפליקציה, פעילות אחרונה) | כן | App functionality / support | חובה |
 | Location, Contacts, Photos, Files, Device IDs | לא | — | — |
 
 - תלושים וקובצי אשראי מעובדים במכשיר בלבד, ולכן לפי ההגדרה של Google הם **לא** "נאספים".
+- תמונות שהמשתמש מצרף לשיחה עם ה-AI נשלחות ישירות מהמכשיר לספק שהוא בחר, ולא נשמרות בשרת (בשרת נשמר רק כמה תמונות היו), ולכן Photos = **לא**.
+- התראות אחרי ייבוא פירוט אשראי הן התראות מקומיות מהמכשיר — בלי שרת התראות ובלי מזהה מכשיר.
 - **Data shared with third parties:** No. (Supabase הוא ספק שירות שמעבד בשמנו — לא נחשב שיתוף. תובנות AI בענן נשלחות
   מהמכשיר ישירות לספק שהמשתמש בחר, רק לבקשתו ועם המפתח שלו. המפתח נשמר מוצפן בחשבון רק אם המשתמש בחר בזה.)
 - **Encrypted in transit:** Yes.

@@ -12,3 +12,7 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+# Play App Signing export (encrypted key) and the tool that makes it
+maskoret-signing-key.zip
+pepk.jar
+encryption_public_key.pem
