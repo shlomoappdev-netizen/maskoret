@@ -5,9 +5,11 @@ import Supabase
 /// Keeps the household on screen in sync with the server.
 ///
 /// The files on this device stay the app's working copy (it works offline as before). Each save on the
-/// server gets a new revision; the device remembers the revision it last saw. When only the server changed,
-/// its version is loaded; when only this device changed, it's saved; when both changed, the newer one wins
-/// and the other is kept as a backup (and the server keeps its last 30 versions).
+/// server gets a new revision; the device remembers the revision it last saw, and a copy of that version (the
+/// "base"). When only the server changed, its version is loaded; when only this device changed, it's saved;
+/// when both changed, the two are merged against the base (`SyncMerge`): every change from both sides is kept,
+/// and only where both changed the same value does the later change win — the other version stays in the
+/// household's version history on the server (the newest 30 are kept).
 @MainActor
 final class ServerSync: ObservableObject {
     @Published private(set) var status = "" {
@@ -161,6 +163,7 @@ final class ServerSync: ObservableObject {
             linkedHouseholdID = created.id
             lastSeenRevision = created.revision
             localChangedAt = nil
+            writeBase(data, hid: created.id, revision: created.revision)
             await account.refreshHouseholds()
             account.activeHouseholdID = created.id
             markSynced("משק הבית נוצר ונשמר בשרת")
@@ -181,6 +184,7 @@ final class ServerSync: ObservableObject {
         if let cached = ServerSync.readCache(id) {
             apply(cached.family, backupFirst: false)
             lastSeenRevision = cached.revision
+            writeBase(cached.family, hid: id, revision: cached.revision)
         } else {
             lastSeenRevision = 0         // nothing on the device yet: the server's version is loaded below
         }
@@ -225,6 +229,7 @@ final class ServerSync: ObservableObject {
         linkedHouseholdID = nil
         lastSeenRevision = 0
         localChangedAt = nil
+        try? FileManager.default.removeItem(at: ServerSync.baseURL)
     }
 
     // MARK: Triggers
@@ -287,16 +292,13 @@ final class ServerSync: ObservableObject {
             if head.data_revision > lastSeenRevision {
                 let remote = try await supabase.from("household_data").select("data,revision,updated_at,device")
                     .eq("household_id", value: hid).single().decoded(Remote.self)
-                let remoteDate = ISO8601DateFormatter.flexible(remote.updated_at) ?? .distantPast
-                if let mine = localChangedAt, mine > remoteDate {
-                    // Both changed, this device is newer: keep the server's version as a backup, then save ours.
-                    // The server's version stays in its history automatically when ours replaces it.
-                    try await push(store, hid: hid, expected: remote.revision)
-                } else {
-                    apply(remote.data, backupFirst: localChangedAt != nil)
-                    localChangedAt = nil
+                if localChangedAt == nil {
+                    apply(remote.data, backupFirst: false)
                     lastSeenRevision = remote.revision
+                    writeBase(remote.data, hid: hid, revision: remote.revision)
                     markSynced("עודכן מ-" + (remote.device ?? "השרת"))
+                } else {
+                    try await merge(store, hid: hid, remote: remote)
                 }
             } else if localChangedAt != nil {
                 try await push(store, hid: hid, expected: lastSeenRevision)
@@ -308,6 +310,73 @@ final class ServerSync: ObservableObject {
         }
     }
 
+    /// Both changed since the base: the server's changes and this device's are merged, the result is shown here
+    /// and saved to the server. Where both changed the same value the later one wins, and the other version
+    /// is kept in the server's history.
+    private func merge(_ store: Store, hid: UUID, remote: Remote) async throws {
+        let local = store.familyBackup
+        let remoteDate = ISO8601DateFormatter.flexible(remote.updated_at) ?? .distantPast
+        let mineIsNewer = (localChangedAt ?? .distantPast) > remoteDate
+        // Which member is edited / shown is per device: it's not a change to merge.
+        func withDeviceState(_ family: FamilyBackup) -> FamilyBackup {
+            var f = family
+            f.state.activeID = local.state.activeID
+            f.state.viewIDs = local.state.viewIDs
+            return f
+        }
+        let base = readBase(hid: hid).map(withDeviceState)
+        let theirs = withDeviceState(remote.data)
+        guard let l = SyncMerge.json(local), let r = SyncMerge.json(theirs) else {
+            throw CocoaError(.coderInvalidValue)
+        }
+        let result = SyncMerge.merge(base: base.flatMap(SyncMerge.json), local: l, remote: r, preferLocal: mineIsNewer)
+        guard let data = try? JSONSerialization.data(withJSONObject: result.value),
+              let merged = try? JSONDecoder().decode(FamilyBackup.self, from: data) else {
+            throw CocoaError(.coderInvalidValue)
+        }
+        AppLog.add("sync", "מיזוג עם גרסה \(remote.revision) מ-\(remote.device ?? "השרת")"
+                   + (result.conflicts.isEmpty ? "" : " — \(result.conflicts.count) ערכים השתנו בשני המכשירים, נשמר "
+                      + (mineIsNewer ? "של המכשיר הזה" : "של השרת"))
+                   + (base == nil ? " (בלי גרסת בסיס)" : ""))
+        // The server keeps its own version in the history when ours replaces it; ours is kept when theirs wins.
+        if !result.conflicts.isEmpty, !mineIsNewer {
+            await uploadVersion(local, to: hid, note: "גרסה מהמכשיר לפני מיזוג (אותם ערכים שונו גם במכשיר אחר)")
+        }
+        let changedBefore = localChangedAt
+        apply(merged, backupFirst: false)
+        lastSeenRevision = remote.revision
+        writeBase(remote.data, hid: hid, revision: remote.revision)
+        if SyncMerge.equal(result.value, r) {
+            if localChangedAt == changedBefore { localChangedAt = nil }
+            markSynced("עודכן מ-" + (remote.device ?? "השרת"))
+        } else {
+            try await push(store, hid: hid, expected: remote.revision)
+        }
+    }
+
+    // MARK: The base — the last version this device and the server agreed on
+
+    private struct Base: Codable {
+        let household: UUID
+        let revision: Int64
+        let family: FamilyBackup
+    }
+
+    private static var baseURL: URL { SecureFile.folder.appendingPathComponent("sync_base.json") }
+
+    private func writeBase(_ family: FamilyBackup, hid: UUID, revision: Int64) {
+        guard let data = try? JSONEncoder().encode(Base(household: hid, revision: revision, family: family)) else { return }
+        try? SecureFile.write(data, to: ServerSync.baseURL)
+    }
+
+    /// The base, only if it's of this household and of the revision this device last saw.
+    private func readBase(hid: UUID) -> FamilyBackup? {
+        guard let data = SecureFile.read(ServerSync.baseURL),
+              let base = try? JSONDecoder().decode(Base.self, from: data),
+              base.household == hid, base.revision == lastSeenRevision else { return nil }
+        return base.family
+    }
+
     private func push(_ store: Store, hid: UUID, expected: Int64) async throws {
         struct Params: Encodable {
             let hid: UUID
@@ -316,11 +385,13 @@ final class ServerSync: ObservableObject {
             let p_device: String
         }
         let changedBefore = localChangedAt
+        let sent = store.familyBackup
         let result = try await supabase.rpc("save_household_data", params: Params(
-            hid: hid, p_data: try .appJSON(store.familyBackup), expected_revision: expected, p_device: Platform.deviceName
+            hid: hid, p_data: try .appJSON(sent), expected_revision: expected, p_device: Platform.deviceName
         )).decoded(SaveResult.self)
         if result.ok, let revision = result.revision {
             lastSeenRevision = revision
+            writeBase(sent, hid: hid, revision: revision)
             // A change made while saving stays pending for the next round.
             if localChangedAt == changedBefore { localChangedAt = nil }
             markSynced("נשמר בשרת")
@@ -456,5 +527,126 @@ final class ServerSync: ObservableObject {
 
     private static func clearCaches() {
         try? FileManager.default.removeItem(at: cacheFolder)
+    }
+}
+
+// MARK: - Three-way merge of the household document
+
+/// Merges this device's version and the server's against the last version both agreed on (the base).
+/// The same rules as merge.dart:
+/// - A value only one side changed takes that side's value.
+/// - Objects merge key by key.
+/// - Lists of objects that all have a unique "id" merge item by item: items added on either side are kept,
+///   an item deleted on one side is dropped unless the other side edited it, edited items merge recursively.
+/// - Lists of unique strings (lists of ids) merge as sets.
+/// - When both sides changed the same plain value differently, the side that changed later wins (`preferLocal`)
+///   and it is counted as a conflict.
+/// Without a base, everything is treated as changed on both sides: items from both are kept.
+enum SyncMerge {
+    private final class Missing {}
+    private static let missing = Missing()
+
+    /// The document as JSONSerialization objects, encoded exactly like the files on disk.
+    static func json<T: Encodable>(_ value: T) -> Any? {
+        guard let data = try? JSONEncoder().encode(value) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    static func merge(base: Any?, local: Any, remote: Any, preferLocal: Bool) -> (value: Any, conflicts: [String]) {
+        var conflicts: [String] = []
+        let value = merge(base ?? missing, local, remote, "", preferLocal, &conflicts)
+        return (value, conflicts)
+    }
+
+    static func equal(_ a: Any, _ b: Any) -> Bool {
+        if a is Missing || b is Missing { return a is Missing && b is Missing }
+        guard let x = a as? NSObject, let y = b as? NSObject else { return false }
+        return x.isEqual(y)
+    }
+
+    /// The ids of a list whose items are all objects with a unique, non-empty string "id"; nil otherwise.
+    private static func ids(_ v: Any) -> [String]? {
+        guard let list = v as? [Any] else { return nil }
+        var out: [String] = []
+        for item in list {
+            guard let id = (item as? [String: Any])?["id"] as? String, !id.isEmpty else { return nil }
+            out.append(id)
+        }
+        return Set(out).count == out.count ? out : nil
+    }
+
+    private static func stringSet(_ v: Any) -> [String]? {
+        guard let list = v as? [Any] else { return nil }
+        var out: [String] = []
+        for item in list {
+            guard let s = item as? String else { return nil }
+            out.append(s)
+        }
+        return Set(out).count == out.count ? out : nil
+    }
+
+    private static func byID(_ v: Any) -> [String: Any] {
+        var out: [String: Any] = [:]
+        for item in v as? [Any] ?? [] {
+            if let id = (item as? [String: Any])?["id"] as? String { out[id] = item }
+        }
+        return out
+    }
+
+    private static func merge(_ b: Any, _ l: Any, _ r: Any, _ path: String, _ preferLocal: Bool,
+                              _ conflicts: inout [String]) -> Any {
+        if equal(l, r) { return l }
+        if equal(l, b) { return r }
+        if equal(r, b) { return l }
+
+        // Both changed it.
+        if let lm = l as? [String: Any], let rm = r as? [String: Any] {
+            let bm = b as? [String: Any] ?? [:]
+            var out: [String: Any] = [:]
+            for key in Set(lm.keys).union(rm.keys) {
+                let v = merge(bm[key] ?? missing, lm[key] ?? missing, rm[key] ?? missing, path + "/" + key, preferLocal, &conflicts)
+                if !(v is Missing) { out[key] = v }
+            }
+            return out
+        }
+
+        if ids(l) != nil, ids(r) != nil, let ll = l as? [Any], let rl = r as? [Any] {
+            let bByID = ids(b) != nil ? byID(b) : [:]
+            let lByID = byID(l), rByID = byID(r)
+            var out: [Any] = []
+            for item in rl {
+                guard let id = (item as? [String: Any])?["id"] as? String else { continue }
+                if let mine = lByID[id] {
+                    out.append(merge(bByID[id] ?? missing, mine, item, path + "[" + id + "]", preferLocal, &conflicts))
+                } else if let old = bByID[id] {
+                    // Deleted here; kept only if the server edited it.
+                    if !equal(item, old) { out.append(item); conflicts.append(path + "[" + id + "]") }
+                } else {
+                    out.append(item)     // added on the server
+                }
+            }
+            for item in ll {
+                guard let id = (item as? [String: Any])?["id"] as? String, rByID[id] == nil else { continue }
+                if let old = bByID[id] {
+                    // Deleted on the server; kept only if edited here.
+                    if !equal(item, old) { out.append(item); conflicts.append(path + "[" + id + "]") }
+                } else {
+                    out.append(item)     // added here
+                }
+            }
+            return out
+        }
+
+        if let ls = stringSet(l), let rs = stringSet(r) {
+            let bSet = Set(stringSet(b) ?? []), lSet = Set(ls), rSet = Set(rs)
+            return rs.filter { lSet.contains($0) || !bSet.contains($0) }
+                + ls.filter { !rSet.contains($0) && !bSet.contains($0) }
+        }
+
+        // The same plain value changed on both sides.
+        if r is Missing { return l }     // deleted on the server, changed here: keep the change
+        if l is Missing { return r }
+        conflicts.append(path)
+        return preferLocal ? l : r
     }
 }

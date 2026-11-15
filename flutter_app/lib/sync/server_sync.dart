@@ -11,6 +11,7 @@ import '../data/models.dart';
 import '../state/store.dart';
 import '../support/app_log.dart';
 import 'account.dart';
+import 'merge.dart';
 
 class RemoteData {
   RemoteData({required this.data, required this.revision, required this.updatedAt, this.device});
@@ -134,10 +135,12 @@ class SupabaseBackend implements SyncBackend {
 /// Keeps the household on screen in sync with the server — a port of ServerSync.swift.
 ///
 /// The file on this device stays the app's working copy (it works offline). Each save on the server
-/// gets a new revision; the device remembers the revision it last saw. When only the server changed,
-/// its version is loaded; when only this device changed, it's saved; when both changed, the newer one
-/// wins and the other goes to the household's version history on the server (the newest 30 are kept).
-/// Nothing is kept on the device except the encrypted working copy, and it's deleted on sign-out.
+/// gets a new revision; the device remembers the revision it last saw, and a copy of that version (the
+/// "base"). When only the server changed, its version is loaded; when only this device changed, it's saved;
+/// when both changed, the two are merged against the base (merge.dart): every change from both sides is
+/// kept, and only where both changed the same value does the later change win — the other version stays
+/// in the household's version history on the server (the newest 30 are kept).
+/// Nothing is kept on the device except the encrypted working copy and base, and they're deleted on sign-out.
 class ServerSync extends ChangeNotifier {
   ServerSync({
     required this.store,
@@ -281,6 +284,7 @@ class ServerSync extends ChangeNotifier {
       linkedHouseholdId = created.id;
       lastSeenRevision = created.revision;
       localChangedAt = null;
+      await _writeBase(created.id, created.revision, data);
       await account.refreshHouseholds();
       account.activeHouseholdId = created.id;
       _markSynced('משק הבית נוצר ונשמר בשרת');
@@ -304,6 +308,7 @@ class ServerSync extends ChangeNotifier {
     if (cached != null) {
       store.replace(cached.family);
       lastSeenRevision = cached.revision;
+      await _writeBase(id, cached.revision, cached.family);
     } else {
       lastSeenRevision = 0; // nothing on the device yet: the server's version is loaded below
     }
@@ -338,6 +343,9 @@ class ServerSync extends ChangeNotifier {
     linkedHouseholdId = null;
     lastSeenRevision = 0;
     localChangedAt = null;
+    try {
+      _baseFile.deleteSync();
+    } catch (_) {}
   }
 
   // MARK: Triggers
@@ -389,16 +397,13 @@ class ServerSync extends ChangeNotifier {
       final head = await backend.headRevision(hid);
       if (head > lastSeenRevision) {
         final remote = await backend.fetch(hid);
-        final remoteDate = DateTime.tryParse(remote.updatedAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final mine = localChangedAt;
-        if (mine != null && mine.isAfter(remoteDate)) {
-          // Both changed, this device is newer: ours is saved, and the server keeps its version in the history.
-          await _push(hid, remote.revision);
-        } else {
-          _apply(remote.data, backupFirst: localChangedAt != null);
-          localChangedAt = null;
+        if (localChangedAt == null) {
+          _apply(remote.data);
           lastSeenRevision = remote.revision;
+          await _writeBase(hid, remote.revision, remote.data);
           _markSynced('עודכן מ-${remote.device ?? 'השרת'}');
+        } else {
+          await _mergeWith(hid, remote);
         }
       } else if (localChangedAt != null) {
         await _push(hid, lastSeenRevision);
@@ -415,11 +420,55 @@ class ServerSync extends ChangeNotifier {
     if (localChangedAt != null && !(_debounce?.isActive ?? false)) _schedule(debounceDelay);
   }
 
+  /// Both changed since the base: the server's changes and this device's are merged, the result is shown here
+  /// and saved to the server. Nothing is lost: where both changed the same value, this device's version is
+  /// kept in the server's history.
+  Future<void> _mergeWith(String hid, RemoteData remote) async {
+    final base = await _readBase(hid);
+    final local = deepCopy(store.doc) as Json;
+    // Which member is edited / shown is per device: it's not a change to merge.
+    final theirs = _withDeviceState(remote.data, local);
+    final remoteDate = DateTime.tryParse(remote.updatedAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final mineIsNewer = localChangedAt?.isAfter(remoteDate) ?? false;
+    final result = mergeDocuments(base == null ? null : _withDeviceState(base, local), local, theirs,
+        preferLocal: mineIsNewer);
+    AppLog.add('sync', 'מיזוג עם גרסה ${remote.revision} מ-${remote.device ?? 'השרת'}'
+        '${result.conflicts.isEmpty ? '' : ' — ${result.conflicts.length} ערכים השתנו בשני המכשירים, נשמר ${mineIsNewer ? 'של המכשיר הזה' : 'של השרת'}'}'
+        '${base == null ? ' (בלי גרסת בסיס)' : ''}');
+    // The server keeps its own version in the history when ours replaces it; ours is kept when theirs wins.
+    if (result.conflicts.isNotEmpty && !mineIsNewer) {
+      await _uploadVersion(local, hid, 'גרסה מהמכשיר לפני מיזוג (אותם ערכים שונו גם במכשיר אחר)');
+    }
+    final changedBefore = localChangedAt;
+    _apply(result.value);
+    lastSeenRevision = remote.revision;
+    await _writeBase(hid, remote.revision, remote.data);
+    if (deepEquals(result.value, theirs)) {
+      if (localChangedAt == changedBefore) localChangedAt = null;
+      _markSynced('עודכן מ-${remote.device ?? 'השרת'}');
+    } else {
+      await _push(hid, remote.revision);
+    }
+  }
+
+  static Json _withDeviceState(Json doc, Json local) {
+    final copy = deepCopy(doc) as Json;
+    final state = copy['state'], mine = local['state'];
+    if (state is Map && mine is Map) {
+      for (final k in ['activeID', 'viewIDs']) {
+        if (mine.containsKey(k)) state[k] = deepCopy(mine[k]);
+      }
+    }
+    return copy;
+  }
+
   Future<void> _push(String hid, int expected) async {
     final changedBefore = localChangedAt;
-    final result = await backend.save(hid, deepCopy(store.doc) as Json, expected, deviceName);
+    final sent = deepCopy(store.doc) as Json;
+    final result = await backend.save(hid, deepCopy(sent) as Json, expected, deviceName);
     if (result.ok && result.revision != null) {
       lastSeenRevision = result.revision!;
+      await _writeBase(hid, result.revision!, sent);
       // A change made while saving stays pending for the next round.
       if (localChangedAt == changedBefore) localChangedAt = null;
       _markSynced('נשמר בשרת');
@@ -457,12 +506,34 @@ class ServerSync extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _apply(Json remote, {required bool backupFirst}) {
-    // The version being replaced goes to the server's history (not to a file on the device).
-    final hid = linkedHouseholdId;
-    if (backupFirst && hid != null) _uploadVersion(deepCopy(store.doc) as Json, hid, 'גרסה מהמכשיר שהוחלפה בסנכרון');
+  void _apply(Json remote) {
     if (FamilyBackup(remote).state.members.isEmpty) return;
-    store.replace(remote);
+    store.replace(deepCopy(remote) as Json);
+  }
+
+  // MARK: The base — the last version this device and the server agreed on
+
+  File get _baseFile => File('${store.folder.path}/sync_base.json');
+
+  Future<void> _writeBase(String hid, int revision, Json data) async {
+    try {
+      await store.secure.write(_baseFile, jsonEncode({'household': hid, 'revision': revision, 'data': data}));
+    } catch (e) {
+      AppLog.add('sync', 'לא נשמרה גרסת בסיס: $e');
+    }
+  }
+
+  /// The base, only if it's of this household and of the revision this device last saw.
+  Future<Json?> _readBase(String hid) async {
+    try {
+      final text = await store.secure.read(_baseFile);
+      if (text == null) return null;
+      final j = jsonDecode(text) as Map;
+      if (j['household'] != hid || (j['revision'] as num).toInt() != lastSeenRevision) return null;
+      return (j['data'] as Map).cast<String, dynamic>();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _uploadVersion(Json data, String hid, String note) async {
@@ -485,7 +556,7 @@ class ServerSync extends ChangeNotifier {
   /// Brings back an earlier version: it becomes the current one on every device (what's there now joins the history).
   Future<void> restore(HouseholdVersion version) async {
     final data = await backend.versionData(version.id);
-    _apply(data, backupFirst: false);
+    _apply(data);
     localChangedAt = DateTime.now();
     await sync();
   }

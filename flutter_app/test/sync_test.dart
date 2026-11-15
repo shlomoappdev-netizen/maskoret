@@ -200,7 +200,7 @@ void main() {
     expect(store.budget.incomes.first.amount, 2);
     expect(sync.hasUnsyncedChanges, isFalse);
     await Future<void>.delayed(Duration.zero);
-    expect(server.snapshots.single.note, 'גרסה מהמכשיר שהוחלפה בסנכרון');
+    expect(server.snapshots.single.note, 'גרסה מהמכשיר לפני מיזוג (אותם ערכים שונו גם במכשיר אחר)');
     expect(server.snapshots.single.data['files'][member]['budget']['incomes'][0]['amount'], 1);
   });
 
@@ -219,6 +219,75 @@ void main() {
     expect(server.households['h1']!.revision, 9);
     expect(server.data('h1')['files'][member]['budget']['incomes'][0]['amount'], 1);
     expect(dir.listSync(recursive: true).whereType<File>().where((f) => f.path.contains('backup')), isEmpty);
+  });
+
+  test('both changed different things: nothing is overwritten, both changes survive on the device and the server',
+      () async {
+    await setUpDevice();
+    await sync.accountChanged();
+    final member = store.activeMemberId;
+    sync.store.onDataChange = null;
+    // Here: a new one-off transaction and a changed income. Elsewhere (newer): a changed expense and a new trend.
+    store.edit((f) => f.budget.incomes.first.amount = 4321);
+    final mine = deepCopy(store.doc) as Json;
+    (mine['files'][member]['money']['transactions'] as List).add({'id': 'MINE-1', 'title': 'מהטלפון', 'amount': 50});
+    store.replace(mine);
+    sync.localChangedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    final theirs = loadFixture();
+    (theirs['files'][member]['budget']['expenses'] as List).first['value'] = 777;
+    (theirs['files'][member]['money']['trends'] as List).add({'id': 'THEIRS-1', 'name': 'מהמק'});
+    server.saveFromOtherDevice('h1', theirs);
+
+    await sync.sync();
+    for (final doc in [store.doc, server.data('h1')]) {
+      final file = doc['files'][member];
+      expect(file['budget']['incomes'][0]['amount'], 4321);
+      expect(file['budget']['expenses'][0]['value'], 777);
+      expect((file['money']['transactions'] as List).any((t) => t['id'] == 'MINE-1'), isTrue);
+      expect((file['money']['trends'] as List).any((t) => t['id'] == 'THEIRS-1'), isTrue);
+    }
+    expect(sync.hasUnsyncedChanges, isFalse);
+    expect(server.snapshots, isEmpty, reason: 'no value was changed on both sides');
+  });
+
+  test('an item deleted on one device stays deleted after a merge, and an item edited elsewhere is not lost',
+      () async {
+    await setUpDevice();
+    await sync.accountChanged();
+    final member = store.activeMemberId;
+    sync.store.onDataChange = null;
+    final mine = deepCopy(store.doc) as Json;
+    final removed = (mine['files'][member]['money']['transactions'] as List).removeAt(0)['id'];
+    store.replace(mine);
+    sync.localChangedAt = DateTime.now();
+    final theirs = loadFixture();
+    (theirs['files'][member]['money']['accounts'] as List).first['name'] = 'שם חדש';
+    server.saveFromOtherDevice('h1', theirs, at: DateTime.now().subtract(const Duration(minutes: 5)));
+
+    await sync.sync();
+    final file = server.data('h1')['files'][member];
+    expect((file['money']['transactions'] as List).any((t) => t['id'] == removed), isFalse);
+    expect(file['money']['accounts'][0]['name'], 'שם חדש');
+    expect(store.doc['files'][member]['money']['accounts'][0]['name'], 'שם חדש');
+  });
+
+  test('a device without a base (synced before merging existed) keeps the items of both sides', () async {
+    await setUpDevice();
+    await sync.accountChanged();
+    final member = store.activeMemberId;
+    File('${dir.path}/sync_base.json').deleteSync();
+    sync.store.onDataChange = null;
+    final mine = deepCopy(store.doc) as Json;
+    (mine['files'][member]['money']['transactions'] as List).add({'id': 'MINE-1', 'title': 'מהטלפון', 'amount': 50});
+    store.replace(mine);
+    sync.localChangedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    final theirs = loadFixture();
+    (theirs['files'][member]['money']['transactions'] as List).add({'id': 'THEIRS-1', 'title': 'מהמק', 'amount': 60});
+    server.saveFromOtherDevice('h1', theirs);
+
+    await sync.sync();
+    final ids = (server.data('h1')['files'][member]['money']['transactions'] as List).map((t) => t['id']);
+    expect(ids, containsAll(['MINE-1', 'THEIRS-1']));
   });
 
   test('a new account with no households uploads this device as the first household', () async {

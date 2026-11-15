@@ -55,6 +55,7 @@ class MonthPicture {
     required this.card,
     required this.cardEstimated,
     this.cardEstimate = 0,
+    this.trackedCharged = 0,
     this.fixedInCardSuspects = const [],
     this.periodStart,
     this.periodEnd,
@@ -79,6 +80,10 @@ class MonthPicture {
 
   /// The "עוד צפוי לפי ממוצע החודשים הקודמים" line in `card`, or 0 when there is no estimate.
   final double cardEstimate;
+
+  /// Card charges of this period that are linked to a tracked item. They aren't in `card` (the item's monthly
+  /// average stands for them in `periodic`), but the money did go out.
+  final double trackedCharged;
 
   /// Card purchases priced like a fixed expense but not linked to it: they may be counted twice.
   final List<String> fixedInCardSuspects;
@@ -105,9 +110,9 @@ class MonthPicture {
   /// What is expected to be left after the card is charged, the estimate of the rest of the card included.
   double get remaining => net - spendingTotal - periodic - toSavingsTotal - cardWithInstallments + oneOffTotal;
 
-  /// What is actually left so far: `remaining` without the estimate of card spending still to come and without the
-  /// tracked items' monthly average (when such a purchase really happens, it is already in the card charges).
-  double get remainingActual => remaining + cardEstimate + periodic;
+  /// What is actually left so far: `remaining` without the estimate of card spending still to come, and with the
+  /// tracked items' real charges of this period instead of their monthly average.
+  double get remainingActual => remaining + cardEstimate + periodic - trackedCharged;
   String get title => Fmt.monthTitle(year, month);
 
   /// "10 באוק׳ – 9 בנוב׳", or the month's name when the period is a calendar month.
@@ -136,7 +141,10 @@ class MonthPicture {
         periodic: 0,
         toSavings: toSavings,
         oneOffs: oneOffs,
-        card: card.where((l) => !l.estimate).toList(),
+        card: [
+          ...card.where((l) => !l.estimate),
+          if (trackedCharged != 0) MonthLine('רכישות במעקב', trackedCharged),
+        ],
         cardEstimated: false,
         cardEstimate: 0,
         fixedInCardSuspects: fixedInCardSuspects,
@@ -237,6 +245,10 @@ class MonthPicture {
     final charged = cards.chargedIn(key);
     final bought = cards.cardTransactions.where((t) => t.installment == null && !t.date.isBefore(monthStart) && t.date.isBefore(monthEnd)).toList();
     final summary = CardMonthSummary.of(bought);
+    // Charges linked to a tracked item: real money that went out, even though the item's average stands for them.
+    final trackedCharged = [...bought, ...charged.where((t) => t.installment != null)]
+        .where((t) => !t.ignored && t.linkedExpenseID == null && t.linkedTrackedID != null)
+        .fold(0.0, (s, t) => s + t.myAmount);
     // Purchases recorded as "paid by card" that the statements don't show yet.
     final manualCard = cards.manualCardPayments;
     final card = <MonthLine>[
@@ -329,6 +341,7 @@ class MonthPicture {
       card: card,
       cardEstimated: cardEstimated,
       cardEstimate: cardEstimate,
+      trackedCharged: trackedCharged,
       fixedInCardSuspects: suspects,
       periodStart: monthStart,
       periodEnd: monthEnd,

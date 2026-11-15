@@ -30,6 +30,9 @@ struct MonthPicture {
     var cardEstimated: Bool = false
     /// The estimate itself (0 when there is none).
     var cardEstimate: Double = 0
+    /// Card charges of this period that are linked to a tracked item. They aren't in `card` (the item's monthly
+    /// average stands for them in `periodic`), but the money did go out.
+    var trackedCharged: Double = 0
     /// Card purchases priced like a fixed expense but not linked to it: they may be counted twice.
     var fixedInCardSuspects: [String] = []
     /// When this period began and ends.
@@ -90,9 +93,9 @@ struct MonthPicture {
     var oneOffTotal: Double { oneOffs.reduce(0) { $0 + $1.amount } }
     /// Expected to be left once the card charges this period — includes the estimate by the average of the last statements.
     var remaining: Double { net - spendingTotal - periodic - toSavingsTotal - cardWithInstallments + oneOffTotal }
-    /// Left right now: only what actually went out so far — without the card estimate and without the tracked items'
-    /// monthly average (when such a purchase really happens, it is already in the card charges).
-    var remainingActual: Double { remaining + cardEstimate + periodic }
+    /// Left right now: only what actually went out so far — without the card estimate, and with the tracked items'
+    /// real charges of this period instead of their monthly average.
+    var remainingActual: Double { remaining + cardEstimate + periodic - trackedCharged }
     /// Without the card estimates: only what was actually charged or recorded.
     var actualOnly: MonthPicture {
         var p = self
@@ -100,6 +103,8 @@ struct MonthPicture {
         p.cardEstimated = false
         p.cardEstimate = 0
         p.periodic = 0
+        if trackedCharged != 0 { p.card.append(.init(title: "רכישות במעקב", amount: trackedCharged)) }
+        p.trackedCharged = 0
         return p
     }
     var outTotal: Double { spendingTotal + periodic + toSavingsTotal + cardWithInstallments - min(oneOffTotal, 0) }
@@ -222,6 +227,10 @@ extension Store {
         var cardEstimated = false
         var cardEstimate = 0.0
         let known = card.reduce(0) { $0 + $1.amount }
+        // Charges linked to a tracked item: real money that went out, even though the average stands for them above.
+        let trackedCharged = (bought + charged.filter { $0.installment != nil })
+            .filter { !$0.ignored && $0.linkedExpenseID == nil && $0.linkedTrackedID != nil }
+            .reduce(0) { $0 + $1.myAmount }
         let average = money.averageCardVariable()
         if average > known, monthEnd > now || card.isEmpty {
             card.append(.init(title: "עוד צפוי לפי ממוצע החודשים הקודמים", amount: average - known, estimate: true))
@@ -285,7 +294,7 @@ extension Store {
                                         firstPayment: p.amount, firstCharge: p.chargeDate))
         }
 
-        return MonthPicture(
+        var picture = MonthPicture(
             year: year,
             month: month,
             estimatedNet: budget.net,
@@ -305,6 +314,8 @@ extension Store {
             installmentsAfterThisMonth: installmentsAfter,
             daysLeft: daysLeft
         )
+        picture.trackedCharged = trackedCharged
+        return picture
     }
 }
 

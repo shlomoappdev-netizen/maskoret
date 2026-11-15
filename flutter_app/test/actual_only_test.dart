@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:maskoret/data/card.dart';
 import 'package:maskoret/data/json.dart';
 import 'package:maskoret/data/models.dart';
 import 'package:maskoret/data/money_calc.dart';
@@ -33,5 +34,21 @@ void main() {
     expect(MonthPicture.current(file).card.any((l) => l.estimate), isFalse);
     expect(MonthPicture.currentFull(file).card.any((l) => l.estimate), isTrue);
     MonthPicture.hideCardEstimate.value = false;
+  });
+
+  test('linking a card charge to a tracked item does not change what is actually left', () {
+    final doc = (jsonDecode(File('test/fixtures/swift_household.json').readAsStringSync()) as Map).cast<String, dynamic>();
+    final family = FamilyBackup(doc);
+    final file = family.fileForEditing(family.state.activeID);
+    final tx = CardData(file.money).cardTransactions.firstWhere((t) => t.isVariable && t.installment == null && t.myAmount > 0);
+    final (y, m) = file.money.period(tx.date);
+    final before = MonthPicture.of(file, y, m);
+    final raw = (file.json['money']['cardTransactions'] as List).firstWhere((t) => t['id'] == tx.id) as Map;
+    raw['linkedTrackedID'] = file.budget.trackedItems.first.id;
+    final after = MonthPicture.of(file, y, m);
+    expect(after.trackedCharged, closeTo(before.trackedCharged + tx.myAmount, 0.001));
+    expect(after.remainingActual, closeTo(before.remainingActual, 0.001));
+    expect(after.actualOnly.remainingActual, closeTo(before.actualOnly.remainingActual, 0.001));
+    expect(after.actualOnly.remaining, closeTo(after.remainingActual, 0.001));
   });
 }
