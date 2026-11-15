@@ -94,15 +94,17 @@ extension View {
 // MARK: - Hiding the keyboard (iPhone)
 
 #if os(iOS)
-/// While the keyboard is up, a "הסתר מקלדת" button floats right above it, and scrolling pulls the keyboard down —
-/// number pads have no return key, so without this there was no way to close the keyboard.
+/// While the keyboard is up, a "הסתר מקלדת" button sits right above it, and scrolling pulls the keyboard down —
+/// number pads have no return key, so without this there was no way to close the keyboard. The button takes its own
+/// strip at the bottom (a safe-area inset), so a text field at the bottom of the screen moves up above it instead of
+/// being covered by it.
 private struct KeyboardDismiss: ViewModifier {
     @State private var visible = false
 
     func body(content: Content) -> some View {
         content
             .scrollDismissesKeyboard(.interactively)
-            .overlay(alignment: .bottomLeading) {
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 if visible {
                     Button {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -115,7 +117,9 @@ private struct KeyboardDismiss: ViewModifier {
                             .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
                     }
                     .buttonStyle(.plain)
-                    .padding(10)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .transition(.opacity)
                 }
             }

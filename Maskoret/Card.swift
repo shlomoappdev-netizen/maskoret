@@ -377,8 +377,8 @@ enum CardImportError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unreadable: return "לא הצלחתי לפתוח את הקובץ. ודא שזה קובץ Excel (‎.xlsx) שיוצא מ-Max או מ-CAL."
-        case .notMax: return "הקובץ לא נראה כמו פירוט עסקאות של Max או של CAL (לא נמצאה עמודת ״תאריך עסקה״)."
+        case .unreadable: return "לא הצלחתי לפתוח את הקובץ. ודא שזה קובץ Excel (‎.xlsx) שיוצא מ-Max, מ-CAL או מישראכרט."
+        case .notMax: return "הקובץ לא נראה כמו פירוט עסקאות של Max, של CAL או של ישראכרט (לא נמצאה עמודת ״תאריך עסקה״)."
         case .empty: return "לא נמצאו עסקאות בקובץ."
         }
     }
@@ -861,10 +861,149 @@ enum CalParser {
     }
 }
 
-/// Any supported statement: Max or CAL.
+// MARK: - Isracard
+
+/// An Isracard ("ישראכרט") export: "פירוט עסקאות" for one billing month. One sheet; a title row with the month
+/// ("אוקטובר 2026"); then a block per card — its name with the last four digits ("פלטינה מסטרקארד - 8104"), the charge
+/// day ("לחיוב ב-20.10"), and sections ("עסקאות למועד חיוב", "עסקאות בחו״ל"…) each with its own header row:
+/// "תאריך רכישה | שם בית עסק | סכום עסקה | מטבע עסקה | סכום חיוב | מטבע חיוב | מס' שובר | פירוט נוסף".
+/// Dates are "dd.MM.yy"; an installment says "תשלום 2 מתוך 6" in "פירוט נוסף"; a totals row has no date.
+enum IsracardParser {
+    static let months = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר",
+                         "נובמבר", "דצמבר"]
+
+    static func normalized(_ s: String) -> String {
+        s.unicodeScalars.filter { !(0x200E...0x202E).contains($0.value) }.map(String.init).joined()
+            .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
+    static func isHeader(_ row: [String]) -> Bool {
+        let cells = row.map(normalized)
+        return cells.contains("תאריך רכישה") && cells.contains { $0.contains("בית עסק") }
+    }
+
+    static func isIsracard(_ sheets: [XLSXReader.Sheet]) -> Bool {
+        sheets.contains { $0.rows.contains(where: isHeader) }
+    }
+
+    /// "18.10.26" / "18/10/2026" → noon of that day (a two-digit year is 20yy); Excel serial numbers too.
+    static func parseDate(_ text: String) -> Date? {
+        let s = normalized(text)
+        if let m = s.range(of: #"^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$"#, options: .regularExpression) {
+            let parts = s[m].split(whereSeparator: { ".-/".contains($0) }).compactMap { Int($0) }
+            guard parts.count == 3, (1...12).contains(parts[1]), (1...31).contains(parts[0]) else { return nil }
+            let year = parts[2] < 100 ? 2000 + parts[2] : parts[2]
+            return Calendar.current.date(from: DateComponents(year: year, month: parts[1], day: parts[0], hour: 12))
+        }
+        if let serial = Double(s), serial > 20000, serial < 80000 { return MaxParser.parseDate(s) }
+        return nil
+    }
+
+    static func parse(_ sheets: [XLSXReader.Sheet]) throws -> MaxParser.Result {
+        let cal = Calendar.current
+        var parsed: [CardTransaction] = []
+        var labelMonth: (month: Int, year: Int)? = nil
+
+        for sheet in sheets {
+            // The statement's month, from the title ("אוקטובר 2026").
+            for row in sheet.rows.prefix(10) where labelMonth == nil {
+                for cell in row.map(normalized) {
+                    if let i = months.firstIndex(where: { cell.hasPrefix($0 + " ") }),
+                       let y = Int(cell.split(separator: " ").last ?? ""), y > 2000 {
+                        labelMonth = (i + 1, y)
+                        break
+                    }
+                }
+            }
+            var card = ""
+            var chargeDate: Date? = nil
+            var section = ""
+            var header: [String]? = nil
+            for row in sheet.rows {
+                let cells = row.map(normalized)
+                let first = cells.first(where: { !$0.isEmpty }) ?? ""
+                if isHeader(row) { header = cells; continue }
+                // A card's line: "<name> - 1234" (the last four digits).
+                if let r = first.range(of: #"-\s*(\d{4})$"#, options: .regularExpression), header == nil || cells.filter({ !$0.isEmpty }).count <= 2 {
+                    card = String(first[r].filter(\.isNumber))
+                    header = nil
+                    chargeDate = nil
+                }
+                // "לחיוב ב-20.10": the card's charge day in the statement's month (or the next one, across a year).
+                for cell in cells {
+                    if let r = cell.range(of: #"לחיוב ב-?\s*(\d{1,2})\.(\d{1,2})"#, options: .regularExpression) {
+                        let nums = cell[r].split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+                        if nums.count == 2 {
+                            var year = labelMonth?.year ?? cal.component(.year, from: Date())
+                            if let lm = labelMonth, lm.month == 12, nums[1] == 1 { year += 1 }
+                            chargeDate = cal.date(from: DateComponents(year: year, month: nums[1], day: nums[0], hour: 12))
+                        }
+                    }
+                }
+                guard let header else {
+                    if cells.filter({ !$0.isEmpty }).count == 1, first.hasPrefix("עסקאות") { section = first }
+                    continue
+                }
+                func col(_ part: String) -> Int? { header.firstIndex { $0.contains(part) } }
+                func cell(_ c: Int?) -> String {
+                    guard let c, c < cells.count else { return "" }
+                    return cells[c]
+                }
+                if cells.filter({ !$0.isEmpty }).count == 1, first.hasPrefix("עסקאות") {
+                    section = first
+                    continue
+                }
+                guard let date = parseDate(cell(col("תאריך רכישה"))) else { continue }
+                let merchant = cell(col("בית עסק"))
+                guard !merchant.isEmpty else { continue }
+                let original = MaxParser.parseAmount(cell(col("סכום עסקה"))) ?? 0
+                let charged = MaxParser.parseAmount(cell(col("סכום חיוב")))
+                let origCurrency = cell(col("מטבע עסקה"))
+                let chargeCurrency = cell(col("מטבע חיוב"))
+                let note = cell(col("פירוט נוסף"))
+                let pending = section.contains("טרם") || section.contains("קליטה")
+                let foreign = section.contains("חו")
+                parsed.append(CardTransaction(
+                    id: "", date: date, merchant: merchant, category: "", cardLast4: card, type: "",
+                    amount: charged ?? original, originalAmount: original,
+                    originalCurrency: origCurrency.isEmpty ? "₪" : origCurrency,
+                    amountEstimated: CardTransaction.currencyCode(origCurrency) != nil
+                        && (charged == nil || CardTransaction.currencyCode(chargeCurrency) != nil),
+                    chargeDate: chargeDate, chargeEstimated: chargeDate == nil || pending,
+                    note: note, method: "", status: pending ? .pending : (foreign ? .foreign : .charged)
+                ))
+            }
+        }
+        guard !parsed.isEmpty else {
+            throw isIsracard(sheets) ? CardImportError.empty : CardImportError.notMax
+        }
+        // Without "לחיוב ב-…": the statement's month, on the 2nd.
+        let fallback = labelMonth.flatMap { cal.date(from: DateComponents(year: $0.year, month: $0.month, day: 2, hour: 12)) }
+        let label = labelMonth.map { "\($0.month)/\($0.year)" } ?? ""
+
+        var seen: [String: Int] = [:]
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.dateFormat = "yyyyMMdd"
+        let result: [CardTransaction] = parsed.map { tx in
+            var tx = tx
+            if tx.chargeDate == nil { tx.chargeDate = fallback }
+            let base = [tx.status == .pending ? "P" : "C", dayFormatter.string(from: tx.date), tx.merchantKey, tx.cardLast4,
+                        String(format: "%.2f", tx.originalAmount), tx.note].joined(separator: "|")
+            let n = (seen[base] ?? 0) + 1
+            seen[base] = n
+            tx.id = base + "#\(n)"
+            return tx
+        }
+        return MaxParser.Result(billingLabel: label, transactions: result)
+    }
+}
+
+/// Any supported statement: Max, CAL or Isracard.
 enum CardStatementParser {
     static func parse(_ sheets: [XLSXReader.Sheet]) throws -> MaxParser.Result {
-        CalParser.isCal(sheets) ? try CalParser.parse(sheets) : try MaxParser.parse(sheets)
+        if IsracardParser.isIsracard(sheets) { return try IsracardParser.parse(sheets) }
+        return CalParser.isCal(sheets) ? try CalParser.parse(sheets) : try MaxParser.parse(sheets)
     }
 }
 

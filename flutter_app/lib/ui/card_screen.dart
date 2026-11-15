@@ -49,7 +49,7 @@ class _CardScreenState extends State<CardScreen> {
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['xlsx'],
-      dialogTitle: 'ייבוא קובץ (Max / CAL)',
+      dialogTitle: 'ייבוא קובץ (Max / CAL / ישראכרט)',
     );
     if (!mounted) return;
     for (final f in picked) {
@@ -105,7 +105,7 @@ class _CardScreenState extends State<CardScreen> {
             Expanded(
               child: Text(
                 last == null
-                    ? 'ייבוא פירוט עסקאות מ-Max או מ-CAL, וצימוד להוצאות הקבועות'
+                    ? 'ייבוא פירוט עסקאות מ-Max, מ-CAL או מישראכרט, וצימוד להוצאות הקבועות'
                     : 'ייבוא אחרון: ${Fmt.date(JObj(last).date('importedAt') ?? DateTime.now())} · ${JObj(last).s('fileName')}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -122,7 +122,7 @@ class _CardScreenState extends State<CardScreen> {
             alignment: AlignmentDirectional.centerStart,
             child: FilledButton.tonalIcon(
               icon: const Icon(Icons.file_download_outlined),
-              label: const Text('ייבוא קובץ (Max / CAL)…'),
+              label: const Text('ייבוא קובץ (Max / CAL / ישראכרט)…'),
               onPressed: _import,
             ),
           ),
@@ -196,7 +196,7 @@ class _CardScreenState extends State<CardScreen> {
             const SizedBox(height: 16),
             _howTo(context, cards),
             const SizedBox(height: 16),
-            FilledButton.icon(icon: const Icon(Icons.file_download_outlined), label: const Text('ייבוא קובץ (Max / CAL)…'), onPressed: _import),
+            FilledButton.icon(icon: const Icon(Icons.file_download_outlined), label: const Text('ייבוא קובץ (Max / CAL / ישראכרט)…'), onPressed: _import),
             if (message != null) ...[const SizedBox(height: 12), _message(context)],
           ]),
         ),
@@ -215,6 +215,11 @@ class _CardScreenState extends State<CardScreen> {
         const Text('1. נכנסים לאתר או לאפליקציה של כאל ← ״פירוט עסקאות״.'),
         const Text('2. בוחרים את התקופה ולוחצים על ״ייצוא לאקסל״.'),
         const Text('3. מייבאים כאן את הקובץ (״פירוט עסקאות וזיכויים.xlsx״). כאל לא מסווגת קטגוריות, אז החיובים יופיעו בלי קטגוריה.'),
+        const SizedBox(height: 10),
+        Text('איך מייצאים מישראכרט:', style: Theme.of(context).textTheme.titleSmall),
+        const Text('1. נכנסים לאתר ישראכרט ← ״פירוט עסקאות״.'),
+        const Text('2. בוחרים את חודש החיוב ולוחצים על ״ייצוא לאקסל״.'),
+        const Text('3. מייבאים כאן את הקובץ. ישראכרט לא מסווגת קטגוריות, אז החיובים יופיעו בלי קטגוריה.'),
       ]);
 
   Widget _tiles(BuildContext context, List<CardTransaction> txs, int? key) {

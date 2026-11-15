@@ -17,8 +17,8 @@ class CardImportException implements Exception {
   @override
   String toString() => message;
 
-  static const unreadable = CardImportException('לא הצלחתי לפתוח את הקובץ. ודא שזה קובץ Excel (‎.xlsx) שיוצא מ-Max או מ-CAL.');
-  static const notMax = CardImportException('הקובץ לא נראה כמו פירוט עסקאות של Max או של CAL (לא נמצאה עמודת ״תאריך עסקה״).');
+  static const unreadable = CardImportException('לא הצלחתי לפתוח את הקובץ. ודא שזה קובץ Excel (‎.xlsx) שיוצא מ-Max, מ-CAL או מישראכרט.');
+  static const notMax = CardImportException('הקובץ לא נראה כמו פירוט עסקאות של Max, של CAL או של ישראכרט (לא נמצאה עמודת ״תאריך עסקה״).');
   static const empty = CardImportException('לא נמצאו עסקאות בקובץ.');
 }
 
@@ -461,9 +461,172 @@ class CalParser {
   }
 }
 
-/// Any supported statement: Max or CAL (CardStatementParser in Card.swift).
+/// An Isracard ("ישראכרט") export — a port of IsracardParser (Card.swift). One sheet for one billing month: a title
+/// with the month ("אוקטובר 2026"), then a block per card (its name with the last four digits, "לחיוב ב-20.10") with
+/// sections ("עסקאות למועד חיוב"…), each with a header row "תאריך רכישה | שם בית עסק | סכום עסקה | מטבע עסקה |
+/// סכום חיוב | מטבע חיוב | מס' שובר | פירוט נוסף". Dates are "dd.MM.yy"; a totals row has no date.
+class IsracardParser {
+  static const months = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+
+  static String normalized(String s) => s
+      .replaceAll(RegExp(r'[\u200E-\u202E]'), '')
+      .split(RegExp(r'\s+'))
+      .where((w) => w.isNotEmpty)
+      .join(' ');
+
+  static bool isHeader(List<String> row) {
+    final cells = row.map(normalized).toList();
+    return cells.contains('תאריך רכישה') && cells.any((c) => c.contains('בית עסק'));
+  }
+
+  static bool isIsracard(List<XlsxSheet> sheets) => sheets.any((s) => s.rows.any(isHeader));
+
+  /// "18.10.26" / "18/10/2026" → noon of that day (a two-digit year is 20yy); Excel serial numbers too.
+  static DateTime? parseDate(String text) {
+    final s = normalized(text);
+    final m = RegExp(r'^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$').firstMatch(s);
+    if (m != null) {
+      final d = int.parse(m.group(1)!), mo = int.parse(m.group(2)!), y = int.parse(m.group(3)!);
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+      return DateTime(y < 100 ? 2000 + y : y, mo, d, 12);
+    }
+    final serial = double.tryParse(s);
+    if (serial != null && serial > 20000 && serial < 80000) return MaxParser.parseDate(s);
+    return null;
+  }
+
+  static String _two(int n) => n.toString().padLeft(2, '0');
+
+  static MaxResult parse(List<XlsxSheet> sheets) {
+    final parsed = <Json>[];
+    int? labelMonth, labelYear;
+    final importedAt = dateTimeToSwift(DateTime.now());
+    final cardLine = RegExp(r'-\s*(\d{4})$');
+    final chargeLine = RegExp(r'לחיוב ב-?\s*(\d{1,2})\.(\d{1,2})');
+
+    for (final sheet in sheets) {
+      // The statement's month, from the title ("אוקטובר 2026").
+      for (final row in sheet.rows.take(10)) {
+        if (labelMonth != null) break;
+        for (final cell in row.map(normalized)) {
+          final i = months.indexWhere((m) => cell.startsWith('$m '));
+          final y = int.tryParse(cell.split(' ').last);
+          if (i >= 0 && y != null && y > 2000) {
+            labelMonth = i + 1;
+            labelYear = y;
+            break;
+          }
+        }
+      }
+      var card = '';
+      DateTime? chargeDate;
+      var section = '';
+      List<String>? header;
+      for (final row in sheet.rows) {
+        final cells = row.map(normalized).toList();
+        final filled = cells.where((c) => c.isNotEmpty).length;
+        final first = cells.firstWhere((c) => c.isNotEmpty, orElse: () => '');
+        if (isHeader(row)) {
+          header = cells;
+          continue;
+        }
+        // A card's line: "<name> - 1234" (the last four digits).
+        final cm = cardLine.firstMatch(first);
+        if (cm != null && (header == null || filled <= 2)) {
+          card = cm.group(1)!;
+          header = null;
+          chargeDate = null;
+        }
+        // "לחיוב ב-20.10": the card's charge day in the statement's month (or the next one, across a year).
+        for (final cell in cells) {
+          final m = chargeLine.firstMatch(cell);
+          if (m != null) {
+            final day = int.parse(m.group(1)!), month = int.parse(m.group(2)!);
+            var year = labelYear ?? DateTime.now().year;
+            if (labelMonth == 12 && month == 1) year += 1;
+            chargeDate = DateTime(year, month, day, 12);
+          }
+        }
+        final h = header;
+        if (h == null) {
+          if (filled == 1 && first.startsWith('עסקאות')) section = first;
+          continue;
+        }
+        int? col(String part) {
+          final i = h.indexWhere((c) => c.contains(part));
+          return i < 0 ? null : i;
+        }
+
+        String cell(int? c) => c == null || c >= cells.length ? '' : cells[c];
+        if (filled == 1 && first.startsWith('עסקאות')) {
+          section = first;
+          continue;
+        }
+        final date = parseDate(cell(col('תאריך רכישה')));
+        if (date == null) continue;
+        final merchant = cell(col('בית עסק'));
+        if (merchant.isEmpty) continue;
+        final original = MaxParser.parseAmount(cell(col('סכום עסקה'))) ?? 0;
+        final charged = MaxParser.parseAmount(cell(col('סכום חיוב')));
+        final origCurrency = cell(col('מטבע עסקה'));
+        final chargeCurrency = cell(col('מטבע חיוב'));
+        final pending = section.contains('טרם') || section.contains('קליטה');
+        final foreign = section.contains('חו');
+        parsed.add(<String, dynamic>{
+          'id': '',
+          'date': dateTimeToSwift(date),
+          'merchant': merchant,
+          'category': '',
+          'cardLast4': card,
+          'type': '',
+          'amount': jsonNumber(charged ?? original),
+          'originalAmount': jsonNumber(original),
+          'originalCurrency': origCurrency.isEmpty ? '₪' : origCurrency,
+          'amountEstimated': CardTransaction.currencyCode(origCurrency) != null &&
+              (charged == null || CardTransaction.currencyCode(chargeCurrency) != null),
+          if (chargeDate != null) 'chargeDate': dateTimeToSwift(chargeDate),
+          'chargeEstimated': chargeDate == null || pending,
+          'note': cell(col('פירוט נוסף')),
+          'method': '',
+          'status': pending ? 'pending' : (foreign ? 'foreign' : 'charged'),
+          'ignored': false,
+          'importedAt': importedAt,
+          'owedPortion': 0,
+        });
+      }
+    }
+    if (parsed.isEmpty) throw isIsracard(sheets) ? CardImportException.empty : CardImportException.notMax;
+    // Without "לחיוב ב-…": the statement's month, on the 2nd.
+    final fallback = labelMonth == null ? null : dateTimeToSwift(DateTime(labelYear!, labelMonth, 2, 12));
+    final label = labelMonth == null ? '' : '$labelMonth/$labelYear';
+
+    final seen = <String, int>{};
+    for (final tx in parsed) {
+      if (tx['chargeDate'] == null && fallback != null) tx['chargeDate'] = fallback;
+      final t = CardTransaction(tx);
+      final d = t.date;
+      final base = [
+        t.status == 'pending' ? 'P' : 'C',
+        '${d.year.toString().padLeft(4, '0')}${_two(d.month)}${_two(d.day)}',
+        t.merchantKey,
+        t.cardLast4,
+        t.originalAmount.toStringAsFixed(2),
+        t.note,
+      ].join('|');
+      final n = (seen[base] ?? 0) + 1;
+      seen[base] = n;
+      tx['id'] = '$base#$n';
+    }
+    return MaxResult(label, parsed);
+  }
+}
+
+/// Any supported statement: Max, CAL or Isracard (CardStatementParser in Card.swift).
 class CardStatementParser {
-  static MaxResult parse(List<XlsxSheet> sheets) => CalParser.isCal(sheets) ? CalParser.parse(sheets) : MaxParser.parse(sheets);
+  static MaxResult parse(List<XlsxSheet> sheets) {
+    if (IsracardParser.isIsracard(sheets)) return IsracardParser.parse(sheets);
+    return CalParser.isCal(sheets) ? CalParser.parse(sheets) : MaxParser.parse(sheets);
+  }
 }
 
 /// The result of an import, as shown to the user (CardImport.summary in Swift).
