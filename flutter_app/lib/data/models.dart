@@ -1,3 +1,4 @@
+import 'assistant.dart';
 import 'card.dart';
 import 'json.dart';
 import 'tax.dart';
@@ -693,6 +694,9 @@ class MoneyData {
       }
     }
   }
+
+  /// What the assistant knows about this member, and its getting-to-know-you questions (synced with the Mac).
+  AssistantProfile get assistant => AssistantProfile(_o);
 
   /// Until the first check with the Bank of Israel (November 2026), like MoneyData.fallbackRates.
   static const fallbackRates = {'USD': 3.157, 'EUR': 3.5306, 'GBP': 4.235};

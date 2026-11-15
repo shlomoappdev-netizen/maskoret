@@ -16,7 +16,7 @@ trap 'rm -rf $build' EXIT
   awk '/^struct DataSnapshot \{/,/^\}/' $src/Family.swift; } > $build/FamilyTypes.swift
 # The model files themselves, without their `extension Store { … }` blocks (those need the whole app).
 models=()
-for f in Models TaxRates Money Card Maaser Trends Receivables; do
+for f in Models TaxRates Money Card Maaser Trends Receivables Assistant; do
   awk '/^extension Store \{/{skip=1} !skip{print} skip&&/^\}/{skip=0}' $src/$f.swift > $build/$f.swift
   models+=$build/$f.swift
 done

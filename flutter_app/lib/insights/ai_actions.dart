@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../data/assistant.dart';
 import '../data/fmt.dart';
 import '../data/json.dart';
 import '../data/models.dart';
@@ -15,6 +16,7 @@ class AIAction {
 
   static const types = {
     'add_account', 'update_account', 'add_trend', 'update_trend', 'add_expense', 'update_expense', 'add_transaction',
+    'remember_fact', 'forget_fact',
   };
 
   String? string(String key) {
@@ -63,7 +65,7 @@ class AIAction {
     ('monthly_contribution', 'הפקדה חודשית'), ('contribution_day', 'יום הפקדה'), ('monthly_limit', 'תקרה חודשית'),
     ('charge_day', 'יום חיוב'), ('date', 'תאריך'), ('start_date', 'התחלה'), ('maturity_date', 'סיום'),
     ('to_account', 'אל חשבון'), ('paid_by_card', 'באשראי (true/false)'), ('installments', 'תשלומים'),
-    ('active', 'פעילה (true/false)'), ('emoji', 'אימוג׳י'), ('note', 'הערה'),
+    ('active', 'פעילה (true/false)'), ('emoji', 'אימוג׳י'), ('note', 'הערה'), ('fact', 'מה לזכור'),
   ];
   static const numberFields = {
     'amount', 'balance', 'annual_rate', 'prime_minus', 'monthly_contribution', 'contribution_day',
@@ -102,6 +104,7 @@ class AIAction {
         'add_account' || 'update_account' => 'account',
         'add_trend' || 'update_trend' => 'trend',
         'add_expense' || 'update_expense' => 'expense',
+        'remember_fact' || 'forget_fact' => 'fact',
         _ => 'transaction',
       };
 
@@ -112,6 +115,8 @@ class AIAction {
         'update_trend' => 'עדכון מגמה: ${string('trend') ?? string('name') ?? ''}',
         'add_expense' => 'הוצאה קבועה חדשה: ${string('name') ?? ''}',
         'update_expense' => 'עדכון הוצאה קבועה: ${string('expense') ?? string('name') ?? ''}',
+        'remember_fact' => 'לזכור עליך: ${string('fact') ?? ''}',
+        'forget_fact' => 'לשכוח: ${string('fact') ?? ''}',
         _ => '${switch (string('kind')) { 'income' => 'הכנסה', 'transfer' => 'העברה', _ => 'הוצאה' }} חד-פעמית: '
             '${string('title') ?? string('name') ?? ''}',
       };
@@ -294,6 +299,12 @@ void applyAIAction(AIAction a, SaveFile file) {
         json['cardInstallments'] = n < 1 ? 1 : n;
       }
       money.addObject('transactions', json);
+    case 'remember_fact':
+      final fact = a.string('fact') ?? (throw AIActionError('חסר מה לזכור'));
+      AssistantProfile(money).remember(fact);
+    case 'forget_fact':
+      final fact = a.string('fact') ?? (throw AIActionError('חסר מה לשכוח'));
+      if (!AssistantProfile(money).forgetMatching(fact)) throw AIActionError('לא נמצא משהו שהעוזר יודע בשם ״$fact״');
   }
 }
 

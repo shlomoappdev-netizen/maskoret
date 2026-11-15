@@ -34,6 +34,11 @@ String aiContext(AppStore store, {DateTime? at}) {
     lines.add('הנתונים של: ${store.activeMember!.title} (בן משפחה אחד מתוך ${store.members.length})');
   }
 
+  // What the assistant knows about the user
+  lines.add('\n## מה ידוע על המשתמש');
+  final known = assistantContextLines(store);
+  lines.addAll(known.isEmpty ? const ['- עדיין לא ידוע כלום'] : known);
+
   // This month
   final p = MonthPicture.current(d);
   final monthStart = p.periodStart!, monthEnd = p.periodEnd!;
@@ -187,4 +192,14 @@ String aiContext(AppStore store, {DateTime? at}) {
     }
   }
   return lines.join('\n');
+}
+
+/// What the assistant knows about each member in view, for the model (Store.assistantContextLines in Assistant.swift).
+List<String> assistantContextLines(AppStore store) {
+  if (!store.isCombined) return [for (final f in store.money.assistant.facts) '- ${f.text}'];
+  return [
+    for (final m in store.viewedMembers)
+      for (final f in (m.id == store.activeMemberId ? store.file : store.family.fileForEditing(m.id)).money.assistant.facts)
+        '- ${m.title} — ${f.text}',
+  ];
 }

@@ -392,6 +392,8 @@ struct MoneyData: Codable, Equatable {
     /// Income transactions that are someone's participation in a shared fixed expense: income id → expense id
     /// (both uuidString). Not income — they come off that expense.
     var costShareIncomes: [String: String] = [:]
+    /// What the assistant knows about this member, and its getting-to-know-you questions.
+    var assistant = AssistantProfile()
 
     /// Until the first check with the Bank of Israel (November 2026).
     static let fallbackRates: [String: Double] = ["USD": 3.157, "EUR": 3.5306, "GBP": 4.235]
@@ -399,7 +401,7 @@ struct MoneyData: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case accounts, transactions, forecast, primeRate, primeAuto, boiRate, primeCheckedAt, nextRateDecision, rateLastChanged
         case cardTransactions, merchantRules, cardImports, trends, maaser, receivables, payDay, autoBalanceSince, cardSettings
-        case exchangeRates, exchangeRatesAt, exchangeRateHistory, costShareIncomes
+        case exchangeRates, exchangeRatesAt, exchangeRateHistory, costShareIncomes, assistant
     }
 
     var checking: Account? { accounts.first { $0.kind == .checking } }
@@ -435,6 +437,7 @@ extension MoneyData {
         exchangeRates = (try? c.decodeIfPresent([String: Double].self, forKey: .exchangeRates)) ?? MoneyData.fallbackRates
         exchangeRatesAt = try? c.decodeIfPresent(Date.self, forKey: .exchangeRatesAt)
         exchangeRateHistory = (try? c.decodeIfPresent([String: [String: Double]].self, forKey: .exchangeRateHistory)) ?? [:]
+        assistant = (try? c.decodeIfPresent(AssistantProfile.self, forKey: .assistant)) ?? AssistantProfile()
         if !accounts.contains(where: { $0.kind == .checking }) {
             accounts.insert(Account(name: "עו״ש", kind: .checking), at: 0)
         }

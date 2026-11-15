@@ -16,6 +16,7 @@ import '../insights/ai_context.dart';
 import '../insights/engine.dart';
 import '../insights/markdown.dart';
 import '../insights/segments.dart';
+import 'assistant_card.dart';
 import 'common.dart';
 import 'theme.dart';
 
@@ -207,6 +208,11 @@ class _InsightsScreenState extends State<InsightsScreen> with WidgetsBindingObse
                   icon: const Icon(Icons.edit_square),
                   onPressed: ai.isRunning ? null : ai.clear,
                 ),
+              IconButton(
+                tooltip: 'מה העוזר יודע עליי',
+                icon: const Icon(Icons.badge_outlined),
+                onPressed: () => openAssistantFacts(context),
+              ),
               IconButton(tooltip: 'הגדרות AI', icon: const Icon(Icons.settings_outlined), onPressed: _settings),
             ]),
           ),
@@ -715,6 +721,7 @@ class _ActionPlanCardState extends State<_ActionPlanCard> {
         'account' => Icons.savings_outlined,
         'trend' => Icons.trending_up,
         'expense' => Icons.autorenew,
+        'fact' => Icons.badge_outlined,
         _ => Icons.event_note,
       };
 

@@ -215,6 +215,16 @@ for (id, file) in family.files {
         "payDay": money.payDay,
         "transactions": money.transactions.count, "cardTransactions": money.cardTransactions.count,
         "trendCount": money.trends.count, "receivables": money.receivables.count,
+        // What the assistant knows, and the question each screen would show now.
+        "assistant": [
+            "facts": money.assistant.facts.map(\.text),
+            "questionIDs": money.assistant.facts.map { $0.questionID ?? "" },
+            "skipped": money.assistant.skipped,
+            "asked": money.assistant.lastAskedAt != nil,
+            "next": ["summary", "incomes", "expenses", "accounts", "trends", "card", "forecast", "insights"]
+                .map { money.assistant.question(for: $0, now: now)?.id ?? "" },
+            "questions": AssistantQuestion.all.map { [$0.id, $0.label, $0.text] + $0.answers + $0.screens },
+        ] as [String: Any],
     ]
 }
 out["files"] = files

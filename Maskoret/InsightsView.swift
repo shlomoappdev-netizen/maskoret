@@ -48,6 +48,7 @@ struct InsightsView: View {
     @EnvironmentObject private var ai: InsightsEngine
     @State private var input = ""
     @State private var showSettings = false
+    @State private var showFacts = false
     @State private var keyInput = ""
     @State private var pasted = ""
     @State private var attachments: [Data] = []
@@ -69,6 +70,11 @@ struct InsightsView: View {
                             Label("שיחה חדשה", systemImage: "square.and.pencil")
                         }
                         .disabled(ai.isRunning)
+                    }
+                    Button {
+                        showFacts = true
+                    } label: {
+                        Label("מה העוזר יודע עליי", systemImage: "person.text.rectangle")
                     }
                     Button {
                         showSettings.toggle()
@@ -95,6 +101,10 @@ struct InsightsView: View {
             }
             .background(Palette.window)
             .navigationTitle("תובנות AI")
+            .sheet(isPresented: $showFacts) {
+                AssistantFactsView()
+                    .environmentObject(store)
+            }
             .task {
                 await ai.loadModels()
                 await ai.pullConversation()

@@ -17,6 +17,7 @@ import 'common.dart';
 import 'households_screen.dart';
 import 'insights_screen.dart';
 import 'money_screens.dart';
+import 'assistant_card.dart';
 import 'summary_screen.dart';
 import 'support_screen.dart';
 import 'tax_settings_screen.dart';
@@ -150,6 +151,8 @@ enum Dest {
       ? page
       : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           ScreenIntro(dest: this),
+          // A question from the assistant, on the screens it has one for (at most one a day).
+          AssistantQuestionCard(screen: name),
           Expanded(child: page),
         ]);
 

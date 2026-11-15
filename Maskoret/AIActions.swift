@@ -15,7 +15,7 @@ struct AIAction: Identifiable {
 
     static let types: Set<String> = [
         "add_account", "update_account", "add_trend", "update_trend",
-        "add_expense", "update_expense", "add_transaction"
+        "add_expense", "update_expense", "add_transaction", "remember_fact", "forget_fact"
     ]
 
     func string(_ key: String) -> String? {
@@ -99,7 +99,7 @@ extension AIAction {
         ("monthly_contribution", "הפקדה חודשית"), ("contribution_day", "יום הפקדה"), ("monthly_limit", "תקרה חודשית"),
         ("charge_day", "יום חיוב"), ("date", "תאריך"), ("start_date", "התחלה"), ("maturity_date", "סיום"),
         ("to_account", "אל חשבון"), ("paid_by_card", "באשראי (true/false)"), ("installments", "תשלומים"),
-        ("active", "פעילה (true/false)"), ("emoji", "אימוג׳י"), ("note", "הערה")
+        ("active", "פעילה (true/false)"), ("emoji", "אימוג׳י"), ("note", "הערה"), ("fact", "מה לזכור")
     ]
 
     static let numberFields: Set<String> = [
@@ -157,6 +157,7 @@ extension AIAction {
         case "add_account", "update_account": return "banknote.fill"
         case "add_trend", "update_trend": return "chart.line.uptrend.xyaxis"
         case "add_expense", "update_expense": return "arrow.triangle.2.circlepath"
+        case "remember_fact", "forget_fact": return "person.text.rectangle"
         default: return "calendar.badge.plus"
         }
     }
@@ -169,6 +170,8 @@ extension AIAction {
         case "update_trend": return "עדכון מגמה: " + (string("trend") ?? string("name") ?? "")
         case "add_expense": return "הוצאה קבועה חדשה: " + (string("name") ?? "")
         case "update_expense": return "עדכון הוצאה קבועה: " + (string("expense") ?? string("name") ?? "")
+        case "remember_fact": return "לזכור עליך: " + (string("fact") ?? "")
+        case "forget_fact": return "לשכוח: " + (string("fact") ?? "")
         default:
             let kind = string("kind") ?? "expense"
             let word = kind == "income" ? "הכנסה" : kind == "transfer" ? "העברה" : "הוצאה"
@@ -314,6 +317,14 @@ extension Store {
                 t.cardInstallments = max(1, Int(action.number("installments") ?? 1))
             }
             money.transactions.append(t)
+
+        case "remember_fact":
+            guard let fact = action.string("fact") else { throw AIActionError.missing("מה לזכור") }
+            money.assistant.remember(fact)
+
+        case "forget_fact":
+            guard let fact = action.string("fact") else { throw AIActionError.missing("מה לשכוח") }
+            guard money.assistant.forget(matching: fact) else { throw AIActionError.notFound("משהו שהעוזר יודע", fact) }
 
         default:
             break
