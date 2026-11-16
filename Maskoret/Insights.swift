@@ -304,6 +304,8 @@ final class InsightsEngine: ObservableObject {
     @Published var cloudBaseURL: String { didSet { UserDefaults.standard.set(cloudBaseURL, forKey: "aiCloudBase") } }
     @Published var cloudModel: String { didSet { UserDefaults.standard.set(cloudModel, forKey: "aiCloudModel"); refreshStatus() } }
     @Published var cloudModels: [String] = []
+    /// A question another screen asked to put to the chat ("למה?" on a tip); the insights screen takes it when it opens.
+    @Published var pendingQuestion: String?
     @Published var hasCloudKey = false
     /// Save the key in the account too, so the user's other devices get it.
     @Published var keyInAccount: Bool { didSet { UserDefaults.standard.set(keyInAccount, forKey: "aiKeyInAccount") } }

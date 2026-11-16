@@ -59,6 +59,53 @@ struct AssistantQuestionCard: View {
     }
 }
 
+// MARK: - The tip at the top of a screen
+
+/// One tip from the local rules (AssistantTips), under the question card. "למה?" asks the AI chat about it;
+/// "לא עכשיו" hides this tip for good (synced with the member's data).
+struct AssistantTipRow: View {
+    let screen: SidebarItem
+    @EnvironmentObject private var store: Store
+    @EnvironmentObject private var ai: InsightsEngine
+
+    private var color: Color { tip?.severity == 3 ? .red : (tip?.severity == 2 ? .orange : .accentColor) }
+    private var tip: AssistantTip? { store.assistantTips.first { $0.screen == screen.rawValue } }
+
+    var body: some View {
+        if let tip {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: tip.severity >= 2 ? "exclamationmark.circle.fill" : "lightbulb.fill")
+                    .foregroundStyle(color)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tip.title)
+                        .font(.callout.weight(.semibold))
+                    Text(tip.text)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 14) {
+                        Button("למה?") {
+                            ai.pendingQuestion = tip.question
+                            store.openScreen = .insights
+                        }
+                        .foregroundStyle(.tint)
+                        Button("לא עכשיו") {
+                            withAnimation { store.money.assistant.dismissTip(tip.id) }
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption.weight(.medium))
+                    .padding(.top, 2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+            .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+}
+
 // MARK: - "מה העוזר יודע עליי"
 
 /// Everything the assistant knows about the member being edited: delete what's wrong, add in your own words.

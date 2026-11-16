@@ -494,7 +494,7 @@ struct PageBar<Actions: View>: View {
             // iPhone: the title is in the navigation bar; the subtitle, then the buttons in a row that scrolls sideways.
             VStack(alignment: .leading, spacing: 10) {
                 if let guide { ScreenIntro(item: guide) }
-                if let guide { AssistantQuestionCard(screen: guide) }
+                if let guide { AssistantQuestionCard(screen: guide); AssistantTipRow(screen: guide) }
                 if let subtitle {
                     Text(subtitle)
                         .font(.callout)
@@ -527,7 +527,7 @@ struct PageBar<Actions: View>: View {
                 actions
             }
             if let guide { ScreenIntro(item: guide) }
-            if let guide { AssistantQuestionCard(screen: guide) }
+            if let guide { AssistantQuestionCard(screen: guide); AssistantTipRow(screen: guide) }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)

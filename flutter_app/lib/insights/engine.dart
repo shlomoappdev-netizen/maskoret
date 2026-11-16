@@ -240,6 +240,14 @@ type: bar, line או pie.
   /// After a card statement is imported, the model looks at the situation and the answer comes as a notification.
   late bool analyzeAfterImport;
 
+  /// A question another screen asked to put to the chat ("למה?" on a tip); the insights screen takes it when it opens.
+  String? pendingQuestion;
+
+  void askFromTip(String question) {
+    pendingQuestion = question;
+    notifyListeners();
+  }
+
   /// The answer on its way should also come as a notification.
   bool _notifyWhenDone = false;
 

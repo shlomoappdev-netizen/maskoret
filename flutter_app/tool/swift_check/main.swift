@@ -215,6 +215,11 @@ for (id, file) in family.files {
         "payDay": money.payDay,
         "transactions": money.transactions.count, "cardTransactions": money.cardTransactions.count,
         "trendCount": money.trends.count, "receivables": money.receivables.count,
+        // The tips of the local rules, for the period that `now` is in.
+        "tips": AssistantTips.all(money: money, picture: monthPicture(year: money.period(containing: now).year,
+                                                                      month: money.period(containing: now).month), now: now)
+            .map { [$0.id, $0.screen, $0.title, $0.text, String($0.severity), $0.question] },
+        "dismissedTips": money.assistant.dismissedTips,
         // What the assistant knows, and the question each screen would show now.
         "assistant": [
             "facts": money.assistant.facts.map(\.text),

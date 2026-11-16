@@ -93,6 +93,23 @@ class AssistantProfile {
     return v is num ? swiftDateToDateTime(v) : null;
   }
 
+  /// Tips the user put off with "לא עכשיו" (AssistantTip.id).
+  List<String> get dismissedTips {
+    final v = _read?['dismissedTips'];
+    return v is List ? v.whereType<String>().toList() : const [];
+  }
+
+  /// How many put-off tips are kept (their ids carry a month, so old ones stop mattering).
+  static const maxDismissedTips = 200;
+
+  /// "לא עכשיו" on a tip: this one doesn't show again.
+  void dismissTip(String id) {
+    final list = _write.writeList('dismissedTips');
+    if (list.contains(id)) return;
+    list.add(id);
+    if (list.length > maxDismissedTips) list.removeRange(0, list.length - maxDismissedTips);
+  }
+
   static String _normalized(String s) => s.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
 
   /// The question to show at the top of a screen now: none when one was already asked today, otherwise the first

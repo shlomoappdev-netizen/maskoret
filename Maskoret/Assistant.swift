@@ -19,16 +19,19 @@ struct AssistantProfile: Codable, Equatable {
     var skipped: [String] = []
     /// When a question was last answered or put off: at most one a day.
     var lastAskedAt: Date? = nil
+    /// Tips the user put off with "לא עכשיו" (AssistantTip.id).
+    var dismissedTips: [String] = []
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case facts, skipped, lastAskedAt }
+    private enum CodingKeys: String, CodingKey { case facts, skipped, lastAskedAt, dismissedTips }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         facts = (try? c.decodeIfPresent([AssistantFact].self, forKey: .facts)) ?? []
         skipped = (try? c.decodeIfPresent([String].self, forKey: .skipped)) ?? []
         lastAskedAt = try? c.decodeIfPresent(Date.self, forKey: .lastAskedAt)
+        dismissedTips = (try? c.decodeIfPresent([String].self, forKey: .dismissedTips)) ?? []
     }
 }
 
@@ -111,6 +114,18 @@ extension AssistantProfile {
         lastAskedAt = now
     }
 
+    /// How many put-off tips are kept (their ids carry a month, so old ones stop mattering).
+    static let maxDismissedTips = 200
+
+    /// "לא עכשיו" on a tip: this one doesn't show again.
+    mutating func dismissTip(_ id: String) {
+        guard !dismissedTips.contains(id) else { return }
+        dismissedTips.append(id)
+        if dismissedTips.count > AssistantProfile.maxDismissedTips {
+            dismissedTips.removeFirst(dismissedTips.count - AssistantProfile.maxDismissedTips)
+        }
+    }
+
     /// Adds a fact in the user's (or the model's) words. False when it's empty or already there.
     @discardableResult
     mutating func remember(_ text: String, now: Date = Date()) -> Bool {
@@ -142,6 +157,11 @@ extension AssistantProfile {
 }
 
 extension Store {
+    /// The tips for what's in view now (not put off by the member being edited), the most important first.
+    var assistantTips: [AssistantTip] {
+        AssistantTips.visible(money: dashboard.money, picture: fullMonthPicture, dismissed: money.assistant.dismissedTips)
+    }
+
     /// What the assistant knows about each member in view, for the model ("## מה ידוע על המשתמש").
     func assistantContextLines() -> [String] {
         var parts: [(title: String?, facts: [AssistantFact])] = []

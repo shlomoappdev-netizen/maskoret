@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../data/assistant.dart';
+import '../data/assistant_tips.dart';
+import '../data/month_picture.dart';
 import 'common.dart';
 
 /// One getting-to-know-you question at the top of the screens it belongs to (AssistantQuestionCard in
@@ -86,6 +88,73 @@ class AssistantQuestionCard extends StatelessWidget {
                     ),
                   ),
                 ]),
+              ]),
+            ),
+          ),
+        ),
+      );
+    });
+  }
+}
+
+/// One tip from the local rules, under the question card (AssistantTipRow in AssistantView.swift). "למה?" asks the
+/// AI chat about it; "לא עכשיו" hides this tip for good (synced with the member's data).
+class AssistantTipRow extends StatelessWidget {
+  const AssistantTipRow({super.key, required this.screen, required this.onWhy});
+  final String screen;
+
+  /// Opens the AI insights screen (the question is already waiting for it).
+  final void Function(BuildContext context) onWhy;
+
+  @override
+  Widget build(BuildContext context) {
+    return StoreBuilder(builder: (context, store) {
+      final tip = AssistantTips.tipFor(
+          screen, store.dashboard.money, MonthPicture.currentFull(store.dashboard), store.money.assistant.dismissedTips);
+      if (tip == null) return const SizedBox.shrink();
+      final theme = Theme.of(context);
+      final color = switch (tip.severity) { 3 => theme.colorScheme.error, 2 => Colors.orange.shade800, _ => theme.colorScheme.primary };
+      final button = TextButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        textStyle: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+      );
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1060),
+            child: Container(
+              padding: const EdgeInsetsDirectional.fromSTEB(10, 8, 10, 2),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(tip.severity >= 2 ? Icons.error_outline : Icons.lightbulb_outline, size: 18, color: color),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(tip.title, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(tip.text, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                    Row(children: [
+                      TextButton(
+                        style: button,
+                        onPressed: () {
+                          context.scope.insights.askFromTip(tip.question);
+                          onWhy(context);
+                        },
+                        child: const Text('למה?'),
+                      ),
+                      TextButton(
+                        style: button.copyWith(foregroundColor: WidgetStatePropertyAll(theme.colorScheme.onSurfaceVariant)),
+                        onPressed: () => store.edit((f) => f.money.assistant.dismissTip(tip.id)),
+                        child: const Text('לא עכשיו'),
+                      ),
+                    ]),
+                  ]),
+                ),
               ]),
             ),
           ),

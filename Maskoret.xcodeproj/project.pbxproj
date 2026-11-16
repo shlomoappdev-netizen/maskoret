@@ -31,6 +31,7 @@
 		9828A9936C285B291D293795 /* Trends.swift in Sources */ = {isa = PBXBuildFile; fileRef = B518917B7E7C9C825283C0D9 /* Trends.swift */; };
 		FB408D5260559DF2BD2AECD6 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6031EB26D6411F4A2F4ECFDB /* AssistantView.swift */; };
 		4739AB0A1C60174A1A29D6E5 /* Assistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D7DD517DBDF16D22270F70 /* Assistant.swift */; };
+		C715BD7D760E2578A2AA06FA /* AssistantTips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1A22F559A8D4FD262E2EFA /* AssistantTips.swift */; };
 		C31139902E3BB1554AA06057 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194FBB91AE84FECF414891AD /* CardView.swift */; };
 		78F7164B12C6EA1A67E5295F /* Card.swift in Sources */ = {isa = PBXBuildFile; fileRef = 982480445305B6407618A726 /* Card.swift */; };
 		61143D204C27D8A3AD22D48C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BB636196F91ED59D7A4919 /* Assets.xcassets */; };
@@ -82,6 +83,7 @@
 		B735FC0C11D34C669F0E2DC8 /* Trends.swift in Sources */ = {isa = PBXBuildFile; fileRef = B518917B7E7C9C825283C0D9 /* Trends.swift */; };
 		78F496931B0F4DE41E73DFCC /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6031EB26D6411F4A2F4ECFDB /* AssistantView.swift */; };
 		847E57A2EC46E5BD293814BB /* Assistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D7DD517DBDF16D22270F70 /* Assistant.swift */; };
+		BA78AB4DDF2E6382ADCDE649 /* AssistantTips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1A22F559A8D4FD262E2EFA /* AssistantTips.swift */; };
 		56A7472C87354BBBB95EE022 /* CardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194FBB91AE84FECF414891AD /* CardView.swift */; };
 		39CC401D79574424BA77EBBA /* Card.swift in Sources */ = {isa = PBXBuildFile; fileRef = 982480445305B6407618A726 /* Card.swift */; };
 		CAB6232F362E4A65A7DD741F /* BackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C0E622B32BF9965177CEAB /* BackupView.swift */; };
@@ -139,6 +141,7 @@
 		B518917B7E7C9C825283C0D9 /* Trends.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Trends.swift; sourceTree = "<group>"; };
 		6031EB26D6411F4A2F4ECFDB /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 		A1D7DD517DBDF16D22270F70 /* Assistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Assistant.swift; sourceTree = "<group>"; };
+		3C1A22F559A8D4FD262E2EFA /* AssistantTips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTips.swift; sourceTree = "<group>"; };
 		194FBB91AE84FECF414891AD /* CardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardView.swift; sourceTree = "<group>"; };
 		982480445305B6407618A726 /* Card.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Card.swift; sourceTree = "<group>"; };
 		32BB636196F91ED59D7A4919 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -229,6 +232,7 @@
 				B518917B7E7C9C825283C0D9 /* Trends.swift */,
 				6031EB26D6411F4A2F4ECFDB /* AssistantView.swift */,
 				A1D7DD517DBDF16D22270F70 /* Assistant.swift */,
+				3C1A22F559A8D4FD262E2EFA /* AssistantTips.swift */,
 				194FBB91AE84FECF414891AD /* CardView.swift */,
 				982480445305B6407618A726 /* Card.swift */,
 				71C0E622B32BF9965177CEAB /* BackupView.swift */,
@@ -413,6 +417,7 @@
 				9828A9936C285B291D293795 /* Trends.swift in Sources */,
 				FB408D5260559DF2BD2AECD6 /* AssistantView.swift in Sources */,
 				4739AB0A1C60174A1A29D6E5 /* Assistant.swift in Sources */,
+				C715BD7D760E2578A2AA06FA /* AssistantTips.swift in Sources */,
 				C31139902E3BB1554AA06057 /* CardView.swift in Sources */,
 				78F7164B12C6EA1A67E5295F /* Card.swift in Sources */,
 				45607F649856AE65E3CA60A8 /* BackupView.swift in Sources */,
@@ -479,6 +484,7 @@
 				B735FC0C11D34C669F0E2DC8 /* Trends.swift in Sources */,
 				78F496931B0F4DE41E73DFCC /* AssistantView.swift in Sources */,
 				847E57A2EC46E5BD293814BB /* Assistant.swift in Sources */,
+				BA78AB4DDF2E6382ADCDE649 /* AssistantTips.swift in Sources */,
 				56A7472C87354BBBB95EE022 /* CardView.swift in Sources */,
 				39CC401D79574424BA77EBBA /* Card.swift in Sources */,
 				CAB6232F362E4A65A7DD741F /* BackupView.swift in Sources */,
@@ -565,7 +571,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -579,7 +585,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.25.0;
+				MARKETING_VERSION = 4.26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -597,7 +603,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_PREVIEWS = YES;
@@ -611,7 +617,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 4.25.0;
+				MARKETING_VERSION = 4.26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = "מחשבון שכר";
@@ -627,7 +633,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				DEVELOPMENT_TEAM = 79K93494T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -646,7 +652,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.25.0;
+				MARKETING_VERSION = 4.26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;
@@ -665,7 +671,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				DEVELOPMENT_TEAM = 79K93494T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -684,7 +690,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 4.25.0;
+				MARKETING_VERSION = 4.26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shlomodavid.maskoret.ios;
 				PRODUCT_MODULE_NAME = Maskoret;
 				PRODUCT_NAME = MaskoretiOS;

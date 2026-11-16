@@ -101,6 +101,8 @@ struct InsightsView: View {
             }
             .background(Palette.window)
             .navigationTitle("תובנות AI")
+            .onAppear(perform: takePendingQuestion)
+            .onChange(of: ai.pendingQuestion) { _, _ in takePendingQuestion() }
             .sheet(isPresented: $showFacts) {
                 AssistantFactsView()
                     .environmentObject(store)
@@ -393,6 +395,17 @@ struct InsightsView: View {
                 label: text.isEmpty ? "📷 תמונה" : nil, images: attachments, context: store.aiContext())
         input = ""
         attachments = []
+    }
+
+    /// A question from a tip on another screen: sent right away when the model is ready, otherwise left in the box.
+    private func takePendingQuestion() {
+        guard let question = ai.pendingQuestion else { return }
+        ai.pendingQuestion = nil
+        if ai.canSend && !ai.isRunning {
+            ai.send(question, context: store.aiContext())
+        } else {
+            input = question
+        }
     }
 
     private func addImage(_ data: Data) {

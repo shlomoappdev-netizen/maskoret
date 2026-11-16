@@ -153,6 +153,8 @@ enum Dest {
           ScreenIntro(dest: this),
           // A question from the assistant, on the screens it has one for (at most one a day).
           AssistantQuestionCard(screen: name),
+          // One tip from the local rules (AssistantTips), when there is one for this screen.
+          AssistantTipRow(screen: name, onWhy: (context) => openDest(context, Dest.insights)),
           Expanded(child: page),
         ]);
 

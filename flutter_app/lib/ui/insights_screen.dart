@@ -97,7 +97,30 @@ class _InsightsScreenState extends State<InsightsScreen> with WidgetsBindingObse
       if (mounted) setState(() {});
     });
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _open());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.scope.insights.addListener(_takePendingQuestion);
+      _takePendingQuestion();
+      _open();
+    });
+  }
+
+  InsightsEngine? _listening;
+
+  /// A question from a tip on another screen: sent right away when the model is ready, otherwise left in the box.
+  void _takePendingQuestion() {
+    if (!mounted) return;
+    final scope = context.scope;
+    final ai = _listening = scope.insights;
+    final question = ai.pendingQuestion;
+    if (question == null) return;
+    ai.pendingQuestion = null;
+    if (ai.canSend && !ai.isRunning) {
+      ai.send(question, context: aiContext(scope.store));
+    } else {
+      _input.text = question;
+      setState(() {});
+    }
   }
 
   @override
@@ -121,6 +144,7 @@ class _InsightsScreenState extends State<InsightsScreen> with WidgetsBindingObse
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _listening?.removeListener(_takePendingQuestion);
     _poll?.cancel();
     _input.dispose();
     _pasted.dispose();
