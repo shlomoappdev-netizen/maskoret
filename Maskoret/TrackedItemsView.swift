@@ -58,10 +58,11 @@ struct TrackedItemsView: View {
             }
             .navigationTitle("מעקב רכישות")
             .sheet(item: $newItem) { item in
-                TrackedItemEditor(item: item, isNew: true) { saved, firstPurchase in
+                TrackedItemEditor(item: item, isNew: true) { saved, firstPurchase, chargeID in
                     var saved = saved
                     if let firstPurchase { saved.purchases.append(firstPurchase) }
                     store.upsertTracked(saved)
+                    if firstPurchase != nil, let chargeID { store.markCard(chargeID, asTracked: saved.id) }
                     selectedID = saved.id
                 }
             }
@@ -283,12 +284,13 @@ struct TrackedItemDetailView: View {
             PurchaseEditor(
                 purchase: purchase,
                 isNew: !item.purchases.contains { $0.id == purchase.id }
-            ) { saved in
+            ) { saved, chargeID in
                 store.addPurchase(saved, to: item.id)
+                if let chargeID { store.markCard(chargeID, asTracked: item.id) }
             }
         }
         .sheet(isPresented: $editingItem) {
-            TrackedItemEditor(item: item, isNew: false) { saved, _ in
+            TrackedItemEditor(item: item, isNew: false) { saved, _, _ in
                 store.upsertTracked(saved)
             }
         }
@@ -329,12 +331,13 @@ struct TrackedItemEditor: View {
     @State private var item: TrackedItem
     @State private var addFirstPurchase: Bool
     @State private var firstPurchase = Purchase()
+    @State private var chargeID: String?
     let isNew: Bool
-    let onSave: (TrackedItem, Purchase?) -> Void
+    let onSave: (TrackedItem, Purchase?, String?) -> Void
 
     private let emojis = ["👟", "👕", "👖", "🧥", "📱", "💻", "👓", "💈", "🔧", "🛞", "🦷", "🛏️", "🎧", "⌚️", "🎒", "🧴", "📄", "📦"]
 
-    init(item: TrackedItem, isNew: Bool, onSave: @escaping (TrackedItem, Purchase?) -> Void) {
+    init(item: TrackedItem, isNew: Bool, onSave: @escaping (TrackedItem, Purchase?, String?) -> Void) {
         _item = State(initialValue: item)
         _addFirstPurchase = State(initialValue: isNew)
         self.isNew = isNew
@@ -345,7 +348,7 @@ struct TrackedItemEditor: View {
         SheetContainer(
             title: isNew ? "פריט חדש למעקב" : "עריכת פריט",
             width: 520,
-            onSave: { onSave(item, isNew && addFirstPurchase ? firstPurchase : nil) }
+            onSave: { onSave(item, isNew && addFirstPurchase ? firstPurchase : nil, isNew && addFirstPurchase ? chargeID : nil) }
         ) {
             Section {
                 FormTextField("שם", text: $item.name, prompt: Text("למשל: נעלי ריצה"))
@@ -378,11 +381,12 @@ struct TrackedItemEditor: View {
                 Section {
                     Toggle("רשום את הקנייה האחרונה", isOn: $addFirstPurchase)
                     if addFirstPurchase {
+                        RecentChargePicker(selection: $chargeID, purchase: $firstPurchase)
                         DatePicker("מתי קנית", selection: $firstPurchase.date, in: ...Date(), displayedComponents: .date)
                         AmountField(title: "מחיר", value: $firstPurchase.price)
                     }
                 } footer: {
-                    Text("למשל: מתי קנית את זוג הנעליים שאתה נועל עכשיו וכמה הוא עלה.")
+                    Text("למשל: מתי קנית את זוג הנעליים שאתה נועל עכשיו וכמה הוא עלה. אם שילמת באשראי, אפשר לבחור את החיוב מהרשימה — התאריך והמחיר יתמלאו לבד, והחיוב ישויך לפריט.")
                 }
             }
         }
@@ -391,22 +395,54 @@ struct TrackedItemEditor: View {
 
 struct PurchaseEditor: View {
     @State private var purchase: Purchase
+    @State private var chargeID: String?
     let isNew: Bool
-    let onSave: (Purchase) -> Void
+    let onSave: (Purchase, String?) -> Void
 
-    init(purchase: Purchase, isNew: Bool, onSave: @escaping (Purchase) -> Void) {
+    init(purchase: Purchase, isNew: Bool, onSave: @escaping (Purchase, String?) -> Void) {
         _purchase = State(initialValue: purchase)
         self.isNew = isNew
         self.onSave = onSave
     }
 
     var body: some View {
-        SheetContainer(title: isNew ? "קנייה חדשה" : "עריכת קנייה", width: 420, onSave: { onSave(purchase) }) {
+        SheetContainer(title: isNew ? "קנייה חדשה" : "עריכת קנייה", width: 420, onSave: { onSave(purchase, isNew ? chargeID : nil) }) {
             Section {
+                if isNew { RecentChargePicker(selection: $chargeID, purchase: $purchase) }
                 DatePicker("תאריך", selection: $purchase.date, in: ...Date(), displayedComponents: .date)
                 AmountField(title: "מחיר", value: $purchase.price)
                 FormTextField("הערה", text: $purchase.note, prompt: Text("למשל: דגם, חנות"))
             }
+        }
+    }
+}
+
+/// "From a card charge": picks one of the recent card charges for a new purchase, fills in its date, full price and
+/// merchant, and lets the caller link that charge to the item when it saves.
+struct RecentChargePicker: View {
+    @EnvironmentObject private var store: Store
+    @Binding var selection: String?
+    @Binding var purchase: Purchase
+    @State private var charges: [CardTransaction] = []
+
+    var body: some View {
+        Group {
+            if !charges.isEmpty {
+                Picker("מחיוב באשראי", selection: $selection) {
+                    Text("בלי — אמלא לבד").tag(String?.none)
+                    ForEach(charges) { t in
+                        Text(verbatim: Fmt.date(t.date) + " · " + t.merchant + " · " + Fmt.money(t.purchasePrice))
+                            .tag(Optional(t.id))
+                    }
+                }
+            }
+        }
+        .onAppear { charges = store.recentChargesForTracked() }
+        .onChange(of: selection) { _, id in
+            guard let id, let t = charges.first(where: { $0.id == id }) else { return }
+            purchase.date = min(t.date, Date())
+            purchase.price = t.purchasePrice
+            purchase.note = t.merchant
         }
     }
 }

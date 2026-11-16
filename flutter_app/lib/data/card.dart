@@ -51,6 +51,9 @@ class CardTransaction {
   bool get ignored => _o.b('ignored');
   double get owedPortion => _o.d('owedPortion');
 
+  /// The full price of the purchase: an installment's original amount, otherwise what was charged.
+  double get purchasePrice => originalAmount != 0 ? originalAmount.abs() : amount.abs();
+
   /// What is really your own spending in this charge.
   double get myAmount => amount > 0 ? (amount - owedPortion > 0 ? amount - owedPortion : 0) : amount;
 
@@ -271,6 +274,23 @@ class CardData {
 
   final MoneyData money;
   late final List<CardTransaction> cardTransactions;
+
+  /// Recent charges that could be a tracked purchase, newest first: not ignored, not a refund, and not linked to a
+  /// fixed expense or a tracked item yet. Every installment row repeats the purchase's date, merchant and full price,
+  /// so each purchase is listed once (recentChargesForTracked in Card.swift).
+  List<CardTransaction> recentForTracked({int limit = 20}) {
+    final seen = <String>{};
+    final out = <CardTransaction>[];
+    for (final t in [...cardTransactions]..sort((a, b) => b.date.compareTo(a.date))) {
+      final signed = t.originalAmount != 0 ? t.originalAmount : t.amount;
+      if (t.ignored || signed <= 0 || t.linkedExpenseID != null || t.linkedTrackedID != null) continue;
+      final d = t.date;
+      if (!seen.add('${d.year}-${d.month}-${d.day}|${t.merchant}|${t.purchasePrice.toStringAsFixed(2)}')) continue;
+      out.add(t);
+      if (out.length == limit) break;
+    }
+    return out;
+  }
 
   late final List<CardSetting> cardSettings = JObj(money.raw).objects('cardSettings').map(CardSetting.new).toList();
 

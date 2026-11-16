@@ -43,6 +43,9 @@ struct CardTransaction: Identifiable, Codable, Equatable, Hashable {
     /// Part of the charge someone owes you back ("חייבים לי") — not your spending.
     var owedPortion: Double = 0
 
+    /// The full price of the purchase: an installment's original amount, otherwise what was charged.
+    var purchasePrice: Double { originalAmount != 0 ? abs(originalAmount) : abs(amount) }
+
     private enum CodingKeys: String, CodingKey {
         case id, date, merchant, category, cardLast4, type, amount, originalAmount, originalCurrency, amountEstimated
         case chargeDate, chargeEstimated, note, method, status, linkedExpenseID, linkedTrackedID, ignored, importedAt, owedPortion
@@ -1151,13 +1154,40 @@ extension Store {
         money = m
 
         guard let itemID, let k = budget.trackedItems.firstIndex(where: { $0.id == itemID }) else { return }
-        let price = tx.originalAmount != 0 ? abs(tx.originalAmount) : abs(tx.amount)
+        let price = tx.purchasePrice
         let exists = budget.trackedItems[k].purchases.contains {
             Calendar.current.isDate($0.date, inSameDayAs: tx.date) && abs($0.price - price) < 0.01
         }
         if !exists {
             budget.trackedItems[k].purchases.append(Purchase(date: tx.date, price: price, note: tx.merchant))
         }
+    }
+
+    /// Recent card charges that could be a tracked purchase, newest first: not ignored, not a refund, and not linked to
+    /// a fixed expense or a tracked item yet. Every installment row repeats the purchase's date, merchant and full
+    /// price, so each purchase is listed once.
+    func recentChargesForTracked(limit: Int = 20) -> [CardTransaction] {
+        var seen = Set<String>()
+        var out: [CardTransaction] = []
+        for t in money.cardTransactions.sorted(by: { $0.date > $1.date }) {
+            let signed = t.originalAmount != 0 ? t.originalAmount : t.amount
+            guard !t.ignored, signed > 0, t.linkedExpenseID == nil, t.linkedTrackedID == nil else { continue }
+            let day = Calendar.current.startOfDay(for: t.date).timeIntervalSince1970
+            guard seen.insert("\(day)|\(t.merchant)|\(String(format: "%.2f", t.purchasePrice))").inserted else { continue }
+            out.append(t)
+            if out.count == limit { break }
+        }
+        return out
+    }
+
+    /// Marks a card charge as a tracked item's purchase, without recording a purchase: the caller already saved one
+    /// (maybe with an edited price or date, which `linkCard`'s same-day-same-price check would record twice).
+    func markCard(_ txID: String, asTracked itemID: UUID) {
+        guard let i = money.cardTransactions.firstIndex(where: { $0.id == txID }) else { return }
+        var m = money
+        m.cardTransactions[i].linkedTrackedID = itemID
+        m.cardTransactions[i].linkedExpenseID = nil
+        money = m
     }
 
     func setCardIgnored(_ txID: String, _ ignored: Bool) {

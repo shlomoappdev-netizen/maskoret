@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../data/card.dart';
 import '../data/fmt.dart';
 import '../data/json.dart';
+import '../data/max_import.dart';
 import '../data/models.dart';
 import 'common.dart';
 import 'theme.dart';
@@ -277,6 +279,9 @@ Future<String?> editTracked(BuildContext context, Json draft, {required bool isN
   var addFirst = isNew;
   var firstDate = DateTime.now();
   var firstPrice = 0.0;
+  var firstNote = '';
+  String? chargeID;
+  final charges = isNew ? CardData(store.money).recentForTracked() : const <CardTransaction>[];
   var name = item.name;
   var months = item.expectedMonths;
   var include = item.includeInBudget;
@@ -327,9 +332,19 @@ Future<String?> editTracked(BuildContext context, Json draft, {required bool isN
           onChanged: (v) => setState(() => addFirst = v),
         ),
         if (addFirst) ...[
+          if (charges.isNotEmpty) ...[
+            _chargePicker(charges, chargeID, (t) => setState(() {
+                  chargeID = t?.id;
+                  if (t == null) return;
+                  firstDate = t.date.isAfter(DateTime.now()) ? DateTime.now() : t.date;
+                  firstPrice = t.purchasePrice;
+                  firstNote = t.merchant;
+                })),
+            const SizedBox(height: 12),
+          ],
           DateField(label: 'מתי קנית', value: firstDate, onChanged: (v) => setState(() => firstDate = v ?? firstDate)),
           const SizedBox(height: 12),
-          NumberField(label: 'מחיר', suffix: '₪', value: firstPrice, onChanged: (v) => firstPrice = v),
+          NumberField(key: ValueKey('first-$chargeID'), label: 'מחיר', suffix: '₪', value: firstPrice, onChanged: (v) => firstPrice = v),
         ],
       ],
     ]),
@@ -340,9 +355,10 @@ Future<String?> editTracked(BuildContext context, Json draft, {required bool isN
         ..['expectedMonths'] = jsonNumber(months)
         ..['includeInBudget'] = include;
       if (isNew && addFirst) {
-        ((draft['purchases'] ??= <dynamic>[]) as List).add(Purchase.create(date: firstDate, price: firstPrice));
+        ((draft['purchases'] ??= <dynamic>[]) as List).add(Purchase.create(date: firstDate, price: firstPrice, note: firstNote));
       }
       f.budget.upsertTracked(draft);
+      if (isNew && addFirst && chargeID != null) CardActions(f).markAsTracked(chargeID!, draft['id'] as String);
     }),
   );
   return saved ? draft['id'] as String : null;
@@ -355,22 +371,60 @@ Future<void> editPurchase(BuildContext context, String itemId, Json draft, {requ
   var date = p.date;
   var price = p.price;
   var note = p.note;
+  String? chargeID;
+  final charges = isNew ? CardData(store.money).recentForTracked() : const <CardTransaction>[];
   await showEditor(
     context,
     title: isNew ? 'קנייה חדשה' : 'עריכת קנייה',
     builder: (context, setState) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (charges.isNotEmpty) ...[
+        _chargePicker(charges, chargeID, (t) => setState(() {
+              chargeID = t?.id;
+              if (t == null) return;
+              date = t.date.isAfter(DateTime.now()) ? DateTime.now() : t.date;
+              price = t.purchasePrice;
+              note = t.merchant;
+            })),
+        const SizedBox(height: 12),
+      ],
       DateField(label: 'תאריך', value: date, onChanged: (v) => setState(() => date = v ?? date)),
       const SizedBox(height: 12),
-      NumberField(label: 'מחיר', suffix: '₪', value: price, onChanged: (v) => price = v),
+      NumberField(key: ValueKey('price-$chargeID'), label: 'מחיר', suffix: '₪', value: price, onChanged: (v) => price = v),
       const SizedBox(height: 12),
-      TextInput(label: 'הערה (למשל: דגם, חנות)', initial: note, onChanged: (v) => note = v),
+      TextInput(
+          key: ValueKey('note-$chargeID'), label: 'הערה (למשל: דגם, חנות)', initial: note, onChanged: (v) => note = v),
     ]),
-    onSave: () => store.edit((f) => f.budget.addPurchase(
-        itemId,
-        draft
-          ..['date'] = dateTimeToSwift(date)
-          ..['price'] = jsonNumber(price)
-          ..['note'] = note.trim())),
+    onSave: () => store.edit((f) {
+      f.budget.addPurchase(
+          itemId,
+          draft
+            ..['date'] = dateTimeToSwift(date)
+            ..['price'] = jsonNumber(price)
+            ..['note'] = note.trim());
+      if (chargeID != null) CardActions(f).markAsTracked(chargeID!, itemId);
+    }),
     onDelete: isNew ? null : () => store.edit((f) => f.budget.deletePurchase(itemId, p.id)),
   );
 }
+
+/// "From a card charge" (RecentChargePicker in TrackedItemsView.swift): picking a recent charge fills in the purchase's
+/// date, full price and merchant, and the editor links that charge to the item when it saves.
+Widget _chargePicker(List<CardTransaction> charges, String? value, ValueChanged<CardTransaction?> onPick) =>
+    DropdownButtonFormField<String?>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'מחיוב באשראי',
+        helperText: 'התאריך והמחיר יתמלאו לבד, והחיוב ישויך לפריט',
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        const DropdownMenuItem(value: null, child: Text('בלי — אמלא לבד')),
+        for (final t in charges)
+          DropdownMenuItem(
+            value: t.id,
+            child: Text('${Fmt.date(t.date)} · ${t.merchant} · ${Fmt.money(t.purchasePrice)}', overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: (id) => onPick(charges.where((t) => t.id == id).firstOrNull),
+    );

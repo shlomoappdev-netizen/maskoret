@@ -855,7 +855,7 @@ class CardActions {
     final c = CardTransaction(tx);
     final item = JObj(file.json['budget'] as Json).objects('trackedItems').where((t) => t['id'] == itemID).firstOrNull;
     if (item == null) return;
-    final price = c.originalAmount != 0 ? c.originalAmount.abs() : c.amount.abs();
+    final price = c.purchasePrice;
     final purchases = JObj(item);
     final exists = purchases.objects('purchases').any((p) {
       final d = Purchase(p).date;
@@ -869,6 +869,16 @@ class CardActions {
         'note': c.merchant,
       });
     }
+  }
+
+  /// Marks a charge as a tracked item's purchase without recording a purchase: the editor already saved one (maybe
+  /// with an edited price or date, which linkToTracked's same-day-same-price check would record twice).
+  void markAsTracked(String txID, String itemID) {
+    final tx = _card(txID);
+    if (tx == null) return;
+    JObj(tx)
+      ..set('linkedTrackedID', itemID)
+      ..set('linkedExpenseID', null);
   }
 
   void setIgnored(String txID, bool ignored) => _card(txID)?['ignored'] = ignored;
