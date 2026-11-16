@@ -11,6 +11,7 @@ import '../data/models.dart';
 import '../state/store.dart';
 import '../support/app_log.dart';
 import 'account.dart';
+import 'assistant_push.dart';
 import 'merge.dart';
 
 class RemoteData {
@@ -162,6 +163,9 @@ class ServerSync extends ChangeNotifier {
   final Duration retryDelay;
   final Duration pollInterval;
 
+  /// The assistant's notifications (null in the tests).
+  AssistantPush? push;
+
   String status = '';
   bool isSyncing = false;
   String? lastError;
@@ -258,6 +262,7 @@ class ServerSync extends ChangeNotifier {
     account.activeHouseholdId = linked;
     await _listen(linked);
     await sync();
+    push?.register();
   }
 
   /// This device's data isn't linked to a household of the account (first sign-in, or after signing out).
@@ -322,6 +327,7 @@ class ServerSync extends ChangeNotifier {
   /// Signing out (or deleting the account): last changes go up, then the encrypted copy on this device is deleted.
   Future<void> signedOut() async {
     await sync();
+    await push?.unregister();
     await _stop();
     await _wipeDevice();
     notifyListeners();
@@ -472,6 +478,7 @@ class ServerSync extends ChangeNotifier {
       // A change made while saving stays pending for the next round.
       if (localChangedAt == changedBefore) localChangedAt = null;
       _markSynced('נשמר בשרת');
+      push?.announce(hid);
     } else {
       // Someone saved in between — the next round loads it and decides.
       AppLog.add('sync', 'התנגשות: יש גרסה חדשה בשרת (ציפינו ל-$expected)');

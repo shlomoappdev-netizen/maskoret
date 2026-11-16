@@ -19,6 +19,7 @@ import 'insights/engine.dart';
 import 'state/secure_file.dart';
 import 'state/store.dart';
 import 'sync/account.dart';
+import 'sync/assistant_push.dart';
 import 'sync/server_sync.dart';
 import 'ui/app_prompts.dart';
 import 'ui/auth_screen.dart';
@@ -68,6 +69,7 @@ Future<void> main() async {
     prefs: prefs,
     deviceName: deviceName,
   )..attach();
+  if (!demo) sync.push = AssistantPush(store, prefs);
   final supportCenter = SupportCenter(deviceName: deviceName);
   account.onChanged = () async {
     AppLog.add('auth', account.isSignedIn ? 'מחובר' : 'מנותק');

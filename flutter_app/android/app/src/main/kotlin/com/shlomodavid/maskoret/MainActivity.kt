@@ -1,5 +1,7 @@
 package com.shlomodavid.maskoret
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -12,6 +14,7 @@ import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.google.firebase.messaging.FirebaseMessaging
 import java.io.File
 
 class MainActivity : FlutterActivity() {
@@ -20,6 +23,24 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // The assistant's notifications: the channel they show in, and this phone's Firebase token for the server.
+        // A build without google-services.json has no Firebase: the token is simply null.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel("assistant", "התראות מהעוזר", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "חריגה מתקרה, חודש שנכנס למינוס ודברים שכדאי לדעת עליהם"
+                })
+        }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "maskoret/push").setMethodCallHandler { call, result ->
+            if (call.method != "token") return@setMethodCallHandler result.notImplemented()
+            try {
+                FirebaseMessaging.getInstance().token
+                    .addOnSuccessListener { result.success(it) }
+                    .addOnFailureListener { result.success(null) }
+            } catch (e: Exception) {
+                result.success(null)
+            }
+        }
         // Updates: hands a downloaded APK to the system installer (the user confirms there), and reports back how it
         // ended — the system only tells why an install failed through a PackageInstaller session.
         val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "maskoret/update")

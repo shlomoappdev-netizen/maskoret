@@ -16,3 +16,7 @@ key.properties
 maskoret-signing-key.zip
 pepk.jar
 encryption_public_key.pem
+
+# Firebase config for this app: kept out of the public repo
+app/google-services.json
+/.kotlin/

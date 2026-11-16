@@ -51,7 +51,10 @@ struct PhoneRoot: View {
                     Task { await sync.sync() }
                 Task { await store.refreshPrime(); await store.refreshExchangeRates() }
                 Task { await support.refresh(isAdmin: account.isSupportAdmin) }
+                AssistantPush.askPermissionIfNeeded(store)
             case .background:
+                // The assistant's alert for tomorrow morning (the iPhone has no server push).
+                if account.isSignedIn { AssistantPush.scheduleLocal(store) }
                 // Push the last changes before iOS suspends the app.
                 let id = UIApplication.shared.beginBackgroundTask(withName: "sync")
                 Task {

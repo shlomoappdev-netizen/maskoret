@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Supabase
+import UserNotifications
 
 /// Keeps the household on screen in sync with the server.
 ///
@@ -395,6 +396,7 @@ final class ServerSync: ObservableObject {
             // A change made while saving stays pending for the next round.
             if localChangedAt == changedBefore { localChangedAt = nil }
             markSynced("נשמר בשרת")
+            Task { await AssistantPush.announce(store, hid: hid) }
         } else {
             // Someone saved in between — the next round loads it and decides.
             status = "יש גרסה חדשה בשרת — מסנכרן…"
@@ -649,4 +651,88 @@ enum SyncMerge {
         conflicts.append(path)
         return preferLocal ? l : r
     }
+}
+
+// MARK: - The assistant's notifications
+
+/// The assistant's notifications (assistant_push.dart in the Flutter app).
+///
+/// Every device, after it saves a change to the server, looks at the most important tip of the local rules
+/// (`AssistantTips`); a new one that matters is handed to the server's `assistant-push` function, which sends it to
+/// the household members' Android phones — each alert once, at most one notification a day per user.
+/// The iPhone has no server push (it needs the paid Apple Developer Program): it schedules the same alert itself,
+/// as a local notification for the next morning.
+@MainActor
+enum AssistantPush {
+    /// Only alerts about the budget go out as notifications (severity 2 and up); housekeeping tips stay on the screens.
+    static let minSeverity = 2
+
+    /// The tip worth a notification now, if any.
+    static func alert(_ store: Store, skipping: [String] = []) -> AssistantTip? {
+        AssistantTips.visible(money: store.dashboard.money, picture: store.fullMonthPicture,
+                              dismissed: store.money.assistant.dismissedTips)
+            .first { $0.severity >= minSeverity && !skipping.contains($0.id) }
+    }
+
+    /// After a save to the server: a new alert goes to the household's phones.
+    static func announce(_ store: Store, hid: UUID) async {
+        guard let tip = alert(store) else { return }
+        var sent = UserDefaults.standard.stringArray(forKey: "pushAnnounced") ?? []
+        guard !sent.contains(tip.id) else { return }
+        struct Body: Encodable {
+            let household_id: String
+            let alert_id: String
+            let title: String
+            let body: String
+        }
+        do {
+            try await supabase.functions.invoke("assistant-push", options: FunctionInvokeOptions(
+                body: Body(household_id: hid.uuidString.lowercased(), alert_id: tip.id, title: tip.title, body: tip.text)))
+            sent.append(tip.id)
+            UserDefaults.standard.set(Array(sent.suffix(60)), forKey: "pushAnnounced")
+        } catch {
+            AppLog.add("push", "שליחת התראה נכשלה: \(error.localizedDescription)")
+        }
+    }
+
+    #if os(iOS)
+    private static let requestID = "assistant-daily"
+
+    /// The iPhone goes to the background: the most important alert is scheduled for 9:00 the next morning (one
+    /// pending notification at most, so never more than one a day). An alert that was already delivered isn't
+    /// scheduled again; when nothing needs attention any more, the pending one is removed.
+    static func scheduleLocal(_ store: Store) {
+        let defaults = UserDefaults.standard
+        var notified = defaults.stringArray(forKey: "assistantNotified") ?? []
+        if let id = defaults.string(forKey: "assistantScheduledID"),
+           let at = defaults.object(forKey: "assistantScheduledAt") as? Date, at <= Date() {
+            notified.append(id)
+            defaults.set(Array(notified.suffix(60)), forKey: "assistantNotified")
+        }
+        defaults.removeObject(forKey: "assistantScheduledID")
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [requestID])
+        guard let tip = alert(store, skipping: notified) else { return }
+        let cal = Calendar.current
+        var fire = cal.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
+        if fire <= Date() { fire = cal.date(byAdding: .day, value: 1, to: fire) ?? fire }
+        let content = UNMutableNotificationContent()
+        content.title = tip.title
+        content.body = tip.text
+        content.sound = .default
+        let trigger = UNCalendarNotificationTrigger(
+            dateMatching: cal.dateComponents([.year, .month, .day, .hour, .minute], from: fire), repeats: false)
+        center.add(UNNotificationRequest(identifier: requestID, content: content, trigger: trigger))
+        defaults.set(tip.id, forKey: "assistantScheduledID")
+        defaults.set(fire, forKey: "assistantScheduledAt")
+    }
+
+    /// The app is on screen: when there's an alert to tell about, iOS asks once whether notifications are allowed.
+    static func askPermissionIfNeeded(_ store: Store) {
+        guard alert(store) != nil else { return }
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            if settings.authorizationStatus == .notDetermined { AINotifier.requestPermission() }
+        }
+    }
+    #endif
 }

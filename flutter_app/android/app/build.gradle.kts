@@ -18,6 +18,26 @@ val playStore: Boolean = (findProperty("dart-defines") as String?)
     ?.any { define: String -> runCatching { String(Base64.getDecoder().decode(define)) }.getOrNull() == "STORE=play" }
     ?: false
 
+// Firebase (push notifications): the values of android/app/google-services.json become the string resources that
+// Firebase reads at startup — what the google-services Gradle plugin does. The file isn't in the public repo; a build
+// without it works, just without push (Firebase stays off and the app gets no token).
+val firebase: Map<String, String> = run {
+    val f = file("google-services.json")
+    if (!f.exists()) return@run emptyMap()
+    @Suppress("UNCHECKED_CAST")
+    val json = groovy.json.JsonSlurper().parse(f) as Map<String, Any?>
+    val project = json["project_info"] as Map<String, Any?>
+    val client = (json["client"] as List<Map<String, Any?>>).first {
+        ((it["client_info"] as Map<String, Any?>)["android_client_info"] as Map<String, Any?>)["package_name"] == "com.shlomodavid.maskoret"
+    }
+    mapOf(
+        "google_app_id" to (client["client_info"] as Map<String, Any?>)["mobilesdk_app_id"] as String,
+        "google_api_key" to ((client["api_key"] as List<Map<String, Any?>>).first()["current_key"] as String),
+        "gcm_defaultSenderId" to project["project_number"] as String,
+        "project_id" to project["project_id"] as String,
+    )
+}
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -36,6 +56,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures {
+        // The Firebase values below are string resources made by this file.
+        resValues = true
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.shlomodavid.maskoret"
@@ -45,6 +70,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        firebase.forEach { (name, value) -> resValue("string", name, value) }
     }
 
     signingConfigs {
@@ -86,4 +112,6 @@ dependencies {
     // FileProvider, for handing a downloaded update to the system installer.
     implementation("androidx.core:core-ktx:1.13.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Push notifications from the assistant (the token and showing the notification; nothing else of Firebase).
+    implementation("com.google.firebase:firebase-messaging:24.1.0")
 }
