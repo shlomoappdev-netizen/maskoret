@@ -14,6 +14,8 @@ struct CardView: View {
     @State private var isError = false
     @State private var dropTargeted = false
     @State private var importing = false
+    /// The charges the last import added that aren't in a trend yet.
+    @State private var sorting: TrendSortSession?
 
     enum Filter: String, CaseIterable, Identifiable {
         case all, open, linked, ignored
@@ -108,11 +110,16 @@ struct CardView: View {
             .navigationTitle(SidebarItem.card.title)
             .fileImporter(isPresented: $importing, allowedContentTypes: [UTType(filenameExtension: "xlsx") ?? .data],
                           allowsMultipleSelection: true) { result in
-                if case .success(let urls) = result { for url in urls { runImport(url) } }
+                if case .success(let urls) = result { runImport(urls) }
+            }
+            .sheet(item: $sorting) { session in
+                TrendSortSheet(items: session.items)
+                    .environmentObject(store)
+                    .environmentObject(ai)
             }
             .dropDestination(for: URL.self) { urls, _ in
                 guard let url = urls.first(where: { $0.pathExtension.lowercased() == "xlsx" }) else { return false }
-                runImport(url)
+                runImport([url])
                 return true
             } isTargeted: { dropTargeted = $0 }
             .overlay {
@@ -446,12 +453,27 @@ struct CardView: View {
         panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
         panel.prompt = "ייבוא"
         if panel.runModal() == .OK {
-            for url in panel.urls { runImport(url) }
+            runImport(panel.urls)
         }
     }
     #endif
 
-    private func runImport(_ url: URL) {
+    /// Imports the files, then offers to put the charges they added in trends (those of merchants with an "always"
+    /// rule go there by themselves).
+    private func runImport(_ urls: [URL]) {
+        let before = Set(store.money.cardTransactions.map(\.id))
+        for url in urls { importOne(url) }
+        let added = Set(store.money.cardTransactions.map(\.id)).subtracting(before)
+        guard !added.isEmpty else { return }
+        store.money.applyTrendRules(added)
+        let items = store.money.trendSuggestions(added)
+        // A moment later: on an iPhone the file picker is still closing, and a sheet opened under it is dropped.
+        if !items.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { sorting = TrendSortSession(items: items) }
+        }
+    }
+
+    private func importOne(_ url: URL) {
         do {
             let record = try store.importCardFile(url)
             isError = false

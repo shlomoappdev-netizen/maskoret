@@ -215,6 +215,16 @@ for (id, file) in family.files {
         "payDay": money.payDay,
         "transactions": money.transactions.count, "cardTransactions": money.cardTransactions.count,
         "trendCount": money.trends.count, "receivables": money.receivables.count,
+        // Which trend each card charge that isn't in one would be offered (as if all of them were just imported).
+        "trendSuggestions": { () -> [String: Any] in
+            var items = money.trendSuggestions(Set(money.cardTransactions.map(\.id)))
+            let prompt = money.trendAIPrompt(items)
+            let rows = items.map { [$0.merchantKey, $0.trendID?.uuidString ?? "", $0.reason, String($0.cardIDs.count), String(format: "%.2f", $0.total)] }
+            let placed = money.applyTrendAIAnswer(CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "", to: &items)
+            return ["items": rows, "prompt": prompt, "placed": placed,
+                    "afterAI": items.map { [$0.merchantKey, $0.trendID?.uuidString ?? "", $0.reason] },
+                    "rules": money.merchantTrends]
+        }(),
         // The tips of the local rules, for the period that `now` is in.
         "tips": AssistantTips.all(money: money, picture: monthPicture(year: money.period(containing: now).year,
                                                                       month: money.period(containing: now).month), now: now)

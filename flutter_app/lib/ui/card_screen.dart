@@ -11,6 +11,7 @@ import '../data/json.dart';
 import '../data/max_import.dart';
 import '../data/models.dart';
 import 'common.dart';
+import 'trend_sort_dialog.dart';
 import 'receivables_screen.dart';
 import 'theme.dart';
 import 'trends_screen.dart';
@@ -52,6 +53,8 @@ class _CardScreenState extends State<CardScreen> {
       dialogTitle: 'ייבוא קובץ (Max / CAL / ישראכרט)',
     );
     if (!mounted) return;
+    // The charges these files add: afterwards the app offers to put them in trends.
+    final before = CardData(store.money).cardTransactions.map((t) => t.id).toSet();
     for (final f in picked) {
       final List<int> bytes;
       try {
@@ -76,6 +79,9 @@ class _CardScreenState extends State<CardScreen> {
         });
       }
     }
+    if (!mounted) return;
+    final added = CardData(store.money).cardTransactions.map((t) => t.id).where((id) => !before.contains(id)).toSet();
+    await offerTrendSorting(context, added);
   }
 
   @override

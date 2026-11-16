@@ -740,6 +740,15 @@ class MoneyData {
 
   set costShareIncomes(Map<String, String> v) => _o.set('costShareIncomes', Map<String, dynamic>.of(v));
 
+  /// "תמיד לבית העסק הזה": merchant key → the trend (its id) its new card charges go into after an import.
+  Map<String, String> get merchantTrends {
+    final m = _o.raw('merchantTrends');
+    if (m is! Map) return {};
+    return {for (final e in m.entries) if (e.value is String) '${e.key}': e.value as String};
+  }
+
+  set merchantTrends(Map<String, String> v) => _o.set('merchantTrends', Map<String, dynamic>.of(v));
+
   /// The shared expense an income is participation in.
   String? sharedCost(String incomeId) => costShareIncomes[incomeId];
 

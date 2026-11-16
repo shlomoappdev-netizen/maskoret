@@ -346,6 +346,43 @@ extension InsightsEngine {
         }
     }
 
+    /// Whether a one-off question can go to a cloud model now (set up, with a key and a model).
+    var canAskCloud: Bool { engine == .cloud && canSend }
+
+    /// One question to the cloud model outside the conversation (nothing is shown or saved): the answer's text, or
+    /// nil when there's no model, no key or the request failed.
+    func complete(system: String, prompt: String) async -> String? {
+        guard canAskCloud, let key = apiKey, !key.isEmpty else { return nil }
+        let anthropic = cloudProvider.isAnthropic
+        guard let url = URL(string: cloudBase + (anthropic ? "/messages" : "/chat/completions")) else { return nil }
+        var body: [String: Any] = ["model": cloudModel.trimmingCharacters(in: .whitespaces)]
+        if anthropic {
+            body["system"] = system
+            body["max_tokens"] = 2048
+            body["messages"] = [["role": "user", "content": prompt]]
+        } else {
+            body["messages"] = [["role": "system", "content": system], ["role": "user", "content": prompt]]
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        authorize(&request, key: key)
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode < 400,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        var answer: String?
+        if anthropic {
+            let blocks = json["content"] as? [[String: Any]] ?? []
+            let text = blocks.filter { ($0["type"] as? String) == "text" }.compactMap { $0["text"] as? String }.joined()
+            answer = blocks.isEmpty ? nil : text
+        } else if let message = (json["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any] {
+            answer = message["content"] as? String
+        }
+        return answer.map { InsightSegment.withoutThinking($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
     // MARK: Manual
 
     /// Everything a chat website needs, as one block of text.

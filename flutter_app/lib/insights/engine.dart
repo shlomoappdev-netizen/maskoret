@@ -831,6 +831,62 @@ type: bar, line או pie.
     );
   }
 
+  /// Whether a one-off question can go to a cloud model now (set up, with a key and a model).
+  bool get canAskCloud => engine == AIEngine.cloud && canSend;
+
+  /// One question to the cloud model outside the conversation (nothing is shown or saved): the answer's text, or
+  /// null when there's no model, no key or the request failed.
+  Future<String?> complete(String system, String prompt) async {
+    if (!canAskCloud) return null;
+    final generation = _generation;
+    final key = await _apiKey();
+    if (generation != _generation || key == null || key.isEmpty) return null;
+    final anthropic = cloudProvider.isAnthropic;
+    final uri = Uri.tryParse(_cloudBase + (anthropic ? '/messages' : '/chat/completions'));
+    if (uri == null) return null;
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
+    try {
+      final request = await client.postUrl(uri);
+      request.headers.contentType = ContentType.json;
+      _authHeaders(key).forEach(request.headers.set);
+      request.add(utf8.encode(jsonEncode({
+        'model': cloudModel.trim(),
+        if (anthropic) ...{
+          'system': system,
+          'max_tokens': 2048,
+          'messages': [
+            {'role': 'user', 'content': prompt},
+          ],
+        } else
+          'messages': [
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': prompt},
+          ],
+      })));
+      final response = await request.close().timeout(const Duration(seconds: 60));
+      final text = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 60));
+      if (response.statusCode >= 400) return null;
+      final json = jsonDecode(text);
+      if (json is! Map) return null;
+      String? answer;
+      if (anthropic) {
+        final content = json['content'];
+        if (content is List) {
+          answer = content.whereType<Map>().where((b) => b['type'] == 'text').map((b) => '${b['text'] ?? ''}').join();
+        }
+      } else {
+        final choices = json['choices'];
+        final message = choices is List && choices.isNotEmpty && choices.first is Map ? (choices.first as Map)['message'] : null;
+        if (message is Map && message['content'] is String) answer = message['content'] as String;
+      }
+      return answer == null ? null : InsightParser.withoutThinking(answer).trim();
+    } catch (_) {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   static String? _openAIPiece(Map<String, dynamic> json) {
     final choices = json['choices'];
     if (choices is! List || choices.isEmpty || choices.first is! Map) return null;
